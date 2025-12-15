@@ -1,0 +1,154 @@
+"use client"
+
+import { useState, useEffect } from "react"
+import { CrudTable } from "@/components/admin/crud-table"
+import { subServicesService, servicesService, type SubService, type Service } from "@/lib/firestore"
+import { toast } from "@/hooks/use-toast"
+
+export default function SubServicesPage() {
+  const [subServices, setSubServices] = useState<SubService[]>([])
+  const [services, setServices] = useState<Service[]>([])
+  const [loading, setLoading] = useState(true)
+
+  const loadData = async () => {
+    try {
+      setLoading(true)
+      const [subServicesData, servicesData] = await Promise.all([subServicesService.getAll(), servicesService.getAll()])
+
+      // Add service names to sub services
+      const subServicesWithNames = subServicesData.map((subService) => ({
+        ...subService,
+        serviceName: servicesData.find((service) => service.id === subService.serviceId)?.name || "Unknown",
+      }))
+
+      setSubServices(subServicesWithNames)
+      setServices(servicesData)
+    } catch (error) {
+      console.error("Error loading data:", error)
+      toast({
+        title: "Error",
+        description: "Failed to load data",
+        variant: "destructive",
+      })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    loadData()
+  }, [])
+
+  const handleAdd = async (data: Omit<SubService, "id" | "createdAt" | "updatedAt">) => {
+    try {
+      await subServicesService.add(data)
+      await loadData()
+      toast({
+        title: "Success",
+        description: "Sub service added successfully",
+      })
+    } catch (error) {
+      console.error("Error adding sub service:", error)
+      toast({
+        title: "Error",
+        description: "Failed to add sub service",
+        variant: "destructive",
+      })
+    }
+  }
+
+  const handleEdit = async (id: string, data: Partial<Omit<SubService, "id" | "createdAt">>) => {
+    try {
+      await subServicesService.update(id, data)
+      await loadData()
+      toast({
+        title: "Success",
+        description: "Sub service updated successfully",
+      })
+    } catch (error) {
+      console.error("Error updating sub service:", error)
+      toast({
+        title: "Error",
+        description: "Failed to update sub service",
+        variant: "destructive",
+      })
+    }
+  }
+
+  const handleDelete = async (id: string) => {
+    try {
+      await subServicesService.delete(id)
+      await loadData()
+      toast({
+        title: "Success",
+        description: "Sub service deleted successfully",
+      })
+    } catch (error) {
+      console.error("Error deleting sub service:", error)
+      toast({
+        title: "Error",
+        description: "Failed to delete sub service",
+        variant: "destructive",
+      })
+    }
+  }
+
+  const columns = [
+    { key: "name", label: "Name" },
+    { key: "serviceName", label: "Service" },
+    { key: "description", label: "Description" },
+    { key: "status", label: "Status" },
+  ]
+
+  const formFields = [
+    {
+      name: "name",
+      label: "Name",
+      type: "text" as const,
+      required: true,
+    },
+    {
+      name: "serviceId",
+      label: "Service",
+      type: "select" as const,
+      required: true,
+      options: services.map((service) => ({
+        value: service.id,
+        label: service.name,
+      })),
+    },
+    {
+      name: "description",
+      label: "Description",
+      type: "textarea" as const,
+    },
+    {
+      name: "status",
+      label: "Status",
+      type: "select" as const,
+      required: true,
+      options: [
+        { value: "active", label: "Active" },
+        { value: "inactive", label: "Inactive" },
+      ],
+    },
+  ]
+
+  if (loading) {
+    return <div className="p-6">Loading...</div>
+  }
+
+  return (
+    <div className="p-6">
+      <CrudTable
+        title="Sub Services"
+        data={subServices}
+        columns={columns}
+        formFields={formFields}
+        onAdd={handleAdd}
+        onEdit={handleEdit}
+        onDelete={handleDelete}
+      />
+    </div>
+  )
+}
