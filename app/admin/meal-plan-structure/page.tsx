@@ -1,17 +1,22 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Label } from "@/components/ui/label"
 import { Checkbox } from "@/components/ui/checkbox"
-import { ChevronDown, ChevronRight, Copy, X } from 'lucide-react'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose, DialogTrigger } from "@/components/ui/dialog"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area"
+import { Badge } from "@/components/ui/badge"
+import { ChevronDown, Building2, Save, Loader2, Maximize2, X, AlertCircle, Check, Copy, ClipboardPaste, RotateCcw } from 'lucide-react'
 import { toast } from "@/hooks/use-toast"
 import {
   companiesService,
   buildingsService,
   servicesService,
+  subServicesService,
   mealPlansService,
   subMealPlansService,
   mealPlanStructureAssignmentsService,
@@ -26,6 +31,8 @@ import {
 } from "@/lib/services"
 import { collection, addDoc, updateDoc, doc } from "firebase/firestore"
 import { db } from "@/lib/firebase"
+
+// --- Types ---
 
 const DAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
 
@@ -54,6 +61,17 @@ type WeeklyStructure = {
   [key: string]: ServiceStructure[]
 }
 
+interface BaseSubService {
+  subServiceId: string
+  rate: number
+}
+interface BaseService {
+  serviceId: string
+  subServices: BaseSubService[]
+}
+
+// --- Main Component ---
+
 export default function MealPlanStructurePage() {
   const [companies, setCompanies] = useState<Company[]>([])
   const [buildings, setBuildings] = useState<Building[]>([])
@@ -64,57 +82,53 @@ export default function MealPlanStructurePage() {
 
   const [selectedCompany, setSelectedCompany] = useState<string>("")
   const [selectedBuilding, setSelectedBuilding] = useState<string>("")
+  
+  const [baseStructure, setBaseStructure] = useState<Record<string, BaseService[]>>({})
   const [weeklyStructure, setWeeklyStructure] = useState<WeeklyStructure>({})
+  
+  // --- NEW: Clipboard State ---
+  const [clipboard, setClipboard] = useState<MealPlanStructureData[] | null>(null)
+
   const [loading, setLoading] = useState(false)
+  const [isDataLoading, setIsDataLoading] = useState(true)
+  const [isModalOpen, setIsModalOpen] = useState(false)
 
-  const [expandedMealPlans, setExpandedMealPlans] = useState<Set<string>>(new Set())
-  const [selectedDaysMultiple, setSelectedDaysMultiple] = useState<Set<string>>(new Set())
-  const [selectedServicesForBatch, setSelectedServicesForBatch] = useState<Set<string>>(new Set())
-  const [selectedSubServicesForBatch, setSelectedSubServicesForBatch] = useState<Map<string, Set<string>>>(new Map())
-  const [expandedServices, setExpandedServices] = useState<Set<string>>(new Set())
-  const [selectedMealPlansForBatch, setSelectedMealPlansForBatch] = useState<Set<string>>(new Set())
-  const [selectedSubMealPlansForBatch, setSelectedSubMealPlansForBatch] = useState<Map<string, Set<string>>>(new Map())
-  const [copyFromBuilding, setCopyFromBuilding] = useState<string>("")
-  const [buildingServices, setBuildingServices] = useState<ServiceStructure[]>([])
-
-  // Fetch all data on component mount
+  // --- Initial Data Loading ---
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [companiesData, servicesData, mealPlansData, subMealPlansData] = await Promise.all([
+        setIsDataLoading(true)
+        const [companiesData, servicesData, subServicesData, mealPlansData, subMealPlansData] = await Promise.all([
           companiesService.getAll(),
           servicesService.getAll(),
+          subServicesService.getAll(),
           mealPlansService.getAll(),
           subMealPlansService.getAll(),
         ])
 
-        setCompanies(companiesData.filter((c) => c.status === "active"))
-        setServices(servicesData.filter((s) => s.status === "active"))
-        setMealPlans(mealPlansData.filter((mp) => mp.status === "active"))
-        setSubMealPlans(subMealPlansData.filter((smp) => smp.status === "active"))
+        setCompanies(companiesData.filter((c) => !c.status || c.status === "active"))
+        setServices(servicesData.filter((s) => !s.status || s.status === "active"))
+        setSubServices(subServicesData.filter((s) => !s.status || s.status === "active"))
+        setMealPlans(mealPlansData.filter((mp) => !mp.status || mp.status === "active"))
+        setSubMealPlans(subMealPlansData.filter((smp) => !smp.status || smp.status === "active"))
+
       } catch (error) {
         console.error("Error fetching data:", error)
-        toast({
-          title: "Error",
-          description: "Failed to fetch data",
-          variant: "destructive",
-        })
+        toast({ title: "Error", description: "Failed to load initial data", variant: "destructive" })
+      } finally {
+        setIsDataLoading(false)
       }
     }
-
     fetchData()
   }, [])
 
-  // Fetch buildings when company changes
+  // --- Fetch Buildings ---
   useEffect(() => {
     const fetchBuildings = async () => {
       if (selectedCompany) {
         try {
           const buildingsData = await buildingsService.getAll()
-          const filteredBuildings = buildingsData.filter(
-            (b) => b.companyId === selectedCompany && b.status === "active",
-          )
-          setBuildings(filteredBuildings)
+          setBuildings(buildingsData.filter((b) => b.companyId === selectedCompany && (!b.status || b.status === "active")))
         } catch (error) {
           console.error("Error fetching buildings:", error)
         }
@@ -122,523 +136,130 @@ export default function MealPlanStructurePage() {
         setBuildings([])
       }
     }
-
     fetchBuildings()
   }, [selectedCompany])
 
-  // Load existing structure and get building-specific services
+  // --- Load Structures ---
   useEffect(() => {
-    const loadExistingStructure = async () => {
+    const loadStructures = async () => {
       if (selectedCompany && selectedBuilding) {
+        setLoading(true)
         try {
           const structureAssignments = await structureAssignmentsService.getAll()
-          const structureAssignment = structureAssignments.find(
+          const baseAssignment = structureAssignments.find(
             (s) => s.companyId === selectedCompany && s.buildingId === selectedBuilding && s.status === "active",
           )
 
-          // Build available services for this building
-          const availableServices: ServiceStructure[] = []
-          if (structureAssignment) {
-            DAYS.forEach((day) => {
-              const dayServices = structureAssignment.weekStructure[day] || []
-              dayServices.forEach((service) => {
-                const existing = availableServices.find((s) => s.serviceId === service.serviceId)
-                if (!existing) {
-                  const serviceData = services.find((s) => s.id === service.serviceId)
-                  availableServices.push({
-                    serviceId: service.serviceId,
-                    serviceName: serviceData?.name || "Unknown Service",
-                    subServices: (service as any).subServices || [],
-                  })
-                }
-              })
-            })
-          }
-          setBuildingServices(availableServices)
-
-          // Load existing meal plan structure
-          const mealPlanStructures = await mealPlanStructureAssignmentsService.getAll()
-          const existingMealPlanStructure = mealPlanStructures.find(
+          const mealPlanAssignments = await mealPlanStructureAssignmentsService.getAll()
+          const existingMealPlanAssignment = mealPlanAssignments.find(
             (s) => s.companyId === selectedCompany && s.buildingId === selectedBuilding,
           )
 
-          if (existingMealPlanStructure) {
-            setWeeklyStructure(existingMealPlanStructure.weekStructure || {})
-          } else if (structureAssignment) {
-            // Auto-populate from structure assignment
-            const autoPopulatedStructure: WeeklyStructure = {}
-
-            DAYS.forEach((day) => {
-              const dayServices = structureAssignment.weekStructure[day] || []
-              autoPopulatedStructure[day] = dayServices.map((service) => ({
-                serviceId: service.serviceId,
-                serviceName: service.serviceName,
-                subServices:
-                  (service as any).subServices?.map((subSvc: any) => ({
-                    subServiceId: subSvc.subServiceId,
-                    subServiceName: subSvc.subServiceName,
-                    mealPlans: [],
-                  })) || [],
-              }))
+          if (baseAssignment) {
+            setBaseStructure(baseAssignment.weekStructure || {})
+          } else {
+            setBaseStructure({})
+            toast({
+              title: "No Base Structure",
+              description: "Please configure 'Structure Assignment' first.",
+              variant: "destructive",
             })
+          }
 
-            setWeeklyStructure(autoPopulatedStructure)
+          if (existingMealPlanAssignment) {
+            setWeeklyStructure(existingMealPlanAssignment.weekStructure || {})
           } else {
             setWeeklyStructure({})
           }
-
-          // Reset batch selections
-          setSelectedDaysMultiple(new Set())
-          setSelectedMealPlansForBatch(new Set())
-          setSelectedSubMealPlansForBatch(new Map())
-          setExpandedMealPlans(new Set())
-          setSelectedServicesForBatch(new Set())
-          setSelectedSubServicesForBatch(new Map())
-          setExpandedServices(new Set())
         } catch (error) {
-          console.error("Error loading existing structure:", error)
+          console.error("Error loading structures:", error)
+        } finally {
+          setLoading(false)
         }
       }
     }
 
-    loadExistingStructure()
-  }, [selectedCompany, selectedBuilding, services])
+    loadStructures()
+  }, [selectedCompany, selectedBuilding])
 
-  const toggleMealPlanExpanded = (mealPlanId: string) => {
-    const updated = new Set(expandedMealPlans)
-    if (updated.has(mealPlanId)) {
-      updated.delete(mealPlanId)
-    } else {
-      updated.add(mealPlanId)
-    }
-    setExpandedMealPlans(updated)
-  }
+  const getServiceName = (id: string) => services.find(s => s.id === id)?.name || "Unknown Service"
+  const getSubServiceName = (id: string) => subServices.find(s => s.id === id)?.name || "Unknown Sub Service"
 
-  const toggleServiceExpanded = (serviceId: string) => {
-    const updated = new Set(expandedServices)
-    if (updated.has(serviceId)) {
-      updated.delete(serviceId)
-    } else {
-      updated.add(serviceId)
-    }
-    setExpandedServices(updated)
-  }
+  const matrixRows = useMemo(() => {
+    const serviceMap = new Map<string, { serviceId: string, subServices: Set<string> }>()
 
-  const toggleServiceBatch = (serviceId: string, checked: boolean) => {
-    const updated = new Set(selectedServicesForBatch)
-    if (checked) {
-      updated.add(serviceId)
-      if (!selectedSubServicesForBatch.has(serviceId)) {
-        selectedSubServicesForBatch.set(serviceId, new Set())
-      }
-    } else {
-      updated.delete(serviceId)
-      selectedSubServicesForBatch.delete(serviceId)
-    }
-    setSelectedServicesForBatch(updated)
-  }
-
-  const toggleSubServiceBatch = (serviceId: string, subServiceId: string, checked: boolean) => {
-    const updated = new Map(selectedSubServicesForBatch)
-    if (!updated.has(serviceId)) {
-      updated.set(serviceId, new Set())
-    }
-
-    const subServices = updated.get(serviceId)!
-    if (checked) {
-      subServices.add(subServiceId)
-    } else {
-      subServices.delete(subServiceId)
-    }
-
-    setSelectedSubServicesForBatch(updated)
-  }
-
-  const toggleMealPlanBatch = (mealPlanId: string, checked: boolean) => {
-    const updated = new Set(selectedMealPlansForBatch)
-    if (checked) {
-      updated.add(mealPlanId)
-      if (!selectedSubMealPlansForBatch.has(mealPlanId)) {
-        selectedSubMealPlansForBatch.set(mealPlanId, new Set())
-      }
-    } else {
-      updated.delete(mealPlanId)
-      selectedSubMealPlansForBatch.delete(mealPlanId)
-    }
-    setSelectedMealPlansForBatch(updated)
-  }
-
-  const toggleSubMealPlanBatch = (mealPlanId: string, subMealPlanId: string, checked: boolean) => {
-    const updated = new Map(selectedSubMealPlansForBatch)
-    if (!updated.has(mealPlanId)) {
-      updated.set(mealPlanId, new Set())
-    }
-
-    const subMeals = updated.get(mealPlanId)!
-    if (checked) {
-      subMeals.add(subMealPlanId)
-    } else {
-      subMeals.delete(subMealPlanId)
-    }
-
-    setSelectedSubMealPlansForBatch(updated)
-  }
-
-  const toggleDayMultiple = (day: string, checked: boolean) => {
-    const updated = new Set(selectedDaysMultiple)
-    if (checked) {
-      updated.add(day)
-    } else {
-      updated.delete(day)
-    }
-    setSelectedDaysMultiple(updated)
-  }
-
-  const getFilteredSubMealPlans = (mealPlanId: string) => {
-    return subMealPlans.filter((smp) => smp.mealPlanId === mealPlanId)
-  }
-
-  const assignBatchMealPlans = () => {
-    if (selectedMealPlansForBatch.size === 0) {
-      toast({
-        title: "No Meal Plans Selected",
-        description: "Please select at least one meal plan",
-        variant: "destructive",
-      })
-      return
-    }
-
-    if (selectedDaysMultiple.size === 0) {
-      toast({
-        title: "No Days Selected",
-        description: "Please select at least one day",
-        variant: "destructive",
-      })
-      return
-    }
-
-    if (selectedServicesForBatch.size === 0) {
-      toast({
-        title: "No Services Selected",
-        description: "Please select at least one service",
-        variant: "destructive",
-      })
-      return
-    }
-
-    console.log("[v0] assignBatchMealPlans started")
-    console.log("[v0] Selected days:", Array.from(selectedDaysMultiple))
-    console.log("[v0] Selected services:", Array.from(selectedServicesForBatch))
-    console.log("[v0] Selected meal plans:", Array.from(selectedMealPlansForBatch))
-    console.log("[v0] Current weeklyStructure:", JSON.stringify(weeklyStructure, null, 2))
-
-    setWeeklyStructure((prev) => {
-      const updated = { ...prev }
-
-      Array.from(selectedDaysMultiple).forEach((day) => {
-        console.log(`[v0] Processing day: ${day}`)
-        console.log(`[v0] Services in day BEFORE: ${updated[day]?.length || 0}`)
-
-        if (!updated[day]) {
-          updated[day] = []
+    Object.values(baseStructure).forEach((dayServices) => {
+      dayServices.forEach(svc => {
+        if (!serviceMap.has(svc.serviceId)) {
+          serviceMap.set(svc.serviceId, { serviceId: svc.serviceId, subServices: new Set() })
         }
-
-        updated[day] = updated[day].map((service) => {
-          const shouldProcessService = selectedServicesForBatch.has(service.serviceId)
-          console.log(
-            `[v0] Service ${service.serviceName} (${service.serviceId}) - shouldProcess: ${shouldProcessService}`,
-          )
-
-          if (!shouldProcessService) {
-            console.log(`[v0] Skipping service ${service.serviceName}`)
-            return service
-          }
-
-          return {
-            ...service,
-            subServices: service.subServices.map((subService) => {
-              const subServicesForThisService = selectedSubServicesForBatch.get(service.serviceId) || new Set()
-              const shouldProcessSubService =
-                subServicesForThisService.size === 0 || subServicesForThisService.has(subService.subServiceId)
-
-              console.log(
-                `[v0] SubService ${subService.subServiceName} (${subService.subServiceId}) - shouldProcess: ${shouldProcessSubService}`,
-              )
-
-              if (!shouldProcessSubService) {
-                return subService
-              }
-
-              const newMealPlans: MealPlanStructureData[] = [...subService.mealPlans]
-              console.log(`[v0] Current meal plans for ${subService.subServiceName}: ${newMealPlans.length}`)
-
-              Array.from(selectedMealPlansForBatch).forEach((mealPlanId) => {
-                const existingMealPlan = newMealPlans.find((mp) => mp.mealPlanId === mealPlanId)
-                const subMealsForThisPlan = selectedSubMealPlansForBatch.get(mealPlanId) || new Set()
-
-                console.log(
-                  `[v0] Processing meal plan ${mealPlanId} - exists: ${!!existingMealPlan}, subMeals: ${subMealsForThisPlan.size}`,
-                )
-
-                if (existingMealPlan) {
-                  const existingSubMealIds = new Set(existingMealPlan.subMealPlans.map((smp) => smp.subMealPlanId))
-                  Array.from(subMealsForThisPlan).forEach((subMealPlanId) => {
-                    if (!existingSubMealIds.has(subMealPlanId)) {
-                      const subMealPlan = subMealPlans.find((smp) => smp.id === subMealPlanId)
-                      existingMealPlan.subMealPlans.push({
-                        subMealPlanId,
-                        subMealPlanName: subMealPlan?.name || "",
-                      })
-                      console.log(`[v0] Added sub meal plan to existing meal plan`)
-                    }
-                  })
-                } else {
-                  const mealPlan = mealPlans.find((mp) => mp.id === mealPlanId)
-                  newMealPlans.push({
-                    mealPlanId,
-                    mealPlanName: mealPlan?.name || "",
-                    subMealPlans: Array.from(subMealsForThisPlan).map((subMealPlanId) => {
-                      const subMealPlan = subMealPlans.find((smp) => smp.id === subMealPlanId)
-                      return {
-                        subMealPlanId,
-                        subMealPlanName: subMealPlan?.name || "",
-                      }
-                    }),
-                  })
-                  console.log(`[v0] Created new meal plan entry`)
-                }
-              })
-
-              console.log(`[v0] Final meal plans for ${subService.subServiceName}: ${newMealPlans.length}`)
-
-              return {
-                ...subService,
-                mealPlans: newMealPlans,
-              }
-            }),
-          }
-        })
-
-        const existingServiceIds = new Set(updated[day].map((s) => s.serviceId))
-        Array.from(selectedServicesForBatch).forEach((serviceId) => {
-          if (!existingServiceIds.has(serviceId)) {
-            console.log(`[v0] Creating NEW service: ${serviceId}`)
-            const buildingService = buildingServices.find((s) => s.serviceId === serviceId)
-
-            if (buildingService) {
-              const subServicesForThisService = selectedSubServicesForBatch.get(serviceId) || new Set()
-
-              const newSubServices = buildingService.subServices
-                .filter(
-                  (subSvc) =>
-                    subServicesForThisService.size === 0 || subServicesForThisService.has(subSvc.subServiceId),
-                )
-                .map((subSvc) => {
-                  const newMealPlans = Array.from(selectedMealPlansForBatch).map((mealPlanId) => {
-                    const mealPlan = mealPlans.find((mp) => mp.id === mealPlanId)
-                    const subMealsForThisPlan = selectedSubMealPlansForBatch.get(mealPlanId) || new Set()
-
-                    return {
-                      mealPlanId,
-                      mealPlanName: mealPlan?.name || "",
-                      subMealPlans: Array.from(subMealsForThisPlan).map((subMealPlanId) => {
-                        const subMealPlan = subMealPlans.find((smp) => smp.id === subMealPlanId)
-                        return {
-                          subMealPlanId,
-                          subMealPlanName: subMealPlan?.name || "",
-                        }
-                      }),
-                    }
-                  })
-
-                  return {
-                    subServiceId: subSvc.subServiceId,
-                    subServiceName: subSvc.subServiceName,
-                    mealPlans: newMealPlans,
-                  }
-                })
-
-              updated[day].push({
-                serviceId,
-                serviceName: buildingService.serviceName,
-                subServices: newSubServices,
-              })
-
-              console.log(`[v0] Added new service to day`)
-            }
-          }
-        })
-
-        console.log(`[v0] Services in day AFTER: ${updated[day].length}`)
+        const entry = serviceMap.get(svc.serviceId)!
+        svc.subServices.forEach(sub => entry.subServices.add(sub.subServiceId))
       })
-
-      console.log("[v0] Final updated structure:", JSON.stringify(updated, null, 2))
-      return updated
     })
 
-    toast({
-      title: "Success",
-      description: `Assigned ${selectedMealPlansForBatch.size} meal plan(s) to ${selectedDaysMultiple.size} day(s)`,
-    })
-
-    setSelectedDaysMultiple(new Set())
-    setSelectedServicesForBatch(new Set())
-    setSelectedSubServicesForBatch(new Map())
-    setSelectedMealPlansForBatch(new Set())
-    setSelectedSubMealPlansForBatch(new Map())
-  }
-
-  const copyStructureToBuilding = async () => {
-    if (!copyFromBuilding) {
-      toast({
-        title: "Select Target Building",
-        description: "Please select a building to copy to",
-        variant: "destructive",
-      })
-      return
-    }
-
-    setLoading(true)
-    try {
-      const company = companies.find((c) => c.id === selectedCompany)
-      const targetBuilding = buildings.find((b) => b.id === copyFromBuilding)
-
-      const structureData: Omit<MealPlanStructureAssignment, "id" | "createdAt" | "updatedAt"> = {
-        companyId: selectedCompany,
-        buildingId: copyFromBuilding,
-        companyName: company?.name || "",
-        buildingName: targetBuilding?.name || "",
-        weekStructure: JSON.parse(JSON.stringify(weeklyStructure)),
-        status: "active",
-      }
-
-      const existingStructures = await mealPlanStructureAssignmentsService.getAll()
-      const existingStructure = existingStructures.find(
-        (s) => s.companyId === selectedCompany && s.buildingId === copyFromBuilding,
-      )
-
-      if (existingStructure) {
-        // prefer service update if available, otherwise direct updateDoc
-        try {
-          if (typeof mealPlanStructureAssignmentsService.update === "function") {
-            await mealPlanStructureAssignmentsService.update(existingStructure.id, structureData)
-          } else {
-            await updateDoc(doc(db, "mealPlanStructureAssignments", existingStructure.id), {
-              ...structureData,
-              updatedAt: new Date(),
-            })
-          }
-        } catch (e) {
-          // fallback direct update
-          await updateDoc(doc(db, "mealPlanStructureAssignments", existingStructure.id), {
-            ...structureData,
-            updatedAt: new Date(),
-          })
-        }
-      } else {
-        // prefer service add if available, otherwise direct addDoc
-        try {
-          if (typeof mealPlanStructureAssignmentsService.add === "function") {
-            await mealPlanStructureAssignmentsService.add(structureData)
-          } else {
-            await addDoc(collection(db, "mealPlanStructureAssignments"), {
-              ...structureData,
-              createdAt: new Date(),
-              updatedAt: new Date(),
-            })
-          }
-        } catch (e) {
-          // fallback direct add
-          await addDoc(collection(db, "mealPlanStructureAssignments"), {
-            ...structureData,
-            createdAt: new Date(),
-            updatedAt: new Date(),
-          })
-        }
-      }
-
-      toast({
-        title: "Success",
-        description: `Structure copied to ${targetBuilding?.name}`,
-      })
-      setCopyFromBuilding("")
-    } catch (error) {
-      console.error("Error copying structure:", error)
-      toast({
-        title: "Error",
-        description: "Failed to copy structure",
-        variant: "destructive",
-      })
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const removeMealPlan = (day: string, serviceIndex: number, subServiceIndex: number, mealPlanIndex: number) => {
-    setWeeklyStructure((prev) => ({
-      ...prev,
-      [day]:
-        prev[day]?.map((service, index) =>
-          index === serviceIndex
-            ? {
-                ...service,
-                subServices: service.subServices.map((subSvc, subIndex) =>
-                  subIndex === subServiceIndex
-                    ? {
-                        ...subSvc,
-                        mealPlans: subSvc.mealPlans.filter((_, mpIndex) => mpIndex !== mealPlanIndex),
-                      }
-                    : subSvc,
-                ),
-              }
-            : service,
-        ) || [],
+    return Array.from(serviceMap.values()).map(svc => ({
+      serviceId: svc.serviceId,
+      serviceName: getServiceName(svc.serviceId),
+      subServices: Array.from(svc.subServices).map(subId => ({
+        subServiceId: subId,
+        subServiceName: getSubServiceName(subId)
+      }))
     }))
+  }, [baseStructure, services, subServices])
+
+
+  const updateMealPlansForSubService = (
+    day: string,
+    serviceId: string,
+    subServiceId: string,
+    newMealPlans: MealPlanStructureData[]
+  ) => {
+    setWeeklyStructure(prev => {
+      const dayServices = prev[day] ? [...prev[day]] : []
+      let serviceIndex = dayServices.findIndex(s => s.serviceId === serviceId)
+      
+      if (serviceIndex === -1) {
+        dayServices.push({ serviceId, serviceName: getServiceName(serviceId), subServices: [] })
+        serviceIndex = dayServices.length - 1
+      }
+
+      const service = { ...dayServices[serviceIndex] }
+      const subServicesList = [...service.subServices]
+      let subIndex = subServicesList.findIndex(s => s.subServiceId === subServiceId)
+      
+      if (subIndex === -1) {
+        subServicesList.push({
+          subServiceId,
+          subServiceName: getSubServiceName(subServiceId),
+          mealPlans: newMealPlans
+        })
+      } else {
+        subServicesList[subIndex] = { ...subServicesList[subIndex], mealPlans: newMealPlans }
+      }
+
+      service.subServices = subServicesList
+      dayServices[serviceIndex] = service
+      return { ...prev, [day]: dayServices }
+    })
   }
 
-  const deleteAllAssignments = () => {
-    if (selectedDaysMultiple.size === 0) {
-      toast({
-        title: "No Days Selected",
-        description: "Please select at least one day to delete",
-        variant: "destructive",
-      })
-      return
-    }
+  // --- Clipboard Logic ---
+  const handleCopy = (data: MealPlanStructureData[]) => {
+    // Deep copy to avoid reference issues
+    setClipboard(JSON.parse(JSON.stringify(data)))
+    toast({ title: "Copied!", description: "Select other cells to paste." })
+  }
 
-    const daysToDelete = Array.from(selectedDaysMultiple).join(", ")
-    if (confirm(`Are you sure you want to delete all assignments for: ${daysToDelete}?`)) {
-      setWeeklyStructure((prev) => {
-        const updated = { ...prev }
-        Array.from(selectedDaysMultiple).forEach((day) => {
-          updated[day] =
-            updated[day]?.map((service) => ({
-              ...service,
-              subServices: service.subServices.map((subService) => ({
-                ...subService,
-                mealPlans: [],
-              })),
-            })) || []
-        })
-        return updated
-      })
-
-      toast({
-        title: "Success",
-        description: `All assignments deleted for ${selectedDaysMultiple.size} day(s)`,
-      })
+  const handlePaste = (day: string, serviceId: string, subServiceId: string) => {
+    if (clipboard) {
+      updateMealPlansForSubService(day, serviceId, subServiceId, clipboard)
+      toast({ title: "Pasted!", duration: 1000 })
     }
   }
 
   const handleSaveStructure = async () => {
-    if (!selectedCompany || !selectedBuilding) {
-      toast({
-        title: "Missing Selection",
-        description: "Please select both company and building",
-        variant: "destructive",
-      })
-      return
-    }
+    if (!selectedCompany || !selectedBuilding) return
 
     setLoading(true)
     try {
@@ -660,404 +281,447 @@ export default function MealPlanStructurePage() {
       )
 
       if (existingStructure) {
-        // prefer service update if available, otherwise direct updateDoc
-        try {
-          if (typeof mealPlanStructureAssignmentsService.update === "function") {
-            await mealPlanStructureAssignmentsService.update(existingStructure.id, structureData)
-          } else {
-            await updateDoc(doc(db, "mealPlanStructureAssignments", existingStructure.id), {
-              ...structureData,
-              updatedAt: new Date(),
-            })
-          }
-        } catch (e) {
-          await updateDoc(doc(db, "mealPlanStructureAssignments", existingStructure.id), {
-            ...structureData,
-            updatedAt: new Date(),
-          })
-        }
-
-        toast({
-          title: "Success",
-          description: "Meal plan structure updated successfully",
-        })
+         try {
+             if (typeof mealPlanStructureAssignmentsService.update === 'function') {
+                 await mealPlanStructureAssignmentsService.update(existingStructure.id, structureData)
+             } else {
+                 await updateDoc(doc(db, "mealPlanStructureAssignments", existingStructure.id), {
+                    ...structureData,
+                    updatedAt: new Date(),
+                 })
+             }
+         } catch(e) {
+             await updateDoc(doc(db, "mealPlanStructureAssignments", existingStructure.id), {
+                ...structureData,
+                updatedAt: new Date(),
+             })
+         }
       } else {
-        // prefer service add if available, otherwise direct addDoc
         try {
-          if (typeof mealPlanStructureAssignmentsService.add === "function") {
-            await mealPlanStructureAssignmentsService.add(structureData)
-          } else {
+            if (typeof mealPlanStructureAssignmentsService.add === 'function') {
+                await mealPlanStructureAssignmentsService.add(structureData)
+            } else {
+                await addDoc(collection(db, "mealPlanStructureAssignments"), {
+                  ...structureData,
+                  createdAt: new Date(),
+                  updatedAt: new Date(),
+                })
+            }
+        } catch(e) {
             await addDoc(collection(db, "mealPlanStructureAssignments"), {
               ...structureData,
               createdAt: new Date(),
               updatedAt: new Date(),
             })
-          }
-        } catch (e) {
-          await addDoc(collection(db, "mealPlanStructureAssignments"), {
-            ...structureData,
-            createdAt: new Date(),
-            updatedAt: new Date(),
-          })
         }
-
-        toast({
-          title: "Success",
-          description: "Meal plan structure saved successfully",
-        })
       }
+      toast({ title: "Success", description: "Structure saved successfully" })
+      setIsModalOpen(false)
+      setClipboard(null) // Clear clipboard on save
     } catch (error) {
-      console.error("Error saving structure:", error)
-      toast({
-        title: "Error",
-        description: "Failed to save meal plan structure",
-        variant: "destructive",
-      })
+      console.error("Error saving:", error)
+      toast({ title: "Error", description: "Failed to save", variant: "destructive" })
     } finally {
       setLoading(false)
     }
   }
 
+  if (isDataLoading) return <div className="flex h-96 items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-gray-400" /></div>
+
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Meal Plan Structure Assignment</h1>
-        <Button onClick={handleSaveStructure} disabled={loading || !selectedCompany || !selectedBuilding}>
-          {loading ? "Saving..." : "Save Structure"}
-        </Button>
+        <div>
+          <h1 className="text-2xl font-bold">Meal Plan Structure</h1>
+          <p className="text-gray-500">Configure meal plans for building services</p>
+        </div>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Select Company & Building</CardTitle>
+          <CardTitle className="flex items-center gap-2"><Building2 className="h-5 w-5"/> Configuration</CardTitle>
+          <CardDescription>Select a building to configure its meal plan structure.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="company">Company</Label>
+              <Label>Company</Label>
               <Select value={selectedCompany} onValueChange={setSelectedCompany}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select a company" />
-                </SelectTrigger>
+                <SelectTrigger><SelectValue placeholder="Select Company" /></SelectTrigger>
                 <SelectContent>
-                  {companies.map((company) => (
-                    <SelectItem key={company.id} value={company.id}>
-                      {company.name}
-                    </SelectItem>
-                  ))}
+                  {companies.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
-
             <div className="space-y-2">
-              <Label htmlFor="building">Building</Label>
+              <Label>Building</Label>
               <Select value={selectedBuilding} onValueChange={setSelectedBuilding} disabled={!selectedCompany}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select a building" />
-                </SelectTrigger>
+                <SelectTrigger><SelectValue placeholder="Select Building" /></SelectTrigger>
                 <SelectContent>
-                  {buildings.map((building) => (
-                    <SelectItem key={building.id} value={building.id}>
-                      {building.name}
-                    </SelectItem>
-                  ))}
+                  {buildings.map(b => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
           </div>
-
-          {selectedCompany && selectedBuilding && (
-            <div className="flex items-end gap-2 pt-4 border-t">
-              <div className="flex-1 space-y-2">
-                <Label>Copy Structure to Another Building</Label>
-                <Select value={copyFromBuilding} onValueChange={setCopyFromBuilding}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select building to copy to" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {buildings
-                      .filter((b) => b.id !== selectedBuilding) // Don't offer copying to itself
-                      .map((building) => (
-                        <SelectItem key={building.id} value={building.id}>
-                          {building.name}
-                        </SelectItem>
-                      ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <Button onClick={copyStructureToBuilding} disabled={loading || !copyFromBuilding} variant="outline">
-                <Copy className="h-4 w-4 mr-2" />
-                Copy
-              </Button>
-            </div>
-          )}
+          
+          <div className="pt-4 flex justify-end">
+            <Button 
+              onClick={() => setIsModalOpen(true)} 
+              disabled={!selectedCompany || !selectedBuilding || matrixRows.length === 0}
+              className="w-full md:w-auto"
+            >
+              <Maximize2 className="mr-2 h-4 w-4" />
+              Open Full Screen Editor
+            </Button>
+          </div>
         </CardContent>
       </Card>
-
-      {selectedCompany && selectedBuilding && (
-        <div className="space-y-4">
-          <Card className="border-blue-200 bg-blue-50">
-            <CardHeader>
-              <CardTitle className="text-base">Batch Assign Meal Plans to Multiple Days</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {/* Select Days */}
-              <div>
-                <Label className="text-sm font-medium mb-3 block">Select Days</Label>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  {DAYS.map((day) => (
-                    <div key={day} className="flex items-center space-x-2">
-                      <Checkbox
-                        id={`day-${day}`}
-                        checked={selectedDaysMultiple.has(day)}
-                        onCheckedChange={(checked) => toggleDayMultiple(day, checked as boolean)}
-                      />
-                      <label htmlFor={`day-${day}`} className="text-sm cursor-pointer capitalize">
-                        {day}
-                      </label>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <Label className="text-sm font-medium mb-3 block">Select Services & Sub-Services</Label>
-                <div className="space-y-2">
-                  {buildingServices.map((service) => {
-                    const isExpanded = expandedServices.has(service.serviceId)
-                    const isSelected = selectedServicesForBatch.has(service.serviceId)
-
-                    return (
-                      <div key={service.serviceId} className="border rounded-lg p-3 bg-white">
-                        <div className="flex items-start gap-3">
-                          <Checkbox
-                            id={`svc-${service.serviceId}`}
-                            checked={isSelected}
-                            onCheckedChange={(checked) => toggleServiceBatch(service.serviceId, checked as boolean)}
-                            className="mt-1"
-                          />
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2">
-                              <label
-                                htmlFor={`svc-${service.serviceId}`}
-                                className="font-medium cursor-pointer text-sm"
-                              >
-                                {service.serviceName || "Unnamed Service"}
-                              </label>
-                              {service.subServices && service.subServices.length > 0 && isSelected && (
-                                <button
-                                  onClick={() => toggleServiceExpanded(service.serviceId)}
-                                  className="p-0.5 hover:bg-gray-200 rounded"
-                                >
-                                  {isExpanded ? (
-                                    <ChevronDown className="h-4 w-4" />
-                                  ) : (
-                                    <ChevronRight className="h-4 w-4" />
-                                  )}
-                                </button>
-                              )}
-                            </div>
-
-                            {isSelected && isExpanded && service.subServices && service.subServices.length > 0 && (
-                              <div className="mt-3 pl-6 space-y-2">
-                                {service.subServices.map((subService) => (
-                                  <div key={subService.subServiceId} className="flex items-center gap-2">
-                                    <Checkbox
-                                      id={`subsvc-${subService.subServiceId}`}
-                                      checked={
-                                        selectedSubServicesForBatch
-                                          .get(service.serviceId)
-                                          ?.has(subService.subServiceId) || false
-                                      }
-                                      onCheckedChange={(checked) =>
-                                        toggleSubServiceBatch(
-                                          service.serviceId,
-                                          subService.subServiceId,
-                                          checked as boolean,
-                                        )
-                                      }
-                                    />
-                                    <label
-                                      htmlFor={`subsvc-${subService.subServiceId}`}
-                                      className="text-sm cursor-pointer text-gray-700"
-                                    >
-                                      {subService.subServiceName || "Unnamed Sub Service"}
-                                    </label>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    )
-                  })}
-                  {buildingServices.length === 0 && (
-                    <div className="text-sm text-gray-500 italic">No services configured for this building</div>
-                  )}
-                </div>
-              </div>
-
-              {/* Select Meal Plans - Nested View */}
-              <div>
-                <Label className="text-sm font-medium mb-3 block">Select Meal Plans & Sub-Meal Plans</Label>
-                <div className="space-y-2">
-                  {mealPlans.map((mp) => {
-                    const filteredSubMeals = getFilteredSubMealPlans(mp.id)
-                    const isExpanded = expandedMealPlans.has(mp.id)
-                    const isSelected = selectedMealPlansForBatch.has(mp.id)
-
-                    return (
-                      <div key={mp.id} className="border rounded-lg p-3 bg-white">
-                        <div className="flex items-start gap-3">
-                          <Checkbox
-                            id={`mp-${mp.id}`}
-                            checked={isSelected}
-                            onCheckedChange={(checked) => toggleMealPlanBatch(mp.id, checked as boolean)}
-                            className="mt-1"
-                          />
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2">
-                              <label htmlFor={`mp-${mp.id}`} className="font-medium cursor-pointer text-sm">
-                                {mp.name}
-                              </label>
-                              {filteredSubMeals.length > 0 && isSelected && (
-                                <button
-                                  onClick={() => toggleMealPlanExpanded(mp.id)}
-                                  className="p-0.5 hover:bg-gray-200 rounded"
-                                >
-                                  {isExpanded ? (
-                                    <ChevronDown className="h-4 w-4" />
-                                  ) : (
-                                    <ChevronRight className="h-4 w-4" />
-                                  )}
-                                </button>
-                              )}
-                            </div>
-
-                            {isSelected && isExpanded && filteredSubMeals.length > 0 && (
-                              <div className="mt-3 pl-6 space-y-2">
-                                {filteredSubMeals.map((smp) => (
-                                  <div key={smp.id} className="flex items-center gap-2">
-                                    <Checkbox
-                                      id={`smp-${smp.id}`}
-                                      checked={selectedSubMealPlansForBatch.get(mp.id)?.has(smp.id) || false}
-                                      onCheckedChange={(checked) =>
-                                        toggleSubMealPlanBatch(mp.id, smp.id, checked as boolean)
-                                      }
-                                    />
-                                    <label htmlFor={`smp-${smp.id}`} className="text-sm cursor-pointer text-gray-700">
-                                      {smp.name}
-                                    </label>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-
-              <div className="flex gap-2 pt-2 flex-wrap">
-                <Button
-                  onClick={assignBatchMealPlans}
-                  disabled={
-                    selectedMealPlansForBatch.size === 0 ||
-                    selectedDaysMultiple.size === 0 ||
-                    selectedServicesForBatch.size === 0
-                  }
-                >
-                  Assign to Selected Days
-                </Button>
-                <Button variant="destructive" onClick={deleteAllAssignments} disabled={selectedDaysMultiple.size === 0}>
-                  Delete All for Selected Days
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setSelectedDaysMultiple(new Set())
-                    setSelectedServicesForBatch(new Set())
-                    setSelectedSubServicesForBatch(new Map())
-                    setSelectedMealPlansForBatch(new Set())
-                    setSelectedSubMealPlansForBatch(new Map())
-                    setExpandedServices(new Set())
-                    setExpandedMealPlans(new Set())
-                  }}
-                >
-                  Clear Selection
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Display weekly structure */}
-          {DAYS.map((day) => (
-            <Card key={day}>
-              <CardHeader>
-                <CardTitle className="capitalize text-lg">{day}</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {weeklyStructure[day]?.length > 0 ? (
-                  weeklyStructure[day].map((service, serviceIndex) => (
-                    <div key={serviceIndex} className="border rounded-lg p-4 space-y-3">
-                      {/* Service name */}
-                      <div className="font-semibold text-sm text-gray-700">
-                        {service.serviceName || "Unnamed Service"}
-                      </div>
-
-                      {/* Sub-services and meal plans */}
-                      <div className="space-y-3 pl-4 border-l-2 border-gray-300">
-                        {service.subServices.map((subService, subServiceIndex) => (
-                          <div key={subServiceIndex} className="space-y-2">
-                            <div className="font-medium text-sm text-gray-600">
-                              {subService.subServiceName || "Unnamed Sub Service"}
-                            </div>
-
-                            {/* Meal plans for this sub-service */}
-                            {subService.mealPlans.length > 0 ? (
-                              <div className="space-y-1">
-                                {subService.mealPlans.map((mp, mpIndex) => (
-                                  <div
-                                    key={mpIndex}
-                                    className="bg-green-100 rounded-lg p-3 flex items-start justify-between group hover:bg-green-200 transition"
-                                  >
-                                    <div className="flex-1">
-                                      <div className="font-medium text-sm text-gray-800">{mp.mealPlanName}</div>
-                                      {mp.subMealPlans.length > 0 && (
-                                        <div className="text-xs text-gray-600 mt-1">
-                                          Sub-plans: {mp.subMealPlans.map((smp) => smp.subMealPlanName).join(", ")}
-                                        </div>
-                                      )}
-                                    </div>
-                                    <button
-                                      onClick={() => removeMealPlan(day, serviceIndex, subServiceIndex, mpIndex)}
-                                      className="opacity-0 group-hover:opacity-100 transition-opacity ml-2"
-                                      title="Remove meal plan"
-                                    >
-                                      <X className="h-4 w-4 text-red-600" />
-                                    </button>
-                                  </div>
-                                ))}
-                              </div>
-                            ) : (
-                              <div className="text-xs text-gray-400 italic">No meal plans assigned</div>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <div className="text-center py-8 text-gray-500">No services configured for {day}</div>
-                )}
-              </CardContent>
-            </Card>
-          ))}
+      
+      {!selectedCompany || !selectedBuilding ? null : matrixRows.length === 0 ? (
+         <div className="text-center p-8 border-2 border-dashed rounded-lg text-gray-400">
+            No services configured in Structure Assignment. Please configure that first.
+         </div>
+      ) : (
+        <div className="text-center text-sm text-gray-500">
+          Editor ready. Click "Open Full Screen Editor" to configure meal plans.
         </div>
       )}
+
+      {/* --- FULL SCREEN MODAL --- */}
+      <Dialog open={isModalOpen} onOpenChange={(open) => {
+        setIsModalOpen(open)
+        if (!open) setClipboard(null) // Clear clipboard on close
+      }}>
+        <DialogContent className="!max-w-none !w-[100vw] !h-[100vh] !max-h-[100vh] !rounded-none !border-none !m-0 !p-0 flex flex-col bg-white shadow-none focus-visible:outline-none gap-0 !top-0 !left-0 !translate-x-0 !translate-y-0">
+          
+          {/* Header */}
+          <DialogHeader className="p-4 border-b shrink-0 flex flex-row items-center justify-between space-y-0 bg-white">
+            <div>
+              <DialogTitle className="text-xl">Edit Meal Plan Structure</DialogTitle>
+              <DialogDescription className="mt-1">
+                Assign Meal Plans to Services/Sub-Services for each day.
+              </DialogDescription>
+            </div>
+            <DialogClose asChild>
+              <Button variant="ghost" size="icon" className="h-10 w-10 hover:bg-slate-100 rounded-full">
+                <X className="h-6 w-6" />
+              </Button>
+            </DialogClose>
+          </DialogHeader>
+
+          {/* Body (Scrollable Table) */}
+          <div className="flex-1 overflow-hidden relative bg-gray-50/50">
+            <ScrollArea className="h-full w-full">
+              <div className="min-w-[1400px] pb-20"> {/* pb-20 for floating bar space */}
+                <Table>
+                  <TableHeader className="sticky top-0 z-30 shadow-sm bg-white">
+                    <TableRow>
+                      <TableHead className="w-[300px] font-bold bg-white border-r border-b text-gray-900 sticky left-0 z-30 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
+                        Service / Sub-Service
+                      </TableHead>
+                      {DAYS.map(day => (
+                        <TableHead key={day} className="min-w-[240px] text-center capitalize font-semibold bg-white border-r border-b text-gray-900">
+                          {day}
+                        </TableHead>
+                      ))}
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody className="bg-white">
+                    {matrixRows.map((svc) => (
+                      <>
+                        {/* Service Group Header */}
+                        <TableRow key={`svc-header-${svc.serviceId}`} className="bg-blue-50 hover:bg-blue-50/80">
+                          <TableCell className="font-bold text-blue-900 py-3 border-b border-r sticky left-0 bg-blue-50 z-20">
+                            {svc.serviceName}
+                          </TableCell>
+                          <TableCell colSpan={7} className="border-b bg-blue-50/30"></TableCell>
+                        </TableRow>
+
+                        {/* Sub-Services */}
+                        {svc.subServices.map((subSvc) => (
+                          <TableRow key={`${svc.serviceId}-${subSvc.subServiceId}`} className="hover:bg-gray-50">
+                            <TableCell className="font-medium text-gray-600 border-r border-b pl-8 sticky left-0 bg-white z-20 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
+                              {subSvc.subServiceName}
+                            </TableCell>
+                            
+                            {/* Days */}
+                            {DAYS.map(day => {
+                              const isAvailable = baseStructure[day]?.some(s => 
+                                s.serviceId === svc.serviceId && 
+                                s.subServices.some(ss => ss.subServiceId === subSvc.subServiceId)
+                              )
+
+                              if (!isAvailable) {
+                                return (
+                                  <TableCell key={day} className="bg-gray-100/50 border-r border-b text-center align-middle">
+                                    <span className="text-gray-300 text-xs italic select-none">N/A</span>
+                                  </TableCell>
+                                )
+                              }
+
+                              const currentService = weeklyStructure[day]?.find(s => s.serviceId === svc.serviceId)
+                              const currentSub = currentService?.subServices.find(ss => ss.subServiceId === subSvc.subServiceId)
+                              const assignedMealPlans = currentSub?.mealPlans || []
+
+                              return (
+                                <TableCell key={day} className={`border-r border-b p-2 align-top bg-white transition-colors ${clipboard ? 'bg-blue-50/30' : ''}`}>
+                                  <MealPlanSelector 
+                                    availableMealPlans={mealPlans}
+                                    availableSubMealPlans={subMealPlans}
+                                    assignedMealPlans={assignedMealPlans}
+                                    onUpdate={(newPlans) => 
+                                      updateMealPlansForSubService(
+                                        day, 
+                                        svc.serviceId, 
+                                        subSvc.subServiceId, 
+                                        newPlans
+                                      )
+                                    }
+                                    clipboardMode={!!clipboard}
+                                    onCopy={() => handleCopy(assignedMealPlans)}
+                                    onPaste={() => handlePaste(day, svc.serviceId, subSvc.subServiceId)}
+                                  />
+                                </TableCell>
+                              )
+                            })}
+                          </TableRow>
+                        ))}
+                      </>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+              <ScrollBar orientation="horizontal" />
+              <ScrollBar orientation="vertical" />
+            </ScrollArea>
+
+            {/* FLOATING CLIPBOARD BAR */}
+            {clipboard && (
+                <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 bg-blue-900 text-white px-6 py-3 rounded-full shadow-xl flex items-center gap-4 z-50 animate-in slide-in-from-bottom-5">
+                    <div className="flex flex-col">
+                        <span className="font-bold text-sm">Paste Mode Active</span>
+                        <span className="text-xs text-blue-200">{clipboard.length} meal plans ready to paste</span>
+                    </div>
+                    <div className="h-8 w-[1px] bg-blue-700 mx-2"></div>
+                    <Button 
+                        size="sm" 
+                        variant="secondary" 
+                        onClick={() => setClipboard(null)}
+                        className="rounded-full h-8 text-xs"
+                    >
+                        <X className="w-3 h-3 mr-1" /> Cancel
+                    </Button>
+                </div>
+            )}
+          </div>
+
+          {/* Footer */}
+          <DialogFooter className="p-4 border-t bg-white shrink-0 sm:justify-between">
+            <div className="hidden sm:block text-sm text-gray-500 self-center">
+              Changes are local until saved.
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setIsModalOpen(false)}>Cancel</Button>
+              <Button onClick={handleSaveStructure} disabled={loading} className="min-w-[120px]">
+                {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                Save Changes
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}
+
+// --- SELECTOR COMPONENT (Now with Copy/Paste) ---
+interface MealPlanSelectorProps {
+  availableMealPlans: MealPlan[]
+  availableSubMealPlans: SubMealPlan[]
+  assignedMealPlans: MealPlanStructureData[]
+  onUpdate: (newPlans: MealPlanStructureData[]) => void
+  clipboardMode: boolean
+  onCopy: () => void
+  onPaste: () => void
+}
+
+function MealPlanSelector({ 
+  availableMealPlans, 
+  availableSubMealPlans, 
+  assignedMealPlans, 
+  onUpdate,
+  clipboardMode,
+  onCopy,
+  onPaste
+}: MealPlanSelectorProps) {
+  const [isOpen, setIsOpen] = useState(false)
+
+  // --- Handlers ---
+  const toggleMealPlan = (mealPlanId: string, checked: boolean) => {
+    let newAssignments = [...assignedMealPlans]
+    if (checked) {
+      if (!newAssignments.some(mp => mp.mealPlanId === mealPlanId)) {
+        const mpName = availableMealPlans.find(mp => mp.id === mealPlanId)?.name
+        newAssignments.push({ mealPlanId, mealPlanName: mpName || "", subMealPlans: [] })
+      }
+    } else {
+      newAssignments = newAssignments.filter(mp => mp.mealPlanId !== mealPlanId)
+    }
+    onUpdate(newAssignments)
+  }
+
+  const toggleSubMealPlan = (mealPlanId: string, subMealPlanId: string, checked: boolean) => {
+    const newAssignments = assignedMealPlans.map(mp => {
+      if (mp.mealPlanId !== mealPlanId) return mp
+      
+      const currentSubs = [...(mp.subMealPlans || [])]
+      
+      if (checked) {
+        if (!currentSubs.some(s => s.subMealPlanId === subMealPlanId)) {
+            const smpName = availableSubMealPlans.find(s => s.id === subMealPlanId)?.name
+            currentSubs.push({ subMealPlanId, subMealPlanName: smpName || "" })
+        }
+      } else {
+        return {
+           ...mp,
+           subMealPlans: currentSubs.filter(s => s.subMealPlanId !== subMealPlanId)
+        }
+      }
+      return { ...mp, subMealPlans: currentSubs }
+    })
+    
+    onUpdate(newAssignments)
+  }
+
+  const hasSelection = assignedMealPlans.length > 0;
+  
+  return (
+    <div className="flex flex-col gap-1.5 w-full group">
+        <Dialog open={isOpen} onOpenChange={setIsOpen}>
+        <DialogTrigger asChild>
+            <Button 
+            variant="outline" 
+            className={`w-full justify-between text-left font-normal h-auto min-h-[40px] py-2 px-3 whitespace-normal ${hasSelection ? 'bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100' : 'text-gray-500 hover:text-gray-700'}`}
+            >
+            <div className="flex flex-col gap-1 w-full overflow-hidden">
+                {hasSelection ? (
+                assignedMealPlans.map((mp, idx) => (
+                    <div key={idx} className="flex items-center text-xs font-medium">
+                    <div className="w-1.5 h-1.5 rounded-full bg-blue-500 mr-2 shrink-0"></div>
+                    <span className="truncate">{mp.mealPlanName} <span className="text-blue-400">({mp.subMealPlans.length})</span></span>
+                    </div>
+                ))
+                ) : (
+                <span className="text-xs">Select Plans...</span>
+                )}
+            </div>
+            <ChevronDown className="h-3 w-3 opacity-50 flex-shrink-0 ml-1" />
+            </Button>
+        </DialogTrigger>
+
+        {/* Modal Content */}
+        <DialogContent className="sm:max-w-md max-h-[80vh] flex flex-col z-[99999]">
+            <DialogHeader>
+            <DialogTitle>Select Meal Plans</DialogTitle>
+            <DialogDescription>
+                Choose meal plans and sub-plans for this service.
+            </DialogDescription>
+            </DialogHeader>
+
+            <div className="flex-1 overflow-hidden border rounded-md">
+                <ScrollArea className="h-[400px] p-4">
+                <div className="space-y-4">
+                    {availableMealPlans.length === 0 && (
+                        <div className="flex flex-col items-center justify-center py-6 text-center text-gray-500 gap-2">
+                            <AlertCircle className="h-8 w-8 text-yellow-500" />
+                            <p className="text-sm font-medium">No Meal Plans Found</p>
+                            <p className="text-xs">Please check your Meal Plans configuration.</p>
+                        </div>
+                    )}
+
+                    {availableMealPlans.map(mp => {
+                    const isSelected = assignedMealPlans.some(a => a.mealPlanId === mp.id)
+                    const currentAssignment = assignedMealPlans.find(a => a.mealPlanId === mp.id)
+                    const subMealsForPlan = availableSubMealPlans.filter(smp => smp.mealPlanId === mp.id)
+
+                    return (
+                        <div key={mp.id} className="space-y-1">
+                        <div className="flex items-center space-x-2 py-2 bg-gray-50 rounded px-2">
+                            <Checkbox 
+                            id={`mp-${mp.id}`} 
+                            checked={isSelected}
+                            onCheckedChange={(c) => toggleMealPlan(mp.id, c as boolean)}
+                            />
+                            <label htmlFor={`mp-${mp.id}`} className="text-sm font-medium leading-none cursor-pointer flex-1">
+                            {mp.name}
+                            </label>
+                        </div>
+                        
+                        {isSelected && (
+                            <div className="ml-6 space-y-2 border-l-2 pl-3 border-gray-100 mt-1 pb-1">
+                            {subMealsForPlan.length > 0 ? (
+                                subMealsForPlan.map(smp => {
+                                const isSubSelected = currentAssignment?.subMealPlans.some(s => s.subMealPlanId === smp.id) || false
+                                return (
+                                    <div key={smp.id} className="flex items-center space-x-2 py-0.5">
+                                    <Checkbox 
+                                        id={`smp-${smp.id}`}
+                                        className="h-4 w-4"
+                                        checked={isSubSelected}
+                                        onCheckedChange={(c) => toggleSubMealPlan(mp.id, smp.id, c as boolean)}
+                                    />
+                                    <label htmlFor={`smp-${smp.id}`} className="text-sm text-gray-600 leading-none cursor-pointer hover:text-gray-900">
+                                        {smp.name}
+                                    </label>
+                                    </div>
+                                )
+                                })
+                            ) : (
+                                <div className="text-xs text-gray-400 italic">No sub-plans available</div>
+                            )}
+                            </div>
+                        )}
+                        </div>
+                    )
+                    })}
+                </div>
+                </ScrollArea>
+            </div>
+
+            <DialogFooter>
+                <Button onClick={() => setIsOpen(false)} className="w-full sm:w-auto">
+                    <Check className="w-4 h-4 mr-2" /> Done
+                </Button>
+            </DialogFooter>
+        </DialogContent>
+        </Dialog>
+
+        {/* Copy / Paste Toolbar inside the cell */}
+        <div className="flex items-center justify-end gap-1 h-6">
+            {!clipboardMode && hasSelection && (
+                 <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    className="h-6 px-2 text-[10px] text-gray-400 hover:text-blue-600 hover:bg-blue-50"
+                    onClick={onCopy}
+                    title="Copy Meal Plans"
+                 >
+                    <Copy className="w-3 h-3 mr-1" /> Copy
+                 </Button>
+            )}
+
+            {clipboardMode && (
+                <Button 
+                    variant="default" 
+                    size="sm" 
+                    className="h-6 w-full text-[10px] bg-blue-600 hover:bg-blue-700"
+                    onClick={onPaste}
+                    title="Paste here"
+                >
+                    <ClipboardPaste className="w-3 h-3 mr-1" /> Paste Here
+                </Button>
+            )}
+        </div>
     </div>
   )
 }
