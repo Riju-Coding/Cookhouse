@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
-import { Trash2, ChevronDown, ChevronRight, Building2, Calendar, Settings } from 'lucide-react'
+import { Trash2, ChevronDown, ChevronRight, Building2, Calendar, Settings, Search } from 'lucide-react'
 import {
   companiesService,
   buildingsService,
@@ -61,6 +61,10 @@ export default function StructureAssignmentPage() {
   const [selectedBuilding, setSelectedBuilding] = useState<string>("")
   const [weekStructure, setWeekStructure] = useState<DayStructure>({})
   const [expandedDays, setExpandedDays] = useState<Record<string, boolean>>({})
+  
+  // Search states
+  const [companySearch, setCompanySearch] = useState("")
+  const [buildingSearch, setBuildingSearch] = useState("")
 
   useEffect(() => {
     loadData()
@@ -76,8 +80,18 @@ export default function StructureAssignmentPage() {
         subServicesService.getAll(),
       ])
 
-      setCompanies(companiesData.filter((c) => c.status === "active"))
-      setBuildings(buildingsData.filter((b) => b.status === "active"))
+      // Sort companies alphabetically by name
+      const sortedCompanies = companiesData
+        .filter((c) => c.status === "active")
+        .sort((a, b) => a.name.localeCompare(b.name))
+      
+      // Sort buildings alphabetically by name
+      const sortedBuildings = buildingsData
+        .filter((b) => b.status === "active")
+        .sort((a, b) => a.name.localeCompare(b.name))
+
+      setCompanies(sortedCompanies)
+      setBuildings(sortedBuildings)
       setServices(servicesData.filter((s) => s.status === "active"))
       setSubServices(subServicesData.filter((s) => s.status === "active"))
     } catch (error) {
@@ -248,7 +262,6 @@ export default function StructureAssignmentPage() {
     return subServices.find((sub) => sub.id === subServiceId)?.name || "Unknown Sub Service"
   }
 
-  // <-- FIXED: use dayKey instead of undefined `day` variable -->
   const getAvailableServices = (dayKey: string) => {
     const usedServiceIds = weekStructure[dayKey]?.map((s) => s.serviceId) || []
     return services.filter((service) => !usedServiceIds.includes(service.id))
@@ -264,7 +277,27 @@ export default function StructureAssignmentPage() {
 
   const getCompanyBuildings = () => {
     if (!selectedCompany) return []
-    return buildings.filter((building) => building.companyId === selectedCompany)
+    return buildings
+      .filter((building) => building.companyId === selectedCompany)
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }
+
+  // Filter companies based on search term
+  const getFilteredCompanies = () => {
+    if (!companySearch) return companies
+    return companies.filter(company => 
+      company.name.toLowerCase().includes(companySearch.toLowerCase())
+    )
+  }
+
+  // Filter buildings based on search term
+  const getFilteredBuildings = () => {
+    const companyBuildings = getCompanyBuildings()
+    if (!buildingSearch) return companyBuildings
+    return companyBuildings.filter(building => 
+      building.name.toLowerCase().includes(buildingSearch.toLowerCase()) ||
+      (building.address && building.address.toLowerCase().includes(buildingSearch.toLowerCase()))
+    )
   }
 
   const handleSaveStructure = async () => {
@@ -407,32 +440,81 @@ export default function StructureAssignmentPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="company">Company</Label>
-              <Select value={selectedCompany} onValueChange={setSelectedCompany}>
+              <Select 
+                value={selectedCompany} 
+                onValueChange={(value) => {
+                  setSelectedCompany(value)
+                  setCompanySearch("") // Clear search when company is selected
+                }}
+              >
                 <SelectTrigger>
                   <SelectValue placeholder="Select a company" />
                 </SelectTrigger>
-                <SelectContent>
-                  {companies.map((company) => (
+                <SelectContent className="max-h-[300px]">
+                  <div className="sticky top-0 z-10 bg-background p-2 border-b">
+                    <div className="relative">
+                      <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        placeholder="Search companies..."
+                        className="pl-8"
+                        value={companySearch}
+                        onChange={(e) => setCompanySearch(e.target.value)}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onKeyDown={(e) => e.stopPropagation()}
+                      />
+                    </div>
+                  </div>
+                  {getFilteredCompanies().map((company) => (
                     <SelectItem key={company.id} value={company.id}>
                       {company.name}
                     </SelectItem>
                   ))}
+                  {getFilteredCompanies().length === 0 && (
+                    <div className="py-6 text-center text-sm text-muted-foreground">
+                      No companies found
+                    </div>
+                  )}
                 </SelectContent>
               </Select>
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="building">Building</Label>
-              <Select value={selectedBuilding} onValueChange={setSelectedBuilding} disabled={!selectedCompany}>
+              <Select 
+                value={selectedBuilding} 
+                onValueChange={(value) => {
+                  setSelectedBuilding(value)
+                  setBuildingSearch("") // Clear search when building is selected
+                }} 
+                disabled={!selectedCompany}
+              >
                 <SelectTrigger>
                   <SelectValue placeholder="Select a building" />
                 </SelectTrigger>
-                <SelectContent>
-                  {getCompanyBuildings().map((building) => (
+                <SelectContent className="max-h-[300px]">
+                  <div className="sticky top-0 z-10 bg-background p-2 border-b">
+                    <div className="relative">
+                      <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        placeholder="Search buildings..."
+                        className="pl-8"
+                        value={buildingSearch}
+                        onChange={(e) => setBuildingSearch(e.target.value)}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onKeyDown={(e) => e.stopPropagation()}
+                      />
+                    </div>
+                  </div>
+                  {getFilteredBuildings().map((building) => (
                     <SelectItem key={building.id} value={building.id}>
                       {building.name} {building.address && `- ${building.address}`}
                     </SelectItem>
                   ))}
+                  {getFilteredBuildings().length === 0 && (
+                    <div className="py-6 text-center text-sm text-muted-foreground">
+                      {buildingSearch ? "No buildings found" : "No buildings available"}
+                    </div>
+                  )}
                 </SelectContent>
               </Select>
             </div>
