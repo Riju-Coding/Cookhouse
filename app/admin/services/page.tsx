@@ -25,11 +25,7 @@ export default function ServicesPage() {
       setServices(sortedData)
     } catch (error) {
       console.error("Error loading services:", error)
-      toast({
-        title: "Error",
-        description: "Failed to load services",
-        variant: "destructive",
-      })
+      toast({ title: "Error", description: "Failed to load services", variant: "destructive" })
     } finally {
       setLoading(false)
     }
@@ -39,15 +35,13 @@ export default function ServicesPage() {
     loadServices()
   }, [])
 
+  // Reordering logic...
   const handleDragStart = (e: React.DragEvent, service: Service) => {
     setDraggedItem(service)
     e.dataTransfer.effectAllowed = "move"
   }
 
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault()
-    e.dataTransfer.dropEffect = "move"
-  }
+  const handleDragOver = (e: React.DragEvent) => { e.preventDefault() }
 
   const handleDrop = async (e: React.DragEvent, targetService: Service) => {
     e.preventDefault()
@@ -76,10 +70,9 @@ export default function ServicesPage() {
         servicesService.update(s.id, { order: s.order })
       )
       await Promise.all(updatePromises)
-      toast({ title: "Success", description: "Service order updated successfully." })
+      toast({ title: "Success", description: "Order updated." })
     } catch (error) {
-      console.error("Error reordering services:", error)
-      toast({ title: "Error", description: "Failed to reorder services.", variant: "destructive" })
+      toast({ title: "Error", description: "Failed to reorder.", variant: "destructive" })
       await loadServices()
     } finally {
       setReorderingId(null)
@@ -92,18 +85,19 @@ export default function ServicesPage() {
     )
 
     if (existingService) {
-      toast({
-        title: "Duplicate Service",
-        description: `A service named "${data.name}" already exists.`,
-        variant: "destructive",
-      })
+      toast({ title: "Duplicate Service", description: "Name already exists.", variant: "destructive" })
       return
     }
 
     setIsAdding(true)
     try {
-      // data will now include the 'color' field from the form
-      await servicesService.add(data)
+      // FIX: Ensure color has a fallback hex code if the form returns it empty
+      const finalData = {
+        ...data,
+        color: data.color && data.color !== "" ? data.color : "#3b82f6",
+      }
+      
+      await servicesService.add(finalData)
       await loadServices()
       toast({ title: "Success", description: "Service added successfully" })
     } catch (error) {
@@ -115,19 +109,16 @@ export default function ServicesPage() {
   }
 
   const handleEdit = async (id: string, data: Partial<Omit<Service, "id" | "createdAt">>) => {
-    if (data.name) {
-      const existingService = services.find(
-        (service) => service.id !== id && service.name.toLowerCase().trim() === data.name?.toLowerCase().trim()
-      )
-      if (existingService) {
-        toast({ title: "Duplicate Service", description: "Name already exists.", variant: "destructive" })
-        return
-      }
-    }
-
     setIsEditing(true)
     try {
-      await servicesService.update(id, data)
+      // FIX: Ensure we aren't sending an empty color string to the database
+      const finalUpdateData = { ...data }
+      if (finalUpdateData.color === "") {
+        delete finalUpdateData.color // Don't overwrite with blank, or set a default:
+        // finalUpdateData.color = "#3b82f6" 
+      }
+
+      await servicesService.update(id, finalUpdateData)
       await loadServices()
       toast({ title: "Success", description: "Service updated successfully" })
     } catch (error) {
@@ -164,22 +155,17 @@ export default function ServicesPage() {
     try {
       await Promise.all(ids.map((id) => servicesService.delete(id)))
       await loadServices()
-      toast({ title: "Success", description: `${ids.length} services deleted.` })
+      toast({ title: "Success", description: "Services deleted." })
     } catch (error) {
-      toast({ title: "Error", description: "Failed to delete services.", variant: "destructive" })
+      toast({ title: "Error", description: "Failed to bulk delete.", variant: "destructive" })
     } finally {
-      setDeletingIds((prev) => {
-        const newSet = new Set(prev)
-        ids.forEach((id) => newSet.delete(id))
-        return newSet
-      })
+      setDeletingIds(new Set())
     }
   }
 
   const columns = [
     { key: "order", label: "Order" },
     { key: "name", label: "Name" },
-    // Added Color Column to the table
     { 
       key: "color", 
       label: "Color",
@@ -187,9 +173,9 @@ export default function ServicesPage() {
         <div className="flex items-center gap-2">
           <div 
             className="w-4 h-4 rounded-full border border-gray-200" 
-            style={{ backgroundColor: value || '#e2e8f0' }} 
+            style={{ backgroundColor: value || '#cbd5e1' }} 
           />
-          <span className="text-xs font-mono">{value || 'N/A'}</span>
+          <span className="text-xs font-mono">{value || '#cbd5e1'}</span>
         </div>
       )
     },
@@ -203,7 +189,7 @@ export default function ServicesPage() {
       label: "Display Order", 
       type: "number" as const, 
       required: true,
-      placeholder: "e.g., 1, 2, 3..."
+      placeholder: "e.g., 1"
     },
     {
       name: "name",
@@ -211,13 +197,12 @@ export default function ServicesPage() {
       type: "text" as const,
       required: true,
     },
-    // ADDED COLOR PICKER FIELD HERE
     {
       name: "color",
       label: "Service Theme Color",
-      type: "color" as const,
-      required: false,
-      defaultValue: "#3b82f6" // Default blue
+      type: "color" as const, // This triggers the color picker
+      required: true,
+      defaultValue: "#3b82f6" 
     },
     {
       name: "description",
@@ -236,26 +221,13 @@ export default function ServicesPage() {
     },
   ]
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900 mx-auto"></div>
-      </div>
-    )
-  }
+  if (loading) return <div className="p-10 text-center"><Loader2 className="animate-spin mx-auto" /></div>
 
   return (
     <div className="p-6 space-y-6">
-      <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-        <p className="text-sm text-blue-800">
-          <strong>Tip:</strong> Drag and drop services to reorder. The <strong>Color</strong> field defines the visual theme for this service across the app.
-        </p>
-      </div>
-
+      {/* Drag & Drop Preview */}
       <Card>
-        <CardHeader>
-          <CardTitle>Services Order (Drag to Reorder)</CardTitle>
-        </CardHeader>
+        <CardHeader><CardTitle>Services Order</CardTitle></CardHeader>
         <CardContent>
           <div className="space-y-2">
             {services.map((service) => (
@@ -265,49 +237,21 @@ export default function ServicesPage() {
                 onDragStart={(e) => handleDragStart(e, service)}
                 onDragOver={handleDragOver}
                 onDrop={(e) => handleDrop(e, service)}
-                className={`
-                  flex items-center gap-3 p-4 bg-white border rounded-lg
-                  transition-all duration-200 relative overflow-hidden
-                  ${!reorderingId ? 'cursor-move hover:shadow-md hover:border-blue-300' : 'cursor-not-allowed'}
-                  ${draggedItem?.id === service.id ? 'opacity-50 scale-95' : ''}
-                  ${reorderingId === service.id ? 'border-blue-500 bg-blue-50' : ''}
-                `}
+                className="flex items-center gap-3 p-4 bg-white border rounded-lg relative overflow-hidden"
               >
-                {/* Visual color indicator strip on the left */}
                 <div 
                   className="absolute left-0 top-0 bottom-0 w-1.5" 
                   style={{ backgroundColor: service.color || '#cbd5e1' }}
                 />
-
-                {reorderingId === service.id ? (
-                  <Loader2 className="h-5 w-5 text-blue-500 animate-spin" />
-                ) : (
-                  <GripVertical className="h-5 w-5 text-gray-400" />
-                )}
-                
-                <div className="flex items-center gap-3 flex-1">
-                  <Badge variant="secondary" className="font-mono">
-                    #{service.order}
-                  </Badge>
-                  
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2">
-                      <h3 className="font-semibold text-gray-900">{service.name}</h3>
-                      {/* Circle indicator for color */}
-                      <div 
-                        className="w-3 h-3 rounded-full border border-gray-200" 
-                        style={{ backgroundColor: service.color || '#cbd5e1' }}
-                      />
-                    </div>
-                    {service.description && (
-                      <p className="text-sm text-gray-600 line-clamp-1">{service.description}</p>
-                    )}
+                <GripVertical className="h-5 w-5 text-gray-400" />
+                <Badge variant="secondary">#{service.order}</Badge>
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold">{service.name}</span>
+                    <div className="w-3 h-3 rounded-full" style={{ backgroundColor: service.color }} />
                   </div>
-                  
-                  <Badge variant={service.status === 'active' ? 'default' : 'outline'}>
-                    {service.status}
-                  </Badge>
                 </div>
+                <Badge>{service.status}</Badge>
               </div>
             ))}
           </div>
