@@ -718,7 +718,12 @@ const ServiceTable = memo(function ServiceTable({
               {mealPlanStructure.map(({ mealPlan, subMealPlans }) =>
                 subMealPlans.map((subMealPlan, idx) => (
                   <tr key={`${mealPlan.id}-${subMealPlan.id}`}>
-                    <td className="border bg-gray-50 p-2 sticky left-0 z-10">
+                    <td className="border bg-gray-50 p-2 sticky left-0 z-10 relative overflow-hidden">
+                      {/* COLOR STRIP ASSIGNED TO SERVICE */}
+                      <div 
+                        className="absolute left-0 top-0 bottom-0 w-1.5" 
+                        style={{ backgroundColor: service.color || '#cbd5e1' }}
+                      />
                       {idx === 0 && <div className="font-semibold text-blue-700">{mealPlan.name}</div>}
                       <div className="text-sm text-gray-700 ml-3">↳ {subMealPlan.name}</div>
                     </td>

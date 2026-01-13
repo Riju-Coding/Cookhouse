@@ -9,6 +9,7 @@ export interface MenuItem {
 export interface Service {
   id: string
   name: string
+  color?: string
   status?: string
   order?: number
 }
