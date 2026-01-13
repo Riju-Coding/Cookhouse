@@ -1875,8 +1875,8 @@ export default function CombinedMenuCreationPage() {
 
       {showModal && (
         <>
-          <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-lg w-full h-full flex flex-col max-h-[90vh] relative">
+          <div className="fixed inset-0 z-[9999] w-screen h-screen bg-black/50 flex items-center justify-center ">
+            <div className="bg-white w-screen h-screen flex flex-col relative overflow-hidden">
               <div className="flex items-center justify-between p-4 border-b bg-gradient-to-r from-white to-blue-50">
                 <div>
                   <h2 className="text-xl font-bold">Combined Menu Grid</h2>
