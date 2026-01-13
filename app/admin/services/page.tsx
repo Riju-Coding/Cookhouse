@@ -21,7 +21,6 @@ export default function ServicesPage() {
     try {
       setLoading(true)
       const data = await servicesService.getAll()
-      // Sort by order
       const sortedData = data.sort((a, b) => (a.order || 999) - (b.order || 999))
       setServices(sortedData)
     } catch (error) {
@@ -52,57 +51,35 @@ export default function ServicesPage() {
 
   const handleDrop = async (e: React.DragEvent, targetService: Service) => {
     e.preventDefault()
-    
     if (!draggedItem || draggedItem.id === targetService.id) {
       setDraggedItem(null)
       return
     }
 
-    // Show loader on the dragged item
     setReorderingId(draggedItem.id)
-
     const draggedIndex = services.findIndex(s => s.id === draggedItem.id)
     const targetIndex = services.findIndex(s => s.id === targetService.id)
-
-    // Create new array with updated positions
     const newServices = [...services]
-    
-    // Remove dragged item from its current position
     const [removed] = newServices.splice(draggedIndex, 1)
-    
-    // Insert at new position
     newServices.splice(targetIndex, 0, removed)
 
-    // Assign new order values based on array position
     const reorderedServices = newServices.map((s, index) => ({
       ...s,
       order: index + 1
     }))
 
-    // Update local state immediately for fast UI response
     setServices(reorderedServices)
     setDraggedItem(null)
 
     try {
-      // Update all items with their new order in the database
       const updatePromises = reorderedServices.map((s) => 
         servicesService.update(s.id, { order: s.order })
       )
-
       await Promise.all(updatePromises)
-
-      toast({
-        title: "Success",
-        description: "Service order updated successfully.",
-      })
+      toast({ title: "Success", description: "Service order updated successfully." })
     } catch (error) {
       console.error("Error reordering services:", error)
-      toast({
-        title: "Error",
-        description: "Failed to reorder services. Reverting changes.",
-        variant: "destructive",
-      })
-      // Revert to original state on error
+      toast({ title: "Error", description: "Failed to reorder services.", variant: "destructive" })
       await loadServices()
     } finally {
       setReorderingId(null)
@@ -110,7 +87,6 @@ export default function ServicesPage() {
   }
 
   const handleAdd = async (data: Omit<Service, "id" | "createdAt" | "updatedAt">) => {
-    // Check if service with same name already exists
     const existingService = services.find(
       (service) => service.name.toLowerCase().trim() === data.name.toLowerCase().trim()
     )
@@ -118,75 +94,33 @@ export default function ServicesPage() {
     if (existingService) {
       toast({
         title: "Duplicate Service",
-        description: `A service named "${data.name}" already exists. Please use a different name.`,
+        description: `A service named "${data.name}" already exists.`,
         variant: "destructive",
       })
       return
     }
 
-    // Check if order is already used
-    if (data.order) {
-      const existingOrder = services.find((service) => service.order === data.order)
-      if (existingOrder) {
-        toast({
-          title: "Duplicate Order",
-          description: `Order ${data.order} is already used by "${existingOrder.name}". Please choose a different order.`,
-          variant: "destructive",
-        })
-        return
-      }
-    }
-
     setIsAdding(true)
     try {
+      // data will now include the 'color' field from the form
       await servicesService.add(data)
       await loadServices()
-      toast({
-        title: "Success",
-        description: "Service added successfully",
-      })
+      toast({ title: "Success", description: "Service added successfully" })
     } catch (error) {
       console.error("Error adding service:", error)
-      toast({
-        title: "Error",
-        description: "Failed to add service",
-        variant: "destructive",
-      })
+      toast({ title: "Error", description: "Failed to add service", variant: "destructive" })
     } finally {
       setIsAdding(false)
     }
   }
 
   const handleEdit = async (id: string, data: Partial<Omit<Service, "id" | "createdAt">>) => {
-    // Check if updating name to an existing name (excluding current item)
     if (data.name) {
       const existingService = services.find(
-        (service) => 
-          service.id !== id && 
-          service.name.toLowerCase().trim() === data.name?.toLowerCase().trim()
+        (service) => service.id !== id && service.name.toLowerCase().trim() === data.name?.toLowerCase().trim()
       )
-
       if (existingService) {
-        toast({
-          title: "Duplicate Service",
-          description: `A service named "${data.name}" already exists. Please use a different name.`,
-          variant: "destructive",
-        })
-        return
-      }
-    }
-
-    // Check if order is already used (excluding current item)
-    if (data.order !== undefined) {
-      const existingOrder = services.find(
-        (service) => service.id !== id && service.order === data.order
-      )
-      if (existingOrder) {
-        toast({
-          title: "Duplicate Order",
-          description: `Order ${data.order} is already used by "${existingOrder.name}". Please choose a different order.`,
-          variant: "destructive",
-        })
+        toast({ title: "Duplicate Service", description: "Name already exists.", variant: "destructive" })
         return
       }
     }
@@ -195,17 +129,10 @@ export default function ServicesPage() {
     try {
       await servicesService.update(id, data)
       await loadServices()
-      toast({
-        title: "Success",
-        description: "Service updated successfully",
-      })
+      toast({ title: "Success", description: "Service updated successfully" })
     } catch (error) {
       console.error("Error updating service:", error)
-      toast({
-        title: "Error",
-        description: "Failed to update service",
-        variant: "destructive",
-      })
+      toast({ title: "Error", description: "Failed to update service", variant: "destructive" })
     } finally {
       setIsEditing(false)
     }
@@ -216,17 +143,9 @@ export default function ServicesPage() {
     try {
       await servicesService.delete(id)
       await loadServices()
-      toast({
-        title: "Success",
-        description: "Service deleted successfully",
-      })
+      toast({ title: "Success", description: "Service deleted successfully" })
     } catch (error) {
-      console.error("Error deleting service:", error)
-      toast({
-        title: "Error",
-        description: "Failed to delete service",
-        variant: "destructive",
-      })
+      toast({ title: "Error", description: "Failed to delete service", variant: "destructive" })
     } finally {
       setDeletingIds((prev) => {
         const newSet = new Set(prev)
@@ -242,22 +161,12 @@ export default function ServicesPage() {
       ids.forEach((id) => newSet.add(id))
       return newSet
     })
-
     try {
-      // Delete all selected services
       await Promise.all(ids.map((id) => servicesService.delete(id)))
       await loadServices()
-      toast({
-        title: "Success",
-        description: `${ids.length} service${ids.length > 1 ? 's' : ''} deleted successfully.`,
-      })
+      toast({ title: "Success", description: `${ids.length} services deleted.` })
     } catch (error) {
-      console.error("Error bulk deleting services:", error)
-      toast({
-        title: "Error",
-        description: "Failed to delete selected services. Please try again.",
-        variant: "destructive",
-      })
+      toast({ title: "Error", description: "Failed to delete services.", variant: "destructive" })
     } finally {
       setDeletingIds((prev) => {
         const newSet = new Set(prev)
@@ -270,6 +179,20 @@ export default function ServicesPage() {
   const columns = [
     { key: "order", label: "Order" },
     { key: "name", label: "Name" },
+    // Added Color Column to the table
+    { 
+      key: "color", 
+      label: "Color",
+      render: (value: string) => (
+        <div className="flex items-center gap-2">
+          <div 
+            className="w-4 h-4 rounded-full border border-gray-200" 
+            style={{ backgroundColor: value || '#e2e8f0' }} 
+          />
+          <span className="text-xs font-mono">{value || 'N/A'}</span>
+        </div>
+      )
+    },
     { key: "description", label: "Description" },
     { key: "status", label: "Status" },
   ]
@@ -287,6 +210,14 @@ export default function ServicesPage() {
       label: "Name",
       type: "text" as const,
       required: true,
+    },
+    // ADDED COLOR PICKER FIELD HERE
+    {
+      name: "color",
+      label: "Service Theme Color",
+      type: "color" as const,
+      required: false,
+      defaultValue: "#3b82f6" // Default blue
     },
     {
       name: "description",
@@ -308,10 +239,7 @@ export default function ServicesPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading services...</p>
-        </div>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900 mx-auto"></div>
       </div>
     )
   }
@@ -320,12 +248,10 @@ export default function ServicesPage() {
     <div className="p-6 space-y-6">
       <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
         <p className="text-sm text-blue-800">
-          <strong>Tip:</strong> Drag and drop services using the grip icon to reorder them. 
-          The order determines the display sequence in the application.
+          <strong>Tip:</strong> Drag and drop services to reorder. The <strong>Color</strong> field defines the visual theme for this service across the app.
         </p>
       </div>
 
-      {/* Drag and Drop Visual Order */}
       <Card>
         <CardHeader>
           <CardTitle>Services Order (Drag to Reorder)</CardTitle>
@@ -341,12 +267,18 @@ export default function ServicesPage() {
                 onDrop={(e) => handleDrop(e, service)}
                 className={`
                   flex items-center gap-3 p-4 bg-white border rounded-lg
-                  transition-all duration-200
+                  transition-all duration-200 relative overflow-hidden
                   ${!reorderingId ? 'cursor-move hover:shadow-md hover:border-blue-300' : 'cursor-not-allowed'}
                   ${draggedItem?.id === service.id ? 'opacity-50 scale-95' : ''}
                   ${reorderingId === service.id ? 'border-blue-500 bg-blue-50' : ''}
                 `}
               >
+                {/* Visual color indicator strip on the left */}
+                <div 
+                  className="absolute left-0 top-0 bottom-0 w-1.5" 
+                  style={{ backgroundColor: service.color || '#cbd5e1' }}
+                />
+
                 {reorderingId === service.id ? (
                   <Loader2 className="h-5 w-5 text-blue-500 animate-spin" />
                 ) : (
@@ -359,7 +291,14 @@ export default function ServicesPage() {
                   </Badge>
                   
                   <div className="flex-1">
-                    <h3 className="font-semibold text-gray-900">{service.name}</h3>
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-semibold text-gray-900">{service.name}</h3>
+                      {/* Circle indicator for color */}
+                      <div 
+                        className="w-3 h-3 rounded-full border border-gray-200" 
+                        style={{ backgroundColor: service.color || '#cbd5e1' }}
+                      />
+                    </div>
                     {service.description && (
                       <p className="text-sm text-gray-600 line-clamp-1">{service.description}</p>
                     )}
@@ -369,19 +308,12 @@ export default function ServicesPage() {
                     {service.status}
                   </Badge>
                 </div>
-
-                {reorderingId === service.id && (
-                  <span className="text-xs text-blue-600 font-medium">
-                    Saving...
-                  </span>
-                )}
               </div>
             ))}
           </div>
         </CardContent>
       </Card>
       
-      {/* Original CRUD Table */}
       <CrudTable
         title="Manage Services"
         data={services}
