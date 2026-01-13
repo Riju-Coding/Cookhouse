@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area"
 import { Badge } from "@/components/ui/badge"
-import { ChevronDown, Building2, Save, Loader2, Maximize2, X, AlertCircle, Check, Copy, ClipboardPaste, RotateCcw, ArrowRight } from 'lucide-react'
+import { ChevronDown, Building2, Save, Loader2, Maximize2, X, AlertCircle, Check, Copy, ClipboardPaste, RotateCcw, Search } from 'lucide-react'
 import { toast } from "@/hooks/use-toast"
 import {
   companiesService,
@@ -31,6 +31,7 @@ import {
 } from "@/lib/services"
 import { collection, addDoc, updateDoc, doc, getDocs, query, where } from "firebase/firestore"
 import { db } from "@/lib/firebase"
+import { Input } from "@/components/ui/input"
 
 // --- Types ---
 
@@ -83,6 +84,10 @@ export default function MealPlanStructurePage() {
   const [selectedCompany, setSelectedCompany] = useState<string>("")
   const [selectedBuilding, setSelectedBuilding] = useState<string>("")
   
+  // Search states for dropdowns
+  const [companySearch, setCompanySearch] = useState("")
+  const [buildingSearch, setBuildingSearch] = useState("")
+  
   const [baseStructure, setBaseStructure] = useState<Record<string, BaseService[]>>({})
   const [weeklyStructure, setWeeklyStructure] = useState<WeeklyStructure>({})
   
@@ -111,11 +116,28 @@ export default function MealPlanStructurePage() {
           subMealPlansService.getAll(),
         ])
 
-        setCompanies(companiesData.filter((c) => !c.status || c.status === "active"))
+        // Sort companies alphabetically
+        const sortedCompanies = companiesData
+          .filter((c) => !c.status || c.status === "active")
+          .sort((a, b) => (a.name || "").localeCompare(b.name || ""))
+        
+        setCompanies(sortedCompanies)
         setServices(servicesData.filter((s) => !s.status || s.status === "active"))
         setSubServices(subServicesData.filter((s) => !s.status || s.status === "active"))
-        setMealPlans(mealPlansData.filter((mp) => !mp.status || mp.status === "active"))
-        setSubMealPlans(subMealPlansData.filter((smp) => !smp.status || smp.status === "active"))
+        
+        // Sort meal plans alphabetically
+        const sortedMealPlans = mealPlansData
+          .filter((mp) => !mp.status || mp.status === "active")
+          .sort((a, b) => (a.name || "").localeCompare(b.name || ""))
+        
+        setMealPlans(sortedMealPlans)
+        
+        // Sort sub meal plans alphabetically
+        const sortedSubMealPlans = subMealPlansData
+          .filter((smp) => !smp.status || smp.status === "active")
+          .sort((a, b) => (a.name || "").localeCompare(b.name || ""))
+        
+        setSubMealPlans(sortedSubMealPlans)
 
       } catch (error) {
         console.error("Error fetching data:", error)
@@ -133,7 +155,12 @@ export default function MealPlanStructurePage() {
       if (selectedCompany) {
         try {
           const buildingsData = await buildingsService.getAll()
-          setBuildings(buildingsData.filter((b) => b.companyId === selectedCompany && (!b.status || b.status === "active")))
+          // Sort buildings alphabetically
+          const sortedBuildings = buildingsData
+            .filter((b) => b.companyId === selectedCompany && (!b.status || b.status === "active"))
+            .sort((a, b) => (a.name || "").localeCompare(b.name || ""))
+          
+          setBuildings(sortedBuildings)
         } catch (error) {
           console.error("Error fetching buildings:", error)
         }
@@ -213,7 +240,6 @@ export default function MealPlanStructurePage() {
     }))
   }, [baseStructure, services, subServices])
 
-
   const updateMealPlansForSubService = (
     day: string,
     serviceId: string,
@@ -260,6 +286,23 @@ export default function MealPlanStructurePage() {
       updateMealPlansForSubService(day, serviceId, subServiceId, clipboard)
       toast({ title: "Pasted!", duration: 1000 })
     }
+  }
+
+  // Filter companies based on search term
+  const getFilteredCompanies = () => {
+    if (!companySearch) return companies
+    return companies.filter(company => 
+      (company.name || "").toLowerCase().includes(companySearch.toLowerCase())
+    )
+  }
+
+  // Filter buildings based on search term
+  const getFilteredBuildings = () => {
+    if (!buildingSearch) return buildings
+    return buildings.filter(building => 
+      (building.name || "").toLowerCase().includes(buildingSearch.toLowerCase()) ||
+      (building.address && building.address.toLowerCase().includes(buildingSearch.toLowerCase()))
+    )
   }
 
   // --- Save Logic (Current Building) ---
@@ -418,22 +461,66 @@ export default function MealPlanStructurePage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label>Company</Label>
-              <Select value={selectedCompany} onValueChange={(val) => {
-                setSelectedCompany(val)
-                setSelectedBuilding("") // Reset building when company changes
-              }}>
+              <Select value={selectedCompany} onValueChange={setSelectedCompany}>
                 <SelectTrigger><SelectValue placeholder="Select Company" /></SelectTrigger>
-                <SelectContent>
-                  {companies.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                <SelectContent className="max-h-[300px]">
+                  <div className="sticky top-0 z-10 bg-background p-2 border-b">
+                    <div className="relative">
+                      <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        placeholder="Search companies..."
+                        className="pl-8"
+                        value={companySearch}
+                        onChange={(e) => setCompanySearch(e.target.value)}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onKeyDown={(e) => e.stopPropagation()}
+                      />
+                    </div>
+                  </div>
+                  {getFilteredCompanies().map(c => (
+                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                  ))}
+                  {getFilteredCompanies().length === 0 && (
+                    <div className="py-6 text-center text-sm text-muted-foreground">
+                      No companies found
+                    </div>
+                  )}
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
               <Label>Building</Label>
-              <Select value={selectedBuilding} onValueChange={setSelectedBuilding} disabled={!selectedCompany}>
+              <Select 
+                value={selectedBuilding} 
+                onValueChange={(value) => {
+                  setSelectedBuilding(value)
+                  setBuildingSearch("") // Clear search when building is selected
+                }} 
+                disabled={!selectedCompany}
+              >
                 <SelectTrigger><SelectValue placeholder="Select Building" /></SelectTrigger>
-                <SelectContent>
-                  {buildings.map(b => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
+                <SelectContent className="max-h-[300px]">
+                  <div className="sticky top-0 z-10 bg-background p-2 border-b">
+                    <div className="relative">
+                      <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        placeholder="Search buildings..."
+                        className="pl-8"
+                        value={buildingSearch}
+                        onChange={(e) => setBuildingSearch(e.target.value)}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onKeyDown={(e) => e.stopPropagation()}
+                      />
+                    </div>
+                  </div>
+                  {getFilteredBuildings().map(b => (
+                    <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
+                  ))}
+                  {getFilteredBuildings().length === 0 && (
+                    <div className="py-6 text-center text-sm text-muted-foreground">
+                      {buildingSearch ? "No buildings found" : "No buildings available"}
+                    </div>
+                  )}
                 </SelectContent>
               </Select>
             </div>
@@ -698,7 +785,7 @@ export default function MealPlanStructurePage() {
   )
 }
 
-// --- SELECTOR COMPONENT ---
+// --- SELECTOR COMPONENT (Now with Copy/Paste) ---
 interface MealPlanSelectorProps {
   availableMealPlans: MealPlan[]
   availableSubMealPlans: SubMealPlan[]
@@ -719,6 +806,31 @@ function MealPlanSelector({
   onPaste
 }: MealPlanSelectorProps) {
   const [isOpen, setIsOpen] = useState(false)
+  const [searchQuery, setSearchQuery] = useState("")
+
+  // Sort meal plans alphabetically
+  const sortedMealPlans = useMemo(() => {
+    return [...availableMealPlans].sort((a, b) => 
+      (a.name || "").localeCompare(b.name || "")
+    )
+  }, [availableMealPlans])
+
+  // Filter meal plans based on search query
+  const filteredMealPlans = useMemo(() => {
+    if (!searchQuery.trim()) return sortedMealPlans
+    
+    const query = searchQuery.toLowerCase().trim()
+    return sortedMealPlans.filter(mealPlan => {
+      // Search in meal plan name
+      if (mealPlan.name?.toLowerCase().includes(query)) return true
+      
+      // Search in sub meal plans for this meal plan
+      const subMeals = availableSubMealPlans.filter(sub => 
+        sub.mealPlanId === mealPlan.id && sub.name?.toLowerCase().includes(query)
+      )
+      return subMeals.length > 0
+    })
+  }, [sortedMealPlans, availableSubMealPlans, searchQuery])
 
   // --- Handlers ---
   const toggleMealPlan = (mealPlanId: string, checked: boolean) => {
@@ -761,7 +873,10 @@ function MealPlanSelector({
   
   return (
     <div className="flex flex-col gap-1.5 w-full group">
-        <Dialog open={isOpen} onOpenChange={setIsOpen}>
+        <Dialog open={isOpen} onOpenChange={(open) => {
+          setIsOpen(open)
+          if (!open) setSearchQuery("") // Clear search when dialog closes
+        }}>
         <DialogTrigger asChild>
             <Button 
             variant="outline" 
@@ -792,21 +907,47 @@ function MealPlanSelector({
             </DialogDescription>
             </DialogHeader>
 
+            {/* Search Bar */}
+            <div className="px-1">
+              <div className="relative">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-500" />
+                <Input
+                  type="search"
+                  placeholder="Search meal plans or sub-plans..."
+                  className="pl-9"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
+                {searchQuery && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="absolute right-1 top-1 h-6 w-6 p-0"
+                    onClick={() => setSearchQuery("")}
+                  >
+                    {/* <X className="h-3 w-3" /> */}
+                  </Button>
+                )}
+              </div>
+            </div>
+
             <div className="flex-1 overflow-hidden border rounded-md">
                 <ScrollArea className="h-[400px] p-4">
                 <div className="space-y-4">
-                    {availableMealPlans.length === 0 && (
+                    {filteredMealPlans.length === 0 && (
                         <div className="flex flex-col items-center justify-center py-6 text-center text-gray-500 gap-2">
                             <AlertCircle className="h-8 w-8 text-yellow-500" />
-                            <p className="text-sm font-medium">No Meal Plans Found</p>
-                            <p className="text-xs">Please check your Meal Plans configuration.</p>
+                            <p className="text-sm font-medium">No Matching Meal Plans Found</p>
+                            <p className="text-xs">Try a different search term.</p>
                         </div>
                     )}
 
-                    {availableMealPlans.map(mp => {
+                    {filteredMealPlans.map(mp => {
                     const isSelected = assignedMealPlans.some(a => a.mealPlanId === mp.id)
                     const currentAssignment = assignedMealPlans.find(a => a.mealPlanId === mp.id)
-                    const subMealsForPlan = availableSubMealPlans.filter(smp => smp.mealPlanId === mp.id)
+                    const subMealsForPlan = availableSubMealPlans
+                      .filter(smp => smp.mealPlanId === mp.id)
+                      .sort((a, b) => (a.name || "").localeCompare(b.name || ""))
 
                     return (
                         <div key={mp.id} className="space-y-1">

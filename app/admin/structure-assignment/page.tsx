@@ -7,7 +7,17 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
-import { Trash2, ChevronDown, ChevronRight, Building2, Calendar, Settings, Copy, CheckSquare, Square } from 'lucide-react'
+import { 
+  Trash2, 
+  ChevronDown, 
+  ChevronRight, 
+  Building2, 
+  Calendar, 
+  Copy, 
+  CheckSquare, 
+  Square, 
+  Search 
+} from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -19,7 +29,6 @@ import {
 } from "@/components/ui/dialog"
 import { Checkbox } from "@/components/ui/checkbox"
 import { ScrollArea } from "@/components/ui/scroll-area"
-
 import {
   companiesService,
   buildingsService,
@@ -71,6 +80,10 @@ export default function StructureAssignmentPage() {
   const [selectedBuilding, setSelectedBuilding] = useState<string>("")
   const [weekStructure, setWeekStructure] = useState<DayStructure>({})
   const [expandedDays, setExpandedDays] = useState<Record<string, boolean>>({})
+  
+  // Search states
+  const [companySearch, setCompanySearch] = useState("")
+  const [buildingSearch, setBuildingSearch] = useState("")
 
   // State for Bulk Copy
   const [isCopyDialogOpen, setIsCopyDialogOpen] = useState(false)
@@ -90,8 +103,16 @@ export default function StructureAssignmentPage() {
         subServicesService.getAll(),
       ])
 
-      setCompanies(companiesData.filter((c) => c.status === "active"))
-      setBuildings(buildingsData.filter((b) => b.status === "active"))
+      const sortedCompanies = companiesData
+        .filter((c) => c.status === "active")
+        .sort((a, b) => a.name.localeCompare(b.name))
+      
+      const sortedBuildings = buildingsData
+        .filter((b) => b.status === "active")
+        .sort((a, b) => a.name.localeCompare(b.name))
+
+      setCompanies(sortedCompanies)
+      setBuildings(sortedBuildings)
       setServices(servicesData.filter((s) => s.status === "active"))
       setSubServices(subServicesData.filter((s) => s.status === "active"))
     } catch (error) {
@@ -228,10 +249,27 @@ export default function StructureAssignmentPage() {
 
   const getCompanyBuildings = () => {
     if (!selectedCompany) return []
-    return buildings.filter((building) => building.companyId === selectedCompany)
+    return buildings
+      .filter((building) => building.companyId === selectedCompany)
+      .sort((a, b) => a.name.localeCompare(b.name))
   }
 
-  // Helper to format the UI state into the DB schema
+  const getFilteredCompanies = () => {
+    if (!companySearch) return companies
+    return companies.filter(company => 
+      company.name.toLowerCase().includes(companySearch.toLowerCase())
+    )
+  }
+
+  const getFilteredBuildings = () => {
+    const companyBuildings = getCompanyBuildings()
+    if (!buildingSearch) return companyBuildings
+    return companyBuildings.filter(building => 
+      building.name.toLowerCase().includes(buildingSearch.toLowerCase()) ||
+      (building.address && building.address.toLowerCase().includes(buildingSearch.toLowerCase()))
+    )
+  }
+
   const prepareStructureData = () => {
     const structureToSave: any = {}
     daysOfWeek.forEach((day) => {
@@ -296,7 +334,6 @@ export default function StructureAssignmentPage() {
       const structureToSave = prepareStructureData()
       const selectedCompanyData = companies.find((c) => c.id === selectedCompany)
 
-      // Use Promise.all to run operations in parallel
       await Promise.all(selectedTargetBuildings.map(async (targetBuildingId) => {
         const targetBuildingData = buildings.find((b) => b.id === targetBuildingId)
         
@@ -383,24 +420,89 @@ export default function StructureAssignmentPage() {
             Location
           </CardTitle>
         </CardHeader>
-        <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <Label>Company</Label>
-            <Select value={selectedCompany} onValueChange={setSelectedCompany}>
-              <SelectTrigger><SelectValue placeholder="Select company" /></SelectTrigger>
-              <SelectContent>
-                {companies.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <Label>Building</Label>
-            <Select value={selectedBuilding} onValueChange={setSelectedBuilding} disabled={!selectedCompany}>
-              <SelectTrigger><SelectValue placeholder="Select building" /></SelectTrigger>
-              <SelectContent>
-                {getCompanyBuildings().map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="company">Company</Label>
+              <Select 
+                value={selectedCompany} 
+                onValueChange={(value) => {
+                  setSelectedCompany(value)
+                  setSelectedBuilding("") // Reset building when company changes
+                  setCompanySearch("")
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a company" />
+                </SelectTrigger>
+                <SelectContent className="max-h-[300px]">
+                  <div className="sticky top-0 z-10 bg-background p-2 border-b">
+                    <div className="relative">
+                      <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        placeholder="Search companies..."
+                        className="pl-8"
+                        value={companySearch}
+                        onChange={(e) => setCompanySearch(e.target.value)}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onKeyDown={(e) => e.stopPropagation()}
+                      />
+                    </div>
+                  </div>
+                  {getFilteredCompanies().map((company) => (
+                    <SelectItem key={company.id} value={company.id}>
+                      {company.name}
+                    </SelectItem>
+                  ))}
+                  {getFilteredCompanies().length === 0 && (
+                    <div className="py-6 text-center text-sm text-muted-foreground">
+                      No companies found
+                    </div>
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="building">Building</Label>
+              <Select 
+                value={selectedBuilding} 
+                onValueChange={(value) => {
+                  setSelectedBuilding(value)
+                  setBuildingSearch("")
+                }} 
+                disabled={!selectedCompany}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a building" />
+                </SelectTrigger>
+                <SelectContent className="max-h-[300px]">
+                  <div className="sticky top-0 z-10 bg-background p-2 border-b">
+                    <div className="relative">
+                      <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        placeholder="Search buildings..."
+                        className="pl-8"
+                        value={buildingSearch}
+                        onChange={(e) => setBuildingSearch(e.target.value)}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onKeyDown={(e) => e.stopPropagation()}
+                      />
+                    </div>
+                  </div>
+                  {getFilteredBuildings().map((building) => (
+                    <SelectItem key={building.id} value={building.id}>
+                      {building.name} {building.address && `- ${building.address}`}
+                    </SelectItem>
+                  ))}
+                  {getFilteredBuildings().length === 0 && (
+                    <div className="py-6 text-center text-sm text-muted-foreground">
+                      {buildingSearch ? "No buildings found" : "No buildings available"}
+                    </div>
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -429,9 +531,13 @@ export default function StructureAssignmentPage() {
                       </Button>
                     )}
                     <Select onValueChange={(serviceId) => addServiceToDay(day.key, serviceId)}>
-                      <SelectTrigger className="w-40 h-8 text-xs"><SelectValue placeholder="Add Service" /></SelectTrigger>
+                      <SelectTrigger className="w-40 h-8 text-xs">
+                        <SelectValue placeholder="Add Service" />
+                      </SelectTrigger>
                       <SelectContent>
-                        {getAvailableServices(day.key).map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+                        {getAvailableServices(day.key).map((s) => (
+                          <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>
@@ -439,7 +545,9 @@ export default function StructureAssignmentPage() {
 
                 {expandedDays[day.key] && (
                   <div className="p-4 space-y-3">
-                    {weekStructure[day.key]?.length === 0 && <p className="text-sm text-gray-400 italic text-center py-2">No services assigned for this day</p>}
+                    {weekStructure[day.key]?.length === 0 && (
+                      <p className="text-sm text-gray-400 italic text-center py-2">No services assigned for this day</p>
+                    )}
                     {weekStructure[day.key]?.map((serviceAssignment, sIdx) => (
                       <div key={sIdx} className="border rounded-md p-3 bg-white shadow-sm">
                         <div className="flex items-center justify-between mb-3">
@@ -449,12 +557,18 @@ export default function StructureAssignmentPage() {
                           </button>
                           <div className="flex items-center gap-2">
                             <Select onValueChange={(subId) => addSubServiceToService(day.key, sIdx, subId)}>
-                              <SelectTrigger className="w-40 h-8 text-xs"><SelectValue placeholder="Add Sub-service" /></SelectTrigger>
+                              <SelectTrigger className="w-40 h-8 text-xs">
+                                <SelectValue placeholder="Add Sub-service" />
+                              </SelectTrigger>
                               <SelectContent>
-                                {getAvailableSubServices(day.key, sIdx).map((sub) => <SelectItem key={sub.id} value={sub.id}>{sub.name}</SelectItem>)}
+                                {getAvailableSubServices(day.key, sIdx).map((sub) => (
+                                  <SelectItem key={sub.id} value={sub.id}>{sub.name}</SelectItem>
+                                ))}
                               </SelectContent>
                             </Select>
-                            <Button variant="ghost" size="sm" onClick={() => removeServiceFromDay(day.key, sIdx)} className="text-destructive h-8 w-8 p-0"><Trash2 className="h-4 w-4" /></Button>
+                            <Button variant="ghost" size="sm" onClick={() => removeServiceFromDay(day.key, sIdx)} className="text-destructive h-8 w-8 p-0">
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
                           </div>
                         </div>
                         {serviceAssignment.expanded && (
@@ -464,9 +578,17 @@ export default function StructureAssignmentPage() {
                                 <span className="flex-1 text-sm">{getSubServiceName(sub.subServiceId)}</span>
                                 <div className="flex items-center gap-2">
                                   <Label className="text-xs text-gray-500">Rate ($)</Label>
-                                  <Input type="number" step="0.01" value={sub.rate} onChange={(e) => updateSubServiceRate(day.key, sIdx, subIdx, parseFloat(e.target.value) || 0)} className="w-24 h-8" />
+                                  <Input 
+                                    type="number" 
+                                    step="0.01" 
+                                    value={sub.rate} 
+                                    onChange={(e) => updateSubServiceRate(day.key, sIdx, subIdx, parseFloat(e.target.value) || 0)} 
+                                    className="w-24 h-8" 
+                                  />
                                 </div>
-                                <Button variant="ghost" size="sm" onClick={() => removeSubService(day.key, sIdx, subIdx)} className="h-8 w-8 p-0 text-gray-400 hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></Button>
+                                <Button variant="ghost" size="sm" onClick={() => removeSubService(day.key, sIdx, subIdx)} className="h-8 w-8 p-0 text-gray-400 hover:text-destructive">
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
                               </div>
                             ))}
                           </div>
@@ -490,7 +612,7 @@ export default function StructureAssignmentPage() {
                   <DialogHeader>
                     <DialogTitle>Copy Schedule Structure</DialogTitle>
                     <DialogDescription>
-                      This will apply the current weekly schedule to the selected buildings. Existing active structures for those buildings will be updated.
+                      This will apply the current weekly schedule to the selected buildings.
                     </DialogDescription>
                   </DialogHeader>
                   
@@ -526,7 +648,7 @@ export default function StructureAssignmentPage() {
                             </div>
                           ))}
                         {getCompanyBuildings().length <= 1 && (
-                          <div className="text-center py-8 text-gray-500 text-sm italic">No other buildings available for this company.</div>
+                          <div className="text-center py-8 text-gray-500 text-sm italic">No other buildings available.</div>
                         )}
                       </div>
                     </ScrollArea>
