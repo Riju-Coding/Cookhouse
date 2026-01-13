@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area"
 import { Badge } from "@/components/ui/badge"
-import { ChevronDown, Building2, Save, Loader2, Maximize2, X, AlertCircle, Check, Copy, ClipboardPaste, RotateCcw } from 'lucide-react'
+import { ChevronDown, Building2, Save, Loader2, Maximize2, X, AlertCircle, Check, Copy, ClipboardPaste, RotateCcw, ArrowRight } from 'lucide-react'
 import { toast } from "@/hooks/use-toast"
 import {
   companiesService,
@@ -29,7 +29,7 @@ import {
   type SubMealPlan,
   type MealPlanStructureAssignment,
 } from "@/lib/services"
-import { collection, addDoc, updateDoc, doc } from "firebase/firestore"
+import { collection, addDoc, updateDoc, doc, getDocs, query, where } from "firebase/firestore"
 import { db } from "@/lib/firebase"
 
 // --- Types ---
@@ -86,8 +86,13 @@ export default function MealPlanStructurePage() {
   const [baseStructure, setBaseStructure] = useState<Record<string, BaseService[]>>({})
   const [weeklyStructure, setWeeklyStructure] = useState<WeeklyStructure>({})
   
-  // --- NEW: Clipboard State ---
+  // --- Clipboard State ---
   const [clipboard, setClipboard] = useState<MealPlanStructureData[] | null>(null)
+
+  // --- Copy To Other Buildings State ---
+  const [isCopyModalOpen, setIsCopyModalOpen] = useState(false)
+  const [selectedTargetBuildings, setSelectedTargetBuildings] = useState<string[]>([])
+  const [copyLoading, setCopyLoading] = useState(false)
 
   const [loading, setLoading] = useState(false)
   const [isDataLoading, setIsDataLoading] = useState(true)
@@ -246,7 +251,6 @@ export default function MealPlanStructurePage() {
 
   // --- Clipboard Logic ---
   const handleCopy = (data: MealPlanStructureData[]) => {
-    // Deep copy to avoid reference issues
     setClipboard(JSON.parse(JSON.stringify(data)))
     toast({ title: "Copied!", description: "Select other cells to paste." })
   }
@@ -258,6 +262,7 @@ export default function MealPlanStructurePage() {
     }
   }
 
+  // --- Save Logic (Current Building) ---
   const handleSaveStructure = async () => {
     if (!selectedCompany || !selectedBuilding) return
 
@@ -317,13 +322,80 @@ export default function MealPlanStructurePage() {
       }
       toast({ title: "Success", description: "Structure saved successfully" })
       setIsModalOpen(false)
-      setClipboard(null) // Clear clipboard on save
+      setClipboard(null)
     } catch (error) {
       console.error("Error saving:", error)
       toast({ title: "Error", description: "Failed to save", variant: "destructive" })
     } finally {
       setLoading(false)
     }
+  }
+
+  // --- Copy To Other Buildings Logic ---
+  const handleCopyStructureToBuildings = async () => {
+    if (selectedTargetBuildings.length === 0) {
+      toast({ title: "No selection", description: "Please select at least one building.", variant: "destructive" })
+      return
+    }
+
+    setCopyLoading(true)
+    try {
+      const company = companies.find((c) => c.id === selectedCompany)
+      const allStructures = await mealPlanStructureAssignmentsService.getAll()
+
+      // Loop through selected target buildings
+      for (const targetBuildingId of selectedTargetBuildings) {
+        const targetBuilding = buildings.find(b => b.id === targetBuildingId)
+        
+        const structureData: Omit<MealPlanStructureAssignment, "id" | "createdAt" | "updatedAt"> = {
+            companyId: selectedCompany,
+            buildingId: targetBuildingId,
+            companyName: company?.name || "",
+            buildingName: targetBuilding?.name || "",
+            weekStructure: weeklyStructure, // Use the structure from the current state
+            status: "active",
+        }
+
+        const existingStructure = allStructures.find(
+            (s) => s.companyId === selectedCompany && s.buildingId === targetBuildingId,
+        )
+
+        // Perform Update or Add
+        if (existingStructure) {
+            await updateDoc(doc(db, "mealPlanStructureAssignments", existingStructure.id), {
+                ...structureData,
+                updatedAt: new Date(),
+            })
+        } else {
+            await addDoc(collection(db, "mealPlanStructureAssignments"), {
+                ...structureData,
+                createdAt: new Date(),
+                updatedAt: new Date(),
+            })
+        }
+      }
+
+      toast({ 
+        title: "Copy Successful", 
+        description: `Meal plan structure copied to ${selectedTargetBuildings.length} building(s).` 
+      })
+      setIsCopyModalOpen(false)
+      setSelectedTargetBuildings([])
+
+    } catch (error) {
+      console.error("Error copying structure:", error)
+      toast({ title: "Error", description: "Failed to copy structure to other buildings.", variant: "destructive" })
+    } finally {
+      setCopyLoading(false)
+    }
+  }
+
+  const toggleTargetBuilding = (buildingId: string) => {
+    setSelectedTargetBuildings(prev => 
+      prev.includes(buildingId) 
+        ? prev.filter(id => id !== buildingId)
+        : [...prev, buildingId]
+    )
   }
 
   if (isDataLoading) return <div className="flex h-96 items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-gray-400" /></div>
@@ -346,7 +418,10 @@ export default function MealPlanStructurePage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label>Company</Label>
-              <Select value={selectedCompany} onValueChange={setSelectedCompany}>
+              <Select value={selectedCompany} onValueChange={(val) => {
+                setSelectedCompany(val)
+                setSelectedBuilding("") // Reset building when company changes
+              }}>
                 <SelectTrigger><SelectValue placeholder="Select Company" /></SelectTrigger>
                 <SelectContent>
                   {companies.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
@@ -364,11 +439,25 @@ export default function MealPlanStructurePage() {
             </div>
           </div>
           
-          <div className="pt-4 flex justify-end">
+          <div className="pt-4 flex flex-col sm:flex-row justify-end gap-3">
+             {/* COPY BUTTON */}
+            <Button 
+                variant="outline"
+                onClick={() => {
+                    setSelectedTargetBuildings([])
+                    setIsCopyModalOpen(true)
+                }}
+                disabled={!selectedCompany || !selectedBuilding || matrixRows.length === 0}
+                className="w-full sm:w-auto"
+            >
+                <Copy className="mr-2 h-4 w-4" />
+                Copy to Other Buildings
+            </Button>
+
             <Button 
               onClick={() => setIsModalOpen(true)} 
               disabled={!selectedCompany || !selectedBuilding || matrixRows.length === 0}
-              className="w-full md:w-auto"
+              className="w-full sm:w-auto"
             >
               <Maximize2 className="mr-2 h-4 w-4" />
               Open Full Screen Editor
@@ -386,6 +475,81 @@ export default function MealPlanStructurePage() {
           Editor ready. Click "Open Full Screen Editor" to configure meal plans.
         </div>
       )}
+
+      {/* --- COPY TO BUILDINGS DIALOG --- */}
+      <Dialog open={isCopyModalOpen} onOpenChange={setIsCopyModalOpen}>
+        <DialogContent className="max-w-md">
+            <DialogHeader>
+                <DialogTitle>Copy Meal Plan Structure</DialogTitle>
+                <DialogDescription>
+                    Copy the configuration from <strong>{buildings.find(b => b.id === selectedBuilding)?.name}</strong> to other buildings in this company.
+                    <br />
+                    <span className="text-yellow-600 font-medium text-xs mt-2 block">
+                        Warning: This will overwrite existing meal plans in the selected buildings.
+                    </span>
+                </DialogDescription>
+            </DialogHeader>
+            
+            <div className="py-4">
+                <div className="flex items-center justify-between mb-2">
+                     <Label>Select Target Buildings:</Label>
+                     <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        className="h-6 text-xs"
+                        onClick={() => {
+                            const otherBuildings = buildings.filter(b => b.id !== selectedBuilding).map(b => b.id)
+                            if (selectedTargetBuildings.length === otherBuildings.length) {
+                                setSelectedTargetBuildings([])
+                            } else {
+                                setSelectedTargetBuildings(otherBuildings)
+                            }
+                        }}
+                     >
+                        Toggle All
+                     </Button>
+                </div>
+                
+                <ScrollArea className="h-[200px] border rounded-md p-3">
+                    <div className="space-y-3">
+                        {buildings.filter(b => b.id !== selectedBuilding).length === 0 && (
+                            <p className="text-sm text-gray-500 text-center py-8">No other buildings available.</p>
+                        )}
+                        {buildings
+                            .filter(b => b.id !== selectedBuilding)
+                            .map(building => (
+                                <div key={building.id} className="flex items-center space-x-2">
+                                    <Checkbox 
+                                        id={`target-${building.id}`} 
+                                        checked={selectedTargetBuildings.includes(building.id)}
+                                        onCheckedChange={() => toggleTargetBuilding(building.id)}
+                                    />
+                                    <label 
+                                        htmlFor={`target-${building.id}`}
+                                        className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                                    >
+                                        {building.name}
+                                    </label>
+                                </div>
+                            ))
+                        }
+                    </div>
+                </ScrollArea>
+            </div>
+
+            <DialogFooter>
+                <Button variant="outline" onClick={() => setIsCopyModalOpen(false)}>Cancel</Button>
+                <Button 
+                    onClick={handleCopyStructureToBuildings} 
+                    disabled={copyLoading || selectedTargetBuildings.length === 0}
+                >
+                    {copyLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Copy className="h-4 w-4 mr-2" />}
+                    Confirm Copy
+                </Button>
+            </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
 
       {/* --- FULL SCREEN MODAL --- */}
       <Dialog open={isModalOpen} onOpenChange={(open) => {
@@ -534,7 +698,7 @@ export default function MealPlanStructurePage() {
   )
 }
 
-// --- SELECTOR COMPONENT (Now with Copy/Paste) ---
+// --- SELECTOR COMPONENT ---
 interface MealPlanSelectorProps {
   availableMealPlans: MealPlan[]
   availableSubMealPlans: SubMealPlan[]
