@@ -2,12 +2,14 @@
 
 import { useState, useEffect, useMemo } from "react"
 import { Button } from "@/components/ui/button"
-import { Loader2, Download, X, History } from 'lucide-react'
 import { doc, getDoc, getDocs, collection, query, where } from "firebase/firestore"
 import { db } from "@/lib/firebase"
 import type { Service, MealPlan, SubMealPlan, MenuItem, MenuUpdation } from "@/lib/types"
 import { servicesService, mealPlansService, subMealPlansService, menuItemsService } from "@/lib/services"
 import { toast } from "@/hooks/use-toast"
+import { useRouter } from "next/navigation" 
+import { Input } from "@/components/ui/input" 
+import { Loader2, Download, X, History, Edit, Search } from 'lucide-react'
 
 interface MenuViewModalProps {
   isOpen: boolean
@@ -30,8 +32,11 @@ interface MenuData {
 }
 
 export function MenuViewModal({ isOpen, onClose, menuId, menuType, preloadedMenuItems }: MenuViewModalProps) {
+  const router = useRouter() 
   const [menu, setMenu] = useState<MenuData | null>(null)
   const [loading, setLoading] = useState(false)
+  const [searchQuery, setSearchQuery] = useState("")
+  
   const [services, setServices] = useState<Service[]>([])
   const [mealPlans, setMealPlans] = useState<MealPlan[]>([])
   const [subMealPlans, setSubMealPlans] = useState<SubMealPlan[]>([])
@@ -49,16 +54,15 @@ export function MenuViewModal({ isOpen, onClose, menuId, menuType, preloadedMenu
       loadMenu()
       loadUpdations()
     } else {
-      // clear states when modal closed or no menuId
       setMenu(null)
       setUpdations([])
       setSelectedUpdation(null)
+      setSearchQuery("") // Reset search on close
     }
   }, [isOpen, menuId])
 
   const loadUpdations = async () => {
     try {
-      // clear previous updations immediately to avoid stale UI flicker
       setUpdations([])
       setSelectedUpdation(null)
 
@@ -71,11 +75,9 @@ export function MenuViewModal({ isOpen, onClose, menuId, menuType, preloadedMenu
           ...(d.data() as any),
           createdAt: (d.data() as any).createdAt?.toDate?.() || new Date((d.data() as any).createdAt),
         }))
-        // filter out no-op updations: keep only those with changedCells length > 0 or totalChanges > 0
         .filter((record: any) => {
           if (Array.isArray(record.changedCells) && record.changedCells.length > 0) return true
           if (typeof record.totalChanges === "number" && record.totalChanges > 0) return true
-          // fallback: if changedCells exists as an object with keys
           if (record.changedCells && typeof record.changedCells === "object" && Object.keys(record.changedCells).length > 0) return true
           return false
         })
@@ -90,9 +92,17 @@ export function MenuViewModal({ isOpen, onClose, menuId, menuType, preloadedMenu
       }
     } catch (error) {
       console.error("Error loading updations:", error)
-      // ensure cleared state on error
       setUpdations([])
       setSelectedUpdation(null)
+    }
+  }
+
+   const handleEdit = () => {
+    onClose(); 
+    if (menuType === "combined") {
+      router.push(`/admin/menus/combined/${menuId}/edit`); 
+    } else {
+      router.push(`/admin/menus/company/${menuId}/edit`); 
     }
   }
 
@@ -244,8 +254,6 @@ export function MenuViewModal({ isOpen, onClose, menuId, menuType, preloadedMenu
       services.forEach((service) => {
         const worksheet = workbook.addWorksheet(service.name.substring(0, 31))
         let currentRow = 1
-
-        // Add header info
         worksheet.addRow([`Menu - ${service.name}`])
         currentRow++
         if (menu.companyName) {
@@ -257,12 +265,10 @@ export function MenuViewModal({ isOpen, onClose, menuId, menuType, preloadedMenu
         worksheet.addRow([])
         currentRow++
 
-        // Add table header with dates
         const headers = ["Meal Plan", "Sub Meal Plan", ...dateRange.map((d) => d.date)]
         worksheet.addRow(headers)
         currentRow++
 
-        // Add data rows matching grid structure exactly
         mealPlans.forEach((mealPlan) => {
           const relatedSubMealPlans = subMealPlans.filter((smp) => smp.mealPlanId === mealPlan.id)
           relatedSubMealPlans.forEach((subMealPlan, idx) => {
@@ -362,8 +368,6 @@ export function MenuViewModal({ isOpen, onClose, menuId, menuType, preloadedMenu
     }
   }, [menu, menuItems.length, menuItemsLoaded])
 
-  // helper: find all changedCells in the selectedUpdation that match the cell (date, serviceId, mealPlanId, subMealPlanId),
-  // across any subServiceId (combine them)
   const getSelectedUpdationChangesForCell = (
     date: string,
     serviceId: string,
@@ -379,7 +383,6 @@ export function MenuViewModal({ isOpen, onClose, menuId, menuType, preloadedMenu
         cell.mealPlanId === mealPlanId &&
         cell.subMealPlanId === subMealPlanId
       ) {
-        // cell.changes is the array of actions (added/removed/replaced)
         ;(cell.changes || []).forEach((ch: any) => matches.push(ch))
       }
     }
@@ -387,7 +390,6 @@ export function MenuViewModal({ isOpen, onClose, menuId, menuType, preloadedMenu
   }
 
   const getItemName = (change: any) => {
-    // prefer explicit names in update change object, fallback to menuItems list
     if (change.itemName) return change.itemName
     if (change.replacedWithName) return change.replacedWithName
     if (change.itemId) {
@@ -400,6 +402,50 @@ export function MenuViewModal({ isOpen, onClose, menuId, menuType, preloadedMenu
     }
     return ""
   }
+
+  // --- Search Filtering Logic ---
+  const shouldShowRow = (serviceId: string, mealPlanId: string, subMealPlan: SubMealPlan) => {
+    if (!searchQuery) return true;
+    const query = searchQuery.toLowerCase();
+
+    // 1. Check Sub Meal Plan Name
+    if (subMealPlan.name.toLowerCase().includes(query)) return true;
+
+    // 2. Check Items inside the row across all dates
+    for (const { date, day } of dateRange) {
+      let allMenuItemIds: string[] = []
+      
+      if (menuType === "combined") {
+        const svcBlock = menu?.menuData?.[date]?.[serviceId] || {}
+        Object.keys(svcBlock).forEach((subServiceId) => {
+          const subServiceData = svcBlock[subServiceId]?.[mealPlanId]?.[subMealPlan.id]
+          if (subServiceData?.menuItemIds) {
+            allMenuItemIds.push(...subServiceData.menuItemIds)
+          }
+        })
+      } else {
+        const subServicesForDay = structureAssignment?.weekStructure?.[day.toLowerCase()]?.find(
+          (s: any) => s.serviceId === serviceId
+        )?.subServices || []
+
+        subServicesForDay.forEach((subService: any) => {
+          const cell = menu?.menuData?.[date]?.[serviceId]?.[subService.subServiceId]?.[mealPlanId]?.[subMealPlan.id]
+          if (cell?.menuItemIds && Array.isArray(cell.menuItemIds)) {
+            allMenuItemIds.push(...cell.menuItemIds)
+          }
+        })
+      }
+
+      const hasItemMatch = allMenuItemIds.some(id => {
+        const item = menuItems.find(mi => mi.id === id);
+        return item?.name.toLowerCase().includes(query);
+      });
+
+      if (hasItemMatch) return true;
+    }
+
+    return false;
+  };
 
   return (
     <>
@@ -416,8 +462,20 @@ export function MenuViewModal({ isOpen, onClose, menuId, menuType, preloadedMenu
                   {formatDate(menu?.startDate || "")} - {formatDate(menu?.endDate || "")}
                 </p>
               </div>
-              <div className="flex gap-2">
-                {/* Only show Updates button if we actually have updations for this menu */}
+              
+              <div className="flex gap-2 items-center">
+                
+                {/* Search Bar */}
+                <div className="relative w-64 mr-2">
+                  <Search className="absolute left-2 top-2.5 h-4 w-4 text-gray-500" />
+                  <Input 
+                    placeholder="Search items..." 
+                    className="pl-8 h-9" 
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                  />
+                </div>
+
                 {updations.length > 0 && (
                   <Button variant="outline" size="sm" onClick={() => setSelectedUpdation(selectedUpdation ? null : updations[0])}>
                     <History className="h-4 w-4 mr-2" />
@@ -427,6 +485,13 @@ export function MenuViewModal({ isOpen, onClose, menuId, menuType, preloadedMenu
                 <Button onClick={handleDownloadXLSX} disabled={loading}>
                   <Download className="h-4 w-4 mr-2" />
                   Download XLSX
+                </Button>
+                <Button 
+                  onClick={handleEdit}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white border-none shadow-sm transition-all"
+                >
+                  <Edit className="h-4 w-4 mr-2" />
+                  Edit Details
                 </Button>
                 <button
                   onClick={onClose}
@@ -439,7 +504,6 @@ export function MenuViewModal({ isOpen, onClose, menuId, menuType, preloadedMenu
             </div>
 
             {/* Updations list */}
-            {/* Render this only when there are actual updations for this menu (updations.length > 0) */}
             {updations.length > 0 && (
               <div className="p-4 bg-yellow-50 border-b border-yellow-200 overflow-x-auto">
                 <div className="flex gap-3 items-start">
@@ -523,7 +587,9 @@ export function MenuViewModal({ isOpen, onClose, menuId, menuType, preloadedMenu
                           </thead>
                           <tbody>
                             {mealPlanStructure.map(({ mealPlan, subMealPlans: relatedSubMealPlans }) => {
-                              return relatedSubMealPlans.map((subMealPlan, idx) => (
+                              return relatedSubMealPlans
+                                .filter(subMealPlan => shouldShowRow(service.id, mealPlan.id, subMealPlan)) // FILTERING APPLIED HERE
+                                .map((subMealPlan, idx) => (
                                 <tr key={`${mealPlan.id}-${subMealPlan.id}`}>
                                   <td className="border bg-gray-50 p-2 sticky left-0 z-10">
                                     {idx === 0 && <div className="font-semibold text-blue-700">{mealPlan.name}</div>}
@@ -533,7 +599,6 @@ export function MenuViewModal({ isOpen, onClose, menuId, menuType, preloadedMenu
                                   </td>
 
                                   {dateRange.map(({ date, day }) => {
-                                    // If a selectedUpdation exists and it changed this cell, show only those changes.
                                     const changesForThisCell = getSelectedUpdationChangesForCell(
                                       date,
                                       service.id,
@@ -542,7 +607,6 @@ export function MenuViewModal({ isOpen, onClose, menuId, menuType, preloadedMenu
                                     )
 
                                     if (selectedUpdation && changesForThisCell.length > 0) {
-                                      // render only changed items from this updation
                                       return (
                                         <td
                                           key={`${date}-${service.id}-${mealPlan.id}-${subMealPlan.id}-changes`}
@@ -589,7 +653,6 @@ export function MenuViewModal({ isOpen, onClose, menuId, menuType, preloadedMenu
                                                 )
                                               }
 
-                                              // fallback - unknown action
                                               return (
                                                 <div key={`chg-${i}`} className="p-2 rounded text-xs font-medium bg-blue-50 border border-blue-200">
                                                   <span>{getItemName(ch) || ch.itemId || ch.replacedWith}</span>
@@ -601,7 +664,6 @@ export function MenuViewModal({ isOpen, onClose, menuId, menuType, preloadedMenu
                                       )
                                     }
 
-                                    // Otherwise show current aggregated items (as before)
                                     let allMenuItemIds: string[] = []
                                     if (menuType === "combined") {
                                       const svcBlock = menu?.menuData?.[date]?.[service.id] || {}

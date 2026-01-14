@@ -653,11 +653,11 @@ export default function MealPlanStructurePage() {
                 Assign Meal Plans to Services/Sub-Services for each day.
               </DialogDescription>
             </div>
-            <DialogClose asChild>
+            {/* <DialogClose asChild>
               <Button variant="ghost" size="icon" className="h-10 w-10 hover:bg-slate-100 rounded-full">
                 <X className="h-6 w-6" />
               </Button>
-            </DialogClose>
+            </DialogClose> */}
           </DialogHeader>
 
           {/* Body (Scrollable Table) */}
