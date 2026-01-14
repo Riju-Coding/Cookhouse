@@ -5,7 +5,22 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Calendar, Save, X, Maximize2, Search, Loader2, ArrowLeft, Plus, AlertCircle, ChevronDown } from "lucide-react"
+import { 
+  Calendar, 
+  Save, 
+  X, 
+  Maximize2, 
+  Loader2, 
+  ArrowLeft, 
+  Plus, 
+  AlertCircle, 
+  ChevronDown,
+  Building2, 
+  FileText, 
+  GripHorizontal, 
+  ClipboardCopy, 
+  ClipboardPaste 
+} from "lucide-react"
 import Link from "next/link"
 import { toast } from "@/components/ui/use-toast"
 import type { Service, MealPlan, SubMealPlan, MenuItem, SubService } from "@/lib/types"
@@ -251,7 +266,7 @@ const CompanyAssignmentModal = memo(function CompanyAssignmentModal({
   )
 })
 
-// ---------------------- MenuGridCell ----------------------
+// ---------------------- MenuGridCell (Redesigned) ----------------------
 const MenuGridCell = memo(function MenuGridCell({
   date,
   service,
@@ -273,6 +288,8 @@ const MenuGridCell = memo(function MenuGridCell({
   onCellMouseEnter,
   day,
   onViewCompanies,
+  isActive,
+  onActivate,
 }: {
   date: string
   service: Service
@@ -294,12 +311,15 @@ const MenuGridCell = memo(function MenuGridCell({
   onCellMouseEnter?: () => void
   day?: string
   onViewCompanies?: () => void
+  isActive: boolean
+  onActivate: () => void
 }) {
   const [isOpen, setIsOpen] = useState(false)
   const [search, setSearch] = useState("")
   const [creating, setCreating] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
 
+  // Close dropdown if clicking outside
   useEffect(() => {
     if (!isOpen) return
     const handleClickOutside = (e: MouseEvent) => {
@@ -330,18 +350,11 @@ const MenuGridCell = memo(function MenuGridCell({
 
   const handleCreate = async () => {
     if (!search.trim()) {
-      toast({ title: "Error", description: "Please enter a menu item name", variant: "destructive" })
-      return
-    }
-    const itemExists = allMenuItems.some((item) => item.name.toLowerCase().trim() === search.toLowerCase().trim())
-    if (itemExists) {
-      toast({ title: "Duplicate Item", description: `Menu item "${search}" already exists`, variant: "destructive" })
       return
     }
     setCreating(true)
-    const createdName = search.trim()
     try {
-      const createdItem = await onCreateItem(createdName, "")
+      const createdItem = await onCreateItem(search.trim(), "")
       if (createdItem && createdItem.id) {
         onAddItem(createdItem.id)
         setSearch("")
@@ -356,7 +369,6 @@ const MenuGridCell = memo(function MenuGridCell({
 
   const handleAdd = (itemId: string) => {
     if (selectedMenuItemIds.includes(itemId)) {
-      toast({ title: "Duplicate Item", description: "This menu item is already added", variant: "destructive" })
       return
     }
     onAddItem(itemId)
@@ -366,169 +378,166 @@ const MenuGridCell = memo(function MenuGridCell({
 
   const onDragHandleMouseDown = (e: React.MouseEvent) => {
     e.preventDefault()
+    e.stopPropagation()
     onStartDrag?.(date, selectedMenuItemIds)
-  }
-
-  const onMouseEnterCell = () => {
-    onCellMouseEnter?.()
-    if (onHoverDrag) onHoverDrag(date)
   }
 
   return (
     <td
-      onMouseEnter={onMouseEnterCell}
-      className={`border p-3 align-top min-w-[260px] bg-white hover:shadow-md transition-shadow duration-150 ${isDragHover ? "ring-2 ring-blue-300" : ""}`}
+      onClick={(e) => {
+         onActivate();
+      }}
+      onMouseEnter={() => {
+        onCellMouseEnter?.()
+        if (onHoverDrag) onHoverDrag(date)
+      }}
+      className={`border border-gray-300 align-top min-w-[150px] transition-all duration-150 relative 
+        ${isActive ? "ring-2 ring-blue-500 bg-white z-10" : "bg-white hover:bg-gray-50"} 
+        ${isDragHover ? "ring-2 ring-blue-300 bg-blue-50" : ""}
+      `}
     >
-      <div className="space-y-2">
+      <div className="flex flex-col h-full min-h-[60px]">
+        {/* Previous Items (Tiny Indicators) */}
         {prevItems && prevItems.length > 0 && (
-          <div className="text-xs text-gray-600 mb-1 italic flex items-center gap-2">
-            <span className="font-medium text-sm">Prev wk:</span>
-            <div className="flex flex-wrap gap-1">
-              {prevItems.slice(0, 6).map((id) => {
-                const name = allMenuItems.find((m) => m.id === id)?.name || id
-                return (
-                  <span
-                    key={id}
-                    className="font-semibold text-blue-800 bg-blue-50 px-2 py-0.5 rounded shadow-[0_0_10px_rgba(59,130,246,0.18)] text-xs"
-                    title={name}
-                  >
-                    {name}
-                  </span>
-                )
-              })}
-              {prevItems.length > 6 && <span className="text-xs text-gray-500">+{prevItems.length - 6}</span>}
-            </div>
+          <div className="px-1 pt-1 flex flex-wrap gap-0.5 opacity-60 hover:opacity-100 transition-opacity">
+            {prevItems.slice(0, 3).map((id) => (
+              <div key={id} className="w-1.5 h-1.5 rounded-full bg-blue-400" title="Item from previous week used" />
+            ))}
+            {prevItems.length > 3 && <span className="text-[9px] text-gray-400">...</span>}
           </div>
         )}
-        <div className="min-h-[60px] space-y-2">
-          {selectedMenuItemIds.length === 0 ? (
-            <div className="text-sm text-gray-400">No items yet. Add or paste items.</div>
-          ) : (
-            selectedMenuItemIds.map((itemId) => {
-              const item = allMenuItems.find((i) => i.id === itemId)
-              if (!item) return null
-              return (
-                <div
-                  key={itemId}
-                  className="flex items-center justify-between bg-gradient-to-r from-green-50 to-white border border-green-100 p-2 rounded text-sm"
-                >
-                  <span className="flex-1 truncate font-medium">{item.name}</span>
-                  <button
-                    onClick={() => onRemoveItem(itemId)}
-                    className="text-red-500 hover:text-red-700 ml-2 flex-shrink-0"
-                    type="button"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                </div>
-              )
-            })
-          )}
-        </div>
-        <div className="space-y-2">
-          <div className="relative" ref={dropdownRef}>
-            <button
-              onClick={() => setIsOpen(!isOpen)}
-              className="w-full px-3 py-2 text-left border rounded hover:bg-gray-50 text-sm text-gray-700 transition-colors"
-              type="button"
-            >
-              + Add menu item
-            </button>
-            {isOpen && (
-              <div className="absolute top-full left-0 right-0 mt-2 bg-white border rounded shadow-lg z-50 max-h-[320px] flex flex-col">
-                <div className="p-2 border-b sticky top-0 bg-white">
-                  <div className="relative">
-                    <Search className="absolute left-2 top-2.5 h-4 w-4 text-gray-400" />
-                    <Input
-                      type="text"
-                      placeholder="Search items or create new..."
-                      value={search}
-                      onChange={(e) => setSearch(e.target.value)}
-                      className="w-full pl-8 pr-3 py-2 text-sm"
-                      autoFocus
-                    />
-                  </div>
-                </div>
-                <div className="flex-1 overflow-y-auto max-h-[260px]">
-                  {available.length > 0 ? (
-                    available.map((item) => (
-                      <button
-                        key={item.id}
-                        onClick={() => handleAdd(item.id)}
-                        className="w-full px-3 py-2 text-left hover:bg-blue-50 text-sm border-b transition-colors"
-                        type="button"
-                      >
-                        <div className="flex items-center justify-between">
-                          <span>{item.name}</span>
-                          {item.category && <span className="text-xs text-gray-500">({item.category})</span>}
-                        </div>
-                      </button>
-                    ))
-                  ) : search.trim() ? (
-                    <div className="p-3 border-t bg-blue-50">
-                      <button
-                        onClick={handleCreate}
-                        disabled={creating}
-                        className="w-full px-3 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white text-sm rounded font-medium transition-colors flex items-center justify-center gap-2"
-                        type="button"
-                      >
-                        {creating ? (
-                          <>
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                            Creating...
-                          </>
-                        ) : (
-                          <>
-                            <Plus className="h-4 w-4" />
-                            Create "{search}"
-                          </>
-                        )}
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="p-4 text-sm text-gray-500 text-center">
-                      No items found. Type to search or create new.
-                    </div>
-                  )}
-                </div>
+
+        {/* Selected Items List */}
+        <div className="flex-1 p-1 space-y-1">
+          {selectedMenuItemIds.map((itemId) => {
+            const item = allMenuItems.find((i) => i.id === itemId)
+            if (!item) return null
+            return (
+              <div
+                key={itemId}
+                className="group relative flex items-center justify-between bg-blue-50/50 hover:bg-blue-100 border border-transparent hover:border-blue-200 px-1.5 py-0.5 rounded text-xs transition-colors"
+              >
+                <span className="truncate font-medium text-gray-700 leading-tight">{item.name}</span>
+                {isActive && (
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            onRemoveItem(itemId);
+                        }}
+                        className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 ml-1"
+                    >
+                        <X className="h-3 w-3" />
+                    </button>
+                )}
               </div>
-            )}
-          </div>
-          <div className="flex items-center gap-1">
-            <button
-              title="Copy cell items"
-              onClick={() => onCopy?.()}
-              className="px-2 py-1 border rounded text-sm bg-white hover:bg-gray-50 shadow-sm transition-colors"
-              type="button"
-            >
-              Copy
-            </button>
-            <button
-              title={canPaste ? "Paste copied items" : "No copied items"}
-              onClick={() => onPaste?.()}
-              disabled={!canPaste}
-              className={`px-2 py-1 border rounded text-sm transition-colors ${canPaste ? "bg-white hover:bg-gray-50" : "bg-gray-100 text-gray-400 cursor-not-allowed"} shadow-sm`}
-              type="button"
-            >
-              Paste
-            </button>
-            <button
-              title="Drag this row across dates"
-              onMouseDown={onDragHandleMouseDown}
-              className={`px-2 py-1 rounded border text-sm transition-colors ${isDragActive ? "bg-blue-50 border-blue-300" : "bg-white hover:bg-gray-50"}`}
-              type="button"
-            >
-              Drag
-            </button>
-          </div>
-          <button
-            onClick={() => onViewCompanies?.()}
-            className="w-full px-3 py-2 border rounded text-sm bg-blue-50 hover:bg-blue-100 text-blue-700 transition-colors font-medium"
-            type="button"
-          >
-            View Companies
-          </button>
+            )
+          })}
         </div>
+
+        {/* Toolbar - Only visible when Active */}
+        {isActive && (
+          <div className="p-1 border-t bg-gray-50 flex items-center justify-between gap-1 animate-in fade-in zoom-in-95 duration-100">
+            
+            {/* Left Group: Add & Companies */}
+            <div className="flex items-center gap-1" ref={dropdownRef}>
+                {/* ADD BUTTON */}
+                <div className="relative">
+                    <button
+                        onClick={(e) => { e.stopPropagation(); setIsOpen(!isOpen); }}
+                        className="p-1.5 rounded hover:bg-blue-100 text-blue-600 transition-colors"
+                        title="Add Item"
+                    >
+                        <Plus className="h-4 w-4" />
+                    </button>
+
+                    {/* Dropdown Logic */}
+                    {isOpen && (
+                    <div className="absolute bottom-full left-0 mb-1 w-[240px] bg-white border rounded shadow-xl z-50 flex flex-col">
+                        <div className="p-2 border-b bg-gray-50">
+                            <Input
+                                type="text"
+                                placeholder="Search..."
+                                value={search}
+                                onChange={(e) => setSearch(e.target.value)}
+                                className="h-8 text-xs"
+                                autoFocus
+                                onClick={(e) => e.stopPropagation()} 
+                            />
+                        </div>
+                        <div className="max-h-[200px] overflow-y-auto">
+                        {available.length > 0 ? (
+                            available.map((item) => (
+                            <button
+                                key={item.id}
+                                onClick={(e) => { e.stopPropagation(); handleAdd(item.id); }}
+                                className="w-full px-3 py-1.5 text-left hover:bg-blue-50 text-xs border-b last:border-0 truncate"
+                            >
+                                {item.name}
+                            </button>
+                            ))
+                        ) : search.trim() ? (
+                            <button
+                                onClick={(e) => { e.stopPropagation(); handleCreate(); }}
+                                className="w-full p-2 text-center text-xs text-blue-600 font-medium hover:bg-blue-50"
+                            >
+                                {creating ? <Loader2 className="h-3 w-3 animate-spin inline" /> : "Create +"}
+                            </button>
+                        ) : (
+                            <div className="p-2 text-xs text-gray-400 text-center">Type to search</div>
+                        )}
+                        </div>
+                    </div>
+                    )}
+                </div>
+
+                {/* COMPANIES BUTTON */}
+                <button
+                    onClick={(e) => { e.stopPropagation(); onViewCompanies?.(); }}
+                    className="p-1.5 rounded hover:bg-purple-100 text-purple-600 transition-colors"
+                    title="View Companies"
+                >
+                    <Building2 className="h-4 w-4" />
+                </button>
+                
+                {/* DUMMY DOC BUTTON */}
+                <button
+                    className="p-1.5 rounded hover:bg-gray-200 text-gray-500 transition-colors"
+                    title="Documentation (Placeholder)"
+                >
+                    <FileText className="h-4 w-4" />
+                </button>
+            </div>
+
+            <div className="w-px h-4 bg-gray-300 mx-0.5"></div>
+
+            {/* Right Group: Actions */}
+            <div className="flex items-center gap-0.5">
+                <button
+                    onClick={(e) => { e.stopPropagation(); onCopy?.(); }}
+                    className="p-1.5 rounded hover:bg-gray-200 text-gray-600 transition-colors"
+                    title="Copy"
+                >
+                    <ClipboardCopy className="h-3.5 w-3.5" />
+                </button>
+                <button
+                    onClick={(e) => { e.stopPropagation(); onPaste?.(); }}
+                    disabled={!canPaste}
+                    className={`p-1.5 rounded transition-colors ${canPaste ? "hover:bg-gray-200 text-gray-600" : "text-gray-300"}`}
+                    title="Paste"
+                >
+                    <ClipboardPaste className="h-3.5 w-3.5" />
+                </button>
+                <button
+                    onMouseDown={onDragHandleMouseDown}
+                    className={`p-1.5 rounded cursor-grab active:cursor-grabbing transition-colors ${isDragActive ? "bg-blue-100 text-blue-600" : "hover:bg-gray-200 text-gray-600"}`}
+                    title="Drag to fill"
+                >
+                    <GripHorizontal className="h-3.5 w-3.5" />
+                </button>
+            </div>
+
+          </div>
+        )}
       </div>
     </td>
   )
@@ -621,6 +630,9 @@ const ServiceTable = memo(function ServiceTable({
   const [dragActive, setDragActive] = useState(false)
   const dragItemsRef = useRef<string[]>([])
   const [hoveredDate, setHoveredDate] = useState<string | null>(null)
+  
+  // NEW: Track active cell for single-cell interaction
+  const [activeCell, setActiveCell] = useState<string | null>(null)
 
   useEffect(() => {
     const observer = new IntersectionObserver(
@@ -637,6 +649,17 @@ const ServiceTable = memo(function ServiceTable({
     }
     return () => observer.disconnect()
   }, [])
+  
+  // Clear active cell when clicking outside table
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+        if (tableRef.current && !tableRef.current.contains(e.target as Node)) {
+            setActiveCell(null);
+        }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   const displayDates = useMemo(() => dateRange.slice(0, visibleDates), [dateRange, visibleDates])
 
@@ -649,22 +672,6 @@ const ServiceTable = memo(function ServiceTable({
     document.addEventListener("mouseup", handleMouseUp)
     return () => document.removeEventListener("mouseup", handleMouseUp)
   }, [])
-
-  const handleStartDrag = (date: string, items: string[]) => {
-    if (!items || items.length === 0) {
-      toast({ title: "Nothing to Drag", description: "This cell has no items to drag", variant: "destructive" })
-      return
-    }
-    dragItemsRef.current = items.slice()
-    setDragActive(true)
-    setHoveredDate(date)
-  }
-
-  const handleHoverDrag = (date: string) => {
-    if (!dragActive) return
-    if (hoveredDate === date) return
-    setHoveredDate(date)
-  }
 
   if (!selectedSubServiceId) {
     return (
@@ -699,17 +706,21 @@ const ServiceTable = memo(function ServiceTable({
           <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
         </div>
       ) : (
-        <div className="overflow-x-auto border rounded">
+        <div className="overflow-x-auto border border-gray-300 rounded pb-12">
           <table className="w-full border-collapse">
             <thead>
               <tr>
-                <th className="border bg-gray-100 p-2 sticky left-0 z-20 min-w-[200px]">Meal Plan / Sub Meal</th>
+                {/* 1. Reduced Width for First Column */}
+                <th className="border border-gray-300 bg-gray-100 p-2 sticky left-0 z-20 w-[130px] min-w-[130px] shadow-[2px_0_5px_rgba(0,0,0,0.05)]">
+                    Meal Plan / Sub Meal
+                </th>
                 {displayDates.map(({ date, day }) => (
-                  <th key={date} className="border bg-gray-100 p-2 min-w-[250px]">
-                    <div className="font-semibold">
+                  /* 2. Reduced Width for Date Columns */
+                  <th key={date} className="border border-gray-300 bg-gray-100 p-2 min-w-[150px] w-[150px]">
+                    <div className="font-semibold text-sm">
                       {new Date(date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
                     </div>
-                    <div className="text-sm text-gray-600 font-normal">{day}</div>
+                    <div className="text-xs text-gray-500 font-normal">{day.substring(0,3)}</div>
                   </th>
                 ))}
               </tr>
@@ -718,16 +729,19 @@ const ServiceTable = memo(function ServiceTable({
               {mealPlanStructure.map(({ mealPlan, subMealPlans }) =>
                 subMealPlans.map((subMealPlan, idx) => (
                   <tr key={`${mealPlan.id}-${subMealPlan.id}`}>
-                    <td className="border bg-gray-50 p-2 sticky left-0 z-10 relative overflow-hidden">
+                    <td className="border border-gray-300 bg-gray-50 p-2 sticky left-0 z-10 w-[130px] min-w-[130px] text-xs shadow-[2px_0_5px_rgba(0,0,0,0.05)] whitespace-normal break-words align-top">
                       {/* COLOR STRIP ASSIGNED TO SERVICE */}
                       <div 
-                        className="absolute left-0 top-0 bottom-0 w-1.5" 
+                        className="absolute left-0 top-0 bottom-0 w-1" 
                         style={{ backgroundColor: service.color || '#cbd5e1' }}
                       />
-                      {idx === 0 && <div className="font-semibold text-blue-700">{mealPlan.name}</div>}
-                      <div className="text-sm text-gray-700 ml-3">↳ {subMealPlan.name}</div>
+                      <div className="pl-2">
+                          {idx === 0 && <div className="font-bold text-blue-700 mb-1 leading-tight">{mealPlan.name}</div>}
+                          <div className="text-gray-600 leading-tight">{subMealPlan.name}</div>
+                      </div>
                     </td>
                     {displayDates.map(({ date, day }) => {
+                      const cellKey = `${date}-${service.id}-${selectedSubServiceId}-${mealPlan.id}-${subMealPlan.id}`
                       const cell =
                         combinedMenu[date]?.[service.id]?.[selectedSubServiceId]?.[mealPlan.id]?.[subMealPlan.id]
                       const selectedItems = cell?.menuItemIds || []
@@ -756,9 +770,15 @@ const ServiceTable = memo(function ServiceTable({
                         )
                       }
 
+                        function handleHoverDrag(date: string) {
+                        if (!dragActive) return
+                        setHoveredDate(date)
+                        onHoverDragFromCell(date)
+                        }
+
                       return (
                         <MenuGridCell
-                          key={`${date}-${service.id}-${selectedSubServiceId}-${mealPlan.id}-${subMealPlan.id}`}
+                          key={cellKey}
                           date={date}
                           service={service}
                           mealPlan={mealPlan}
@@ -812,6 +832,8 @@ const ServiceTable = memo(function ServiceTable({
                             setSelectedDay(day)
                             setShowCompanyModal(true)
                           }}
+                          isActive={activeCell === cellKey}
+                          onActivate={() => setActiveCell(cellKey)}
                         />
                       )
                     })}
@@ -1880,8 +1902,8 @@ export default function CombinedMenuCreationPage() {
 
       {showModal && (
         <>
-          <div className="fixed inset-0 z-[9999] w-screen h-screen bg-black/50 flex items-center justify-center ">
-            <div className="bg-white w-screen h-screen flex flex-col relative overflow-hidden">
+          <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-lg w-full h-full flex flex-col max-h-[90vh] relative">
               <div className="flex items-center justify-between p-4 border-b bg-gradient-to-r from-white to-blue-50">
                 <div>
                   <h2 className="text-xl font-bold">Combined Menu Grid</h2>
