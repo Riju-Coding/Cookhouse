@@ -1,6 +1,8 @@
 "use client"
-import { useState, useEffect, useCallback, useMemo, memo, useRef } from "react"
+import { useState, useEffect, useCallback, useMemo, memo, useRef, useLayoutEffect } from "react"
 import type React from "react"
+
+import { createPortal } from "react-dom"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -267,6 +269,283 @@ const CompanyAssignmentModal = memo(function CompanyAssignmentModal({
 })
 
 // ---------------------- MenuGridCell (Redesigned) ----------------------
+// const MenuGridCell = memo(function MenuGridCell({
+//   date,
+//   service,
+//   mealPlan,
+//   subMealPlan,
+//   selectedMenuItemIds,
+//   allMenuItems,
+//   onAddItem,
+//   onRemoveItem,
+//   onCreateItem,
+//   onStartDrag,
+//   onHoverDrag,
+//   isDragActive,
+//   isDragHover,
+//   onCopy,
+//   onPaste,
+//   canPaste,
+//   prevItems,
+//   onCellMouseEnter,
+//   day,
+//   onViewCompanies,
+//   isActive,
+//   onActivate,
+// }: {
+//   date: string
+//   service: Service
+//   mealPlan: MealPlan
+//   subMealPlan: SubMealPlan
+//   selectedMenuItemIds: string[]
+//   allMenuItems: MenuItem[]
+//   onAddItem: (menuItemId: string) => void
+//   onRemoveItem: (menuItemId: string) => void
+//   onCreateItem: (name: string, category: string) => Promise<{ id: string; name: string }>
+//   onStartDrag?: (date: string, items: string[]) => void
+//   onHoverDrag?: (date: string) => void
+//   isDragActive?: boolean
+//   isDragHover?: boolean
+//   onCopy?: () => void
+//   onPaste?: () => void
+//   canPaste?: boolean
+//   prevItems?: string[]
+//   onCellMouseEnter?: () => void
+//   day?: string
+//   onViewCompanies?: () => void
+//   isActive: boolean
+//   onActivate: () => void
+// }) {
+//   const [isOpen, setIsOpen] = useState(false)
+//   const [search, setSearch] = useState("")
+//   const [creating, setCreating] = useState(false)
+//   const dropdownRef = useRef<HTMLDivElement>(null)
+
+//   // Close dropdown if clicking outside
+//   useEffect(() => {
+//     if (!isOpen) return
+//     const handleClickOutside = (e: MouseEvent) => {
+//       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+//         setIsOpen(false)
+//         setSearch("")
+//       }
+//     }
+//     document.addEventListener("mousedown", handleClickOutside)
+//     return () => document.removeEventListener("mousedown", handleClickOutside)
+//   }, [isOpen])
+
+//   const filtered = useMemo(() => {
+//     if (!search.trim()) return allMenuItems.slice(0, 50)
+//     const lower = search.toLowerCase()
+//     return allMenuItems
+//       .filter(
+//         (item) =>
+//           item.name.toLowerCase().includes(lower) || (item.category && item.category.toLowerCase().includes(lower)),
+//       )
+//       .slice(0, 50)
+//   }, [allMenuItems, search])
+
+//   const available = useMemo(
+//     () => filtered.filter((item) => !selectedMenuItemIds.includes(item.id)),
+//     [filtered, selectedMenuItemIds],
+//   )
+
+//   const handleCreate = async () => {
+//     if (!search.trim()) {
+//       return
+//     }
+//     setCreating(true)
+//     try {
+//       const createdItem = await onCreateItem(search.trim(), "")
+//       if (createdItem && createdItem.id) {
+//         onAddItem(createdItem.id)
+//         setSearch("")
+//         setIsOpen(false)
+//       }
+//     } catch (error) {
+//       console.error("Create error:", error)
+//     } finally {
+//       setCreating(false)
+//     }
+//   }
+
+//   const handleAdd = (itemId: string) => {
+//     if (selectedMenuItemIds.includes(itemId)) {
+//       return
+//     }
+//     onAddItem(itemId)
+//     setSearch("")
+//     setIsOpen(false)
+//   }
+
+//   const onDragHandleMouseDown = (e: React.MouseEvent) => {
+//     e.preventDefault()
+//     e.stopPropagation()
+//     onStartDrag?.(date, selectedMenuItemIds)
+//   }
+
+//   return (
+//     <td
+//       onClick={(e) => {
+//          onActivate();
+//       }}
+//       onMouseEnter={() => {
+//         onCellMouseEnter?.()
+//         if (onHoverDrag) onHoverDrag(date)
+//       }}
+//       className={`border border-gray-300 align-top min-w-[150px] transition-all duration-150 relative 
+//         ${isActive ? "ring-2 ring-blue-500 bg-white z-10" : "bg-white hover:bg-gray-50"} 
+//         ${isDragHover ? "ring-2 ring-blue-300 bg-blue-50" : ""}
+//       `}
+//     >
+//       <div className="flex flex-col h-full min-h-[60px]">
+//         {/* Previous Items (Tiny Indicators) */}
+//         {prevItems && prevItems.length > 0 && (
+//           <div className="px-1 pt-1 flex flex-wrap gap-0.5 opacity-60 hover:opacity-100 transition-opacity">
+//             {prevItems.slice(0, 3).map((id) => (
+//               <div key={id} className="w-1.5 h-1.5 rounded-full bg-blue-400" title="Item from previous week used" />
+//             ))}
+//             {prevItems.length > 3 && <span className="text-[9px] text-gray-400">...</span>}
+//           </div>
+//         )}
+
+//         {/* Selected Items List */}
+//         <div className="flex-1 p-1 space-y-1">
+//           {selectedMenuItemIds.map((itemId) => {
+//             const item = allMenuItems.find((i) => i.id === itemId)
+//             if (!item) return null
+//             return (
+//               <div
+//                 key={itemId}
+//                 className="group relative flex items-center justify-between bg-blue-50/50 hover:bg-blue-100 border border-transparent hover:border-blue-200 px-1.5 py-0.5 rounded text-xs transition-colors"
+//               >
+//                 <span className="truncate font-medium text-gray-700 leading-tight">{item.name}</span>
+//                 {isActive && (
+//                     <button
+//                         onClick={(e) => {
+//                             e.stopPropagation();
+//                             onRemoveItem(itemId);
+//                         }}
+//                         className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 ml-1"
+//                     >
+//                         <X className="h-3 w-3" />
+//                     </button>
+//                 )}
+//               </div>
+//             )
+//           })}
+//         </div>
+
+//         {/* Toolbar - Only visible when Active */}
+//         {isActive && (
+//           <div className="p-1 border-t bg-gray-50 flex items-center justify-between gap-1 animate-in fade-in zoom-in-95 duration-100">
+            
+//             {/* Left Group: Add & Companies */}
+//             <div className="flex items-center gap-1" ref={dropdownRef}>
+//                 {/* ADD BUTTON */}
+//                 <div className="relative">
+//                     <button
+//                         onClick={(e) => { e.stopPropagation(); setIsOpen(!isOpen); }}
+//                         className="p-1.5 rounded hover:bg-blue-100 text-blue-600 transition-colors"
+//                         title="Add Item"
+//                     >
+//                         <Plus className="h-4 w-4" />
+//                     </button>
+
+//                     {/* Dropdown Logic */}
+//                     {isOpen && (
+//                     <div className="absolute bottom-full left-0 mb-1 w-[240px] bg-white border rounded shadow-xl z-50 flex flex-col">
+//                         <div className="p-2 border-b bg-gray-50">
+//                             <Input
+//                                 type="text"
+//                                 placeholder="Search..."
+//                                 value={search}
+//                                 onChange={(e) => setSearch(e.target.value)}
+//                                 className="h-8 text-xs"
+//                                 autoFocus
+//                                 onClick={(e) => e.stopPropagation()} 
+//                             />
+//                         </div>
+//                         <div className="max-h-[200px] overflow-y-auto">
+//                         {available.length > 0 ? (
+//                             available.map((item) => (
+//                             <button
+//                                 key={item.id}
+//                                 onClick={(e) => { e.stopPropagation(); handleAdd(item.id); }}
+//                                 className="w-full px-3 py-1.5 text-left hover:bg-blue-50 text-xs border-b last:border-0 truncate"
+//                             >
+//                                 {item.name}
+//                             </button>
+//                             ))
+//                         ) : search.trim() ? (
+//                             <button
+//                                 onClick={(e) => { e.stopPropagation(); handleCreate(); }}
+//                                 className="w-full p-2 text-center text-xs text-blue-600 font-medium hover:bg-blue-50"
+//                             >
+//                                 {creating ? <Loader2 className="h-3 w-3 animate-spin inline" /> : "Create +"}
+//                             </button>
+//                         ) : (
+//                             <div className="p-2 text-xs text-gray-400 text-center">Type to search</div>
+//                         )}
+//                         </div>
+//                     </div>
+//                     )}
+//                 </div>
+
+//                 {/* COMPANIES BUTTON */}
+//                 <button
+//                     onClick={(e) => { e.stopPropagation(); onViewCompanies?.(); }}
+//                     className="p-1.5 rounded hover:bg-purple-100 text-purple-600 transition-colors"
+//                     title="View Companies"
+//                 >
+//                     <Building2 className="h-4 w-4" />
+//                 </button>
+                
+//                 {/* DUMMY DOC BUTTON */}
+//                 <button
+//                     className="p-1.5 rounded hover:bg-gray-200 text-gray-500 transition-colors"
+//                     title="Documentation (Placeholder)"
+//                 >
+//                     <FileText className="h-4 w-4" />
+//                 </button>
+//             </div>
+
+//             <div className="w-px h-4 bg-gray-300 mx-0.5"></div>
+
+//             {/* Right Group: Actions */}
+//             <div className="flex items-center gap-0.5">
+//                 <button
+//                     onClick={(e) => { e.stopPropagation(); onCopy?.(); }}
+//                     className="p-1.5 rounded hover:bg-gray-200 text-gray-600 transition-colors"
+//                     title="Copy"
+//                 >
+//                     <ClipboardCopy className="h-3.5 w-3.5" />
+//                 </button>
+//                 <button
+//                     onClick={(e) => { e.stopPropagation(); onPaste?.(); }}
+//                     disabled={!canPaste}
+//                     className={`p-1.5 rounded transition-colors ${canPaste ? "hover:bg-gray-200 text-gray-600" : "text-gray-300"}`}
+//                     title="Paste"
+//                 >
+//                     <ClipboardPaste className="h-3.5 w-3.5" />
+//                 </button>
+//                 <button
+//                     onMouseDown={onDragHandleMouseDown}
+//                     className={`p-1.5 rounded cursor-grab active:cursor-grabbing transition-colors ${isDragActive ? "bg-blue-100 text-blue-600" : "hover:bg-gray-200 text-gray-600"}`}
+//                     title="Drag to fill"
+//                 >
+//                     <GripHorizontal className="h-3.5 w-3.5" />
+//                 </button>
+//             </div>
+
+//           </div>
+//         )}
+//       </div>
+//     </td>
+//   )
+// })
+
+// ---------------------- MenuGridCell (DUAL DROPDOWN: ADD + COMPANIES) ----------------------
 const MenuGridCell = memo(function MenuGridCell({
   date,
   service,
@@ -287,7 +566,11 @@ const MenuGridCell = memo(function MenuGridCell({
   prevItems,
   onCellMouseEnter,
   day,
-  onViewCompanies,
+  // Data props for Company Logic
+  companies = [],
+  buildings = [],
+  structureAssignments = [],
+  selectedSubServiceId,
   isActive,
   onActivate,
 }: {
@@ -310,70 +593,146 @@ const MenuGridCell = memo(function MenuGridCell({
   prevItems?: string[]
   onCellMouseEnter?: () => void
   day?: string
-  onViewCompanies?: () => void
+  // Updated Props
+  companies?: any[]
+  buildings?: any[]
+  structureAssignments?: any[]
+  selectedSubServiceId?: string
+  onViewCompanies?: () => void // Kept for safety but not used
   isActive: boolean
   onActivate: () => void
 }) {
-  const [isOpen, setIsOpen] = useState(false)
+  // State: 'add' | 'company' | null
+  const [activeDropdown, setActiveDropdown] = useState<"add" | "company" | null>(null)
+  
   const [search, setSearch] = useState("")
   const [creating, setCreating] = useState(false)
+  
+  // Position State
+  const [coords, setCoords] = useState({ top: 0, left: 0, height: 0 })
+  const [placement, setPlacement] = useState<"bottom" | "top">("bottom")
+  
+  const buttonRef = useRef<HTMLDivElement>(null) // We use the container div as ref now
   const dropdownRef = useRef<HTMLDivElement>(null)
 
-  // Close dropdown if clicking outside
+  // --- 1. CALCULATE COMPANIES (Only when needed) ---
+  const assignedCompanies = useMemo(() => {
+    if (activeDropdown !== "company") return []
+    if (!structureAssignments || !selectedSubServiceId) return []
+
+    const result: any[] = []
+    
+    structureAssignments.forEach((assignment: any) => {
+      const company = companies?.find((c: any) => c.id === assignment.companyId)
+      const building = buildings?.find((b: any) => b.id === assignment.buildingId)
+      
+      if (!company || !building) return
+      
+      const dayKey = (day || "").toLowerCase()
+      const dayStructure = assignment.weekStructure?.[dayKey] || []
+      
+      // Check Hierarchy
+      const serviceInDay = dayStructure.find((s: any) => s.serviceId === service.id)
+      if (!serviceInDay) return
+      
+      const subServiceInDay = serviceInDay.subServices?.find((ss: any) => ss.subServiceId === selectedSubServiceId)
+      if (!subServiceInDay) return
+      
+      const mealPlanInDay = subServiceInDay.mealPlans?.find((mp: any) => mp.mealPlanId === mealPlan.id)
+      if (!mealPlanInDay) return
+      
+      const subMealPlanInDay = mealPlanInDay.subMealPlans?.find((smp: any) => smp.subMealPlanId === subMealPlan.id)
+      if (!subMealPlanInDay) return
+
+      result.push({
+        companyName: company.name,
+        buildingName: building.name,
+      })
+    })
+    return result
+  }, [activeDropdown, structureAssignments, companies, buildings, day, service.id, selectedSubServiceId, mealPlan.id, subMealPlan.id])
+
+  // --- 2. POSITION CALCULATION ---
+  const updatePosition = useCallback(() => {
+    if (!buttonRef.current || !activeDropdown) return
+
+    const rect = buttonRef.current.getBoundingClientRect()
+    const spaceBelow = window.innerHeight - rect.bottom
+    const spaceAbove = rect.top
+    const dropdownHeight = 300 
+
+    if (spaceBelow < dropdownHeight && spaceAbove > spaceBelow) {
+        setPlacement("top")
+        setCoords({
+            top: rect.top - 5, 
+            left: rect.left,
+            height: Math.min(spaceAbove - 10, dropdownHeight)
+        })
+    } else {
+        setPlacement("bottom")
+        setCoords({
+            top: rect.bottom + 5, 
+            left: rect.left,
+            height: Math.min(spaceBelow - 10, dropdownHeight)
+        })
+    }
+  }, [activeDropdown])
+
+  // --- 3. SCROLL SYNC ---
+  useLayoutEffect(() => {
+    if (!activeDropdown) return
+    updatePosition()
+    const handleScroll = () => updatePosition()
+    const handleResize = () => updatePosition()
+    window.addEventListener("scroll", handleScroll, true)
+    window.addEventListener("resize", handleResize)
+    return () => {
+      window.removeEventListener("scroll", handleScroll, true)
+      window.removeEventListener("resize", handleResize)
+    }
+  }, [activeDropdown, updatePosition])
+
+  // --- 4. CLICK OUTSIDE ---
   useEffect(() => {
-    if (!isOpen) return
+    if (!activeDropdown) return
     const handleClickOutside = (e: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        setIsOpen(false)
-        setSearch("")
-      }
+      if (dropdownRef.current && dropdownRef.current.contains(e.target as Node)) return
+      if (buttonRef.current && buttonRef.current.contains(e.target as Node)) return
+      setActiveDropdown(null)
     }
     document.addEventListener("mousedown", handleClickOutside)
     return () => document.removeEventListener("mousedown", handleClickOutside)
-  }, [isOpen])
+  }, [activeDropdown])
 
+  // Filter Items
   const filtered = useMemo(() => {
     if (!search.trim()) return allMenuItems.slice(0, 50)
     const lower = search.toLowerCase()
     return allMenuItems
-      .filter(
-        (item) =>
-          item.name.toLowerCase().includes(lower) || (item.category && item.category.toLowerCase().includes(lower)),
-      )
+      .filter((item) => item.name.toLowerCase().includes(lower) || (item.category && item.category.toLowerCase().includes(lower)))
       .slice(0, 50)
   }, [allMenuItems, search])
 
-  const available = useMemo(
-    () => filtered.filter((item) => !selectedMenuItemIds.includes(item.id)),
-    [filtered, selectedMenuItemIds],
-  )
+  const available = useMemo(() => filtered.filter((item) => !selectedMenuItemIds.includes(item.id)), [filtered, selectedMenuItemIds])
 
   const handleCreate = async () => {
-    if (!search.trim()) {
-      return
-    }
+    if (!search.trim()) return
     setCreating(true)
     try {
       const createdItem = await onCreateItem(search.trim(), "")
       if (createdItem && createdItem.id) {
         onAddItem(createdItem.id)
         setSearch("")
-        setIsOpen(false)
+        setActiveDropdown(null)
       }
-    } catch (error) {
-      console.error("Create error:", error)
-    } finally {
-      setCreating(false)
-    }
+    } catch (error) { console.error(error) } finally { setCreating(false) }
   }
 
   const handleAdd = (itemId: string) => {
-    if (selectedMenuItemIds.includes(itemId)) {
-      return
-    }
+    if (selectedMenuItemIds.includes(itemId)) return
     onAddItem(itemId)
     setSearch("")
-    setIsOpen(false)
+    setActiveDropdown(null)
   }
 
   const onDragHandleMouseDown = (e: React.MouseEvent) => {
@@ -382,95 +741,44 @@ const MenuGridCell = memo(function MenuGridCell({
     onStartDrag?.(date, selectedMenuItemIds)
   }
 
-  return (
-    <td
-      onClick={(e) => {
-         onActivate();
-      }}
-      onMouseEnter={() => {
-        onCellMouseEnter?.()
-        if (onHoverDrag) onHoverDrag(date)
-      }}
-      className={`border border-gray-300 align-top min-w-[150px] transition-all duration-150 relative 
-        ${isActive ? "ring-2 ring-blue-500 bg-white z-10" : "bg-white hover:bg-gray-50"} 
-        ${isDragHover ? "ring-2 ring-blue-300 bg-blue-50" : ""}
-      `}
-    >
-      <div className="flex flex-col h-full min-h-[60px]">
-        {/* Previous Items (Tiny Indicators) */}
-        {prevItems && prevItems.length > 0 && (
-          <div className="px-1 pt-1 flex flex-wrap gap-0.5 opacity-60 hover:opacity-100 transition-opacity">
-            {prevItems.slice(0, 3).map((id) => (
-              <div key={id} className="w-1.5 h-1.5 rounded-full bg-blue-400" title="Item from previous week used" />
-            ))}
-            {prevItems.length > 3 && <span className="text-[9px] text-gray-400">...</span>}
-          </div>
-        )}
-
-        {/* Selected Items List */}
-        <div className="flex-1 p-1 space-y-1">
-          {selectedMenuItemIds.map((itemId) => {
-            const item = allMenuItems.find((i) => i.id === itemId)
-            if (!item) return null
-            return (
-              <div
-                key={itemId}
-                className="group relative flex items-center justify-between bg-blue-50/50 hover:bg-blue-100 border border-transparent hover:border-blue-200 px-1.5 py-0.5 rounded text-xs transition-colors"
-              >
-                <span className="truncate font-medium text-gray-700 leading-tight">{item.name}</span>
-                {isActive && (
-                    <button
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            onRemoveItem(itemId);
-                        }}
-                        className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 ml-1"
-                    >
-                        <X className="h-3 w-3" />
-                    </button>
-                )}
-              </div>
-            )
-          })}
-        </div>
-
-        {/* Toolbar - Only visible when Active */}
-        {isActive && (
-          <div className="p-1 border-t bg-gray-50 flex items-center justify-between gap-1 animate-in fade-in zoom-in-95 duration-100">
-            
-            {/* Left Group: Add & Companies */}
-            <div className="flex items-center gap-1" ref={dropdownRef}>
-                {/* ADD BUTTON */}
-                <div className="relative">
-                    <button
-                        onClick={(e) => { e.stopPropagation(); setIsOpen(!isOpen); }}
-                        className="p-1.5 rounded hover:bg-blue-100 text-blue-600 transition-colors"
-                        title="Add Item"
-                    >
-                        <Plus className="h-4 w-4" />
-                    </button>
-
-                    {/* Dropdown Logic */}
-                    {isOpen && (
-                    <div className="absolute bottom-full left-0 mb-1 w-[240px] bg-white border rounded shadow-xl z-50 flex flex-col">
-                        <div className="p-2 border-b bg-gray-50">
-                            <Input
-                                type="text"
-                                placeholder="Search..."
-                                value={search}
-                                onChange={(e) => setSearch(e.target.value)}
-                                className="h-8 text-xs"
-                                autoFocus
-                                onClick={(e) => e.stopPropagation()} 
-                            />
-                        </div>
-                        <div className="max-h-[200px] overflow-y-auto">
+  // --- 5. RENDER CONTENT FOR PORTAL ---
+  let dropdownContent = null;
+  if (activeDropdown && typeof document !== "undefined") {
+      dropdownContent = createPortal(
+        <div
+            ref={dropdownRef}
+            style={{
+                position: "fixed",
+                left: coords.left,
+                top: placement === "bottom" ? coords.top : "auto",
+                bottom: placement === "top" ? (window.innerHeight - coords.top) : "auto",
+                maxHeight: coords.height,
+                width: "240px",
+                zIndex: 99999,
+            }}
+            className="bg-white border border-gray-200 rounded-md shadow-2xl flex flex-col animate-in fade-in zoom-in-95 duration-75"
+        >
+            {/* ADD ITEM CONTENT */}
+            {activeDropdown === 'add' && (
+                <>
+                    <div className="p-2 border-b bg-gray-50">
+                        <Input
+                            type="text"
+                            placeholder="Search..."
+                            value={search}
+                            onChange={(e) => setSearch(e.target.value)}
+                            className="h-8 text-xs"
+                            autoFocus
+                            onClick={(e) => e.stopPropagation()} 
+                        />
+                    </div>
+                    <div className="overflow-y-auto flex-1">
                         {available.length > 0 ? (
                             available.map((item) => (
                             <button
                                 key={item.id}
                                 onClick={(e) => { e.stopPropagation(); handleAdd(item.id); }}
-                                className="w-full px-3 py-1.5 text-left hover:bg-blue-50 text-xs border-b last:border-0 truncate"
+                                className="w-full px-3 py-1.5 text-left hover:bg-blue-50 text-xs border-b last:border-0 truncate transition-colors"
                             >
                                 {item.name}
                             </button>
@@ -485,63 +793,141 @@ const MenuGridCell = memo(function MenuGridCell({
                         ) : (
                             <div className="p-2 text-xs text-gray-400 text-center">Type to search</div>
                         )}
-                        </div>
                     </div>
-                    )}
-                </div>
+                </>
+            )}
 
-                {/* COMPANIES BUTTON */}
+            {/* COMPANY LIST CONTENT */}
+            {activeDropdown === 'company' && (
+                <>
+                    <div className="p-2 border-b bg-gradient-to-r from-purple-50 to-white font-medium text-xs text-purple-800 flex justify-between items-center">
+                        <span>Assigned Companies</span>
+                        <span className="bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded-full text-[10px]">{assignedCompanies.length}</span>
+                    </div>
+                    <div className="overflow-y-auto flex-1 p-1">
+                        {assignedCompanies.length > 0 ? (
+                            assignedCompanies.map((comp, idx) => (
+                                <div key={idx} className="p-2 mb-1 last:mb-0 border border-purple-100 rounded bg-purple-50/50 hover:bg-purple-50 transition-colors">
+                                    <div className="font-semibold text-xs text-gray-800">{comp.companyName}</div>
+                                    <div className="text-[10px] text-gray-500">{comp.buildingName}</div>
+                                </div>
+                            ))
+                        ) : (
+                            <div className="p-4 text-center text-xs text-gray-400">
+                                No companies assigned for this specific meal.
+                            </div>
+                        )}
+                    </div>
+                </>
+            )}
+        </div>,
+        document.body
+      )
+  }
+
+  return (
+    <td
+      onClick={(e) => { onActivate(); }}
+      onMouseEnter={() => { onCellMouseEnter?.(); if (onHoverDrag) onHoverDrag(date) }}
+      className={`border border-gray-300 align-top min-w-[150px] transition-all duration-150 relative 
+        ${isActive ? "ring-2 ring-blue-500 bg-white z-10" : "bg-white hover:bg-gray-50"} 
+        ${isDragHover ? "ring-2 ring-blue-300 bg-blue-50" : ""}
+      `}
+    >
+      <div className="flex flex-col h-full min-h-[60px]">
+        {prevItems && prevItems.length > 0 && (
+          <div className="px-1 pt-1 flex flex-wrap gap-0.5 opacity-60 hover:opacity-100 transition-opacity">
+            {prevItems.slice(0, 3).map((id) => (
+              <div key={id} className="w-1.5 h-1.5 rounded-full bg-blue-400" title="Item from previous week used" />
+            ))}
+            {prevItems.length > 3 && <span className="text-[9px] text-gray-400">...</span>}
+          </div>
+        )}
+
+        <div className="flex-1 p-1 space-y-1">
+          {selectedMenuItemIds.map((itemId) => {
+            const item = allMenuItems.find((i) => i.id === itemId)
+            if (!item) return null
+            return (
+              <div
+                key={itemId}
+                className="group relative flex items-center justify-between bg-blue-50/50 hover:bg-blue-100 border border-transparent hover:border-blue-200 px-1.5 py-0.5 rounded text-xs transition-colors"
+              >
+                <span className="truncate font-medium text-gray-700 leading-tight">{item.name}</span>
+                {isActive && (
+                    <button
+                        onClick={(e) => { e.stopPropagation(); onRemoveItem(itemId); }}
+                        className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 ml-1"
+                    >
+                        <X className="h-3 w-3" />
+                    </button>
+                )}
+              </div>
+            )
+          })}
+        </div>
+
+        {/* Toolbar */}
+        {isActive && (
+          <div className="p-1 border-t bg-gray-50 flex items-center justify-between gap-1 animate-in fade-in zoom-in-95 duration-100">
+            
+            {/* MAIN BUTTON GROUP - REF IS HERE */}
+            <div className="flex items-center gap-1" ref={buttonRef}>
+                
+                {/* 1. ADD BUTTON */}
                 <button
-                    onClick={(e) => { e.stopPropagation(); onViewCompanies?.(); }}
-                    className="p-1.5 rounded hover:bg-purple-100 text-purple-600 transition-colors"
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        if(activeDropdown !== 'add') setTimeout(updatePosition, 0);
+                        setActiveDropdown(activeDropdown === 'add' ? null : 'add');
+                    }}
+                    className={`p-1.5 rounded transition-colors ${activeDropdown === 'add' ? 'bg-blue-200 text-blue-700' : 'hover:bg-blue-100 text-blue-600'}`}
+                    title="Add Item"
+                >
+                    <Plus className="h-4 w-4" />
+                </button>
+
+                {/* 2. COMPANY BUTTON */}
+                <button
+                    onClick={(e) => { 
+                        e.stopPropagation(); 
+                        if(activeDropdown !== 'company') setTimeout(updatePosition, 0);
+                        setActiveDropdown(activeDropdown === 'company' ? null : 'company');
+                    }}
+                    className={`p-1.5 rounded transition-colors ${activeDropdown === 'company' ? 'bg-purple-200 text-purple-700' : 'hover:bg-purple-100 text-purple-600'}`}
                     title="View Companies"
                 >
                     <Building2 className="h-4 w-4" />
                 </button>
                 
-                {/* DUMMY DOC BUTTON */}
-                <button
-                    className="p-1.5 rounded hover:bg-gray-200 text-gray-500 transition-colors"
-                    title="Documentation (Placeholder)"
-                >
+                {/* RENDER PORTAL */}
+                {dropdownContent}
+
+                <button className="p-1.5 rounded hover:bg-gray-200 text-gray-500 transition-colors" title="Docs">
                     <FileText className="h-4 w-4" />
                 </button>
             </div>
 
             <div className="w-px h-4 bg-gray-300 mx-0.5"></div>
 
-            {/* Right Group: Actions */}
             <div className="flex items-center gap-0.5">
-                <button
-                    onClick={(e) => { e.stopPropagation(); onCopy?.(); }}
-                    className="p-1.5 rounded hover:bg-gray-200 text-gray-600 transition-colors"
-                    title="Copy"
-                >
+                <button onClick={(e) => { e.stopPropagation(); onCopy?.(); }} className="p-1.5 rounded hover:bg-gray-200 text-gray-600" title="Copy">
                     <ClipboardCopy className="h-3.5 w-3.5" />
                 </button>
-                <button
-                    onClick={(e) => { e.stopPropagation(); onPaste?.(); }}
-                    disabled={!canPaste}
-                    className={`p-1.5 rounded transition-colors ${canPaste ? "hover:bg-gray-200 text-gray-600" : "text-gray-300"}`}
-                    title="Paste"
-                >
+                <button onClick={(e) => { e.stopPropagation(); onPaste?.(); }} disabled={!canPaste} className={`p-1.5 rounded ${canPaste ? "hover:bg-gray-200 text-gray-600" : "text-gray-300"}`} title="Paste">
                     <ClipboardPaste className="h-3.5 w-3.5" />
                 </button>
-                <button
-                    onMouseDown={onDragHandleMouseDown}
-                    className={`p-1.5 rounded cursor-grab active:cursor-grabbing transition-colors ${isDragActive ? "bg-blue-100 text-blue-600" : "hover:bg-gray-200 text-gray-600"}`}
-                    title="Drag to fill"
-                >
+                <button onMouseDown={onDragHandleMouseDown} className={`p-1.5 rounded cursor-grab active:cursor-grabbing ${isDragActive ? "bg-blue-100 text-blue-600" : "hover:bg-gray-200 text-gray-600"}`} title="Drag">
                     <GripHorizontal className="h-3.5 w-3.5" />
                 </button>
             </div>
-
           </div>
         )}
       </div>
     </td>
   )
 })
+
 
 // ---------------------- ServiceTable ----------------------
 const ServiceTable = memo(function ServiceTable({
@@ -781,6 +1167,10 @@ const ServiceTable = memo(function ServiceTable({
                           key={cellKey}
                           date={date}
                           service={service}
+                           companies={companies}
+  buildings={buildings}
+  structureAssignments={structureAssignments}
+  selectedSubServiceId={selectedSubServiceId}
                           mealPlan={mealPlan}
                           subMealPlan={subMealPlan}
                           selectedMenuItemIds={selectedItems}
