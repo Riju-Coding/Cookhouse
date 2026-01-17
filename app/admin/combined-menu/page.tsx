@@ -1,7 +1,6 @@
 "use client"
 import { useState, useEffect, useCallback, useMemo, memo, useRef, useLayoutEffect } from "react"
 import type React from "react"
-
 import { createPortal } from "react-dom"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -268,285 +267,8 @@ const CompanyAssignmentModal = memo(function CompanyAssignmentModal({
   )
 })
 
-// ---------------------- MenuGridCell (Redesigned) ----------------------
-// const MenuGridCell = memo(function MenuGridCell({
-//   date,
-//   service,
-//   mealPlan,
-//   subMealPlan,
-//   selectedMenuItemIds,
-//   allMenuItems,
-//   onAddItem,
-//   onRemoveItem,
-//   onCreateItem,
-//   onStartDrag,
-//   onHoverDrag,
-//   isDragActive,
-//   isDragHover,
-//   onCopy,
-//   onPaste,
-//   canPaste,
-//   prevItems,
-//   onCellMouseEnter,
-//   day,
-//   onViewCompanies,
-//   isActive,
-//   onActivate,
-// }: {
-//   date: string
-//   service: Service
-//   mealPlan: MealPlan
-//   subMealPlan: SubMealPlan
-//   selectedMenuItemIds: string[]
-//   allMenuItems: MenuItem[]
-//   onAddItem: (menuItemId: string) => void
-//   onRemoveItem: (menuItemId: string) => void
-//   onCreateItem: (name: string, category: string) => Promise<{ id: string; name: string }>
-//   onStartDrag?: (date: string, items: string[]) => void
-//   onHoverDrag?: (date: string) => void
-//   isDragActive?: boolean
-//   isDragHover?: boolean
-//   onCopy?: () => void
-//   onPaste?: () => void
-//   canPaste?: boolean
-//   prevItems?: string[]
-//   onCellMouseEnter?: () => void
-//   day?: string
-//   onViewCompanies?: () => void
-//   isActive: boolean
-//   onActivate: () => void
-// }) {
-//   const [isOpen, setIsOpen] = useState(false)
-//   const [search, setSearch] = useState("")
-//   const [creating, setCreating] = useState(false)
-//   const dropdownRef = useRef<HTMLDivElement>(null)
-
-//   // Close dropdown if clicking outside
-//   useEffect(() => {
-//     if (!isOpen) return
-//     const handleClickOutside = (e: MouseEvent) => {
-//       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-//         setIsOpen(false)
-//         setSearch("")
-//       }
-//     }
-//     document.addEventListener("mousedown", handleClickOutside)
-//     return () => document.removeEventListener("mousedown", handleClickOutside)
-//   }, [isOpen])
-
-//   const filtered = useMemo(() => {
-//     if (!search.trim()) return allMenuItems.slice(0, 50)
-//     const lower = search.toLowerCase()
-//     return allMenuItems
-//       .filter(
-//         (item) =>
-//           item.name.toLowerCase().includes(lower) || (item.category && item.category.toLowerCase().includes(lower)),
-//       )
-//       .slice(0, 50)
-//   }, [allMenuItems, search])
-
-//   const available = useMemo(
-//     () => filtered.filter((item) => !selectedMenuItemIds.includes(item.id)),
-//     [filtered, selectedMenuItemIds],
-//   )
-
-//   const handleCreate = async () => {
-//     if (!search.trim()) {
-//       return
-//     }
-//     setCreating(true)
-//     try {
-//       const createdItem = await onCreateItem(search.trim(), "")
-//       if (createdItem && createdItem.id) {
-//         onAddItem(createdItem.id)
-//         setSearch("")
-//         setIsOpen(false)
-//       }
-//     } catch (error) {
-//       console.error("Create error:", error)
-//     } finally {
-//       setCreating(false)
-//     }
-//   }
-
-//   const handleAdd = (itemId: string) => {
-//     if (selectedMenuItemIds.includes(itemId)) {
-//       return
-//     }
-//     onAddItem(itemId)
-//     setSearch("")
-//     setIsOpen(false)
-//   }
-
-//   const onDragHandleMouseDown = (e: React.MouseEvent) => {
-//     e.preventDefault()
-//     e.stopPropagation()
-//     onStartDrag?.(date, selectedMenuItemIds)
-//   }
-
-//   return (
-//     <td
-//       onClick={(e) => {
-//          onActivate();
-//       }}
-//       onMouseEnter={() => {
-//         onCellMouseEnter?.()
-//         if (onHoverDrag) onHoverDrag(date)
-//       }}
-//       className={`border border-gray-300 align-top min-w-[150px] transition-all duration-150 relative 
-//         ${isActive ? "ring-2 ring-blue-500 bg-white z-10" : "bg-white hover:bg-gray-50"} 
-//         ${isDragHover ? "ring-2 ring-blue-300 bg-blue-50" : ""}
-//       `}
-//     >
-//       <div className="flex flex-col h-full min-h-[60px]">
-//         {/* Previous Items (Tiny Indicators) */}
-//         {prevItems && prevItems.length > 0 && (
-//           <div className="px-1 pt-1 flex flex-wrap gap-0.5 opacity-60 hover:opacity-100 transition-opacity">
-//             {prevItems.slice(0, 3).map((id) => (
-//               <div key={id} className="w-1.5 h-1.5 rounded-full bg-blue-400" title="Item from previous week used" />
-//             ))}
-//             {prevItems.length > 3 && <span className="text-[9px] text-gray-400">...</span>}
-//           </div>
-//         )}
-
-//         {/* Selected Items List */}
-//         <div className="flex-1 p-1 space-y-1">
-//           {selectedMenuItemIds.map((itemId) => {
-//             const item = allMenuItems.find((i) => i.id === itemId)
-//             if (!item) return null
-//             return (
-//               <div
-//                 key={itemId}
-//                 className="group relative flex items-center justify-between bg-blue-50/50 hover:bg-blue-100 border border-transparent hover:border-blue-200 px-1.5 py-0.5 rounded text-xs transition-colors"
-//               >
-//                 <span className="truncate font-medium text-gray-700 leading-tight">{item.name}</span>
-//                 {isActive && (
-//                     <button
-//                         onClick={(e) => {
-//                             e.stopPropagation();
-//                             onRemoveItem(itemId);
-//                         }}
-//                         className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 ml-1"
-//                     >
-//                         <X className="h-3 w-3" />
-//                     </button>
-//                 )}
-//               </div>
-//             )
-//           })}
-//         </div>
-
-//         {/* Toolbar - Only visible when Active */}
-//         {isActive && (
-//           <div className="p-1 border-t bg-gray-50 flex items-center justify-between gap-1 animate-in fade-in zoom-in-95 duration-100">
-            
-//             {/* Left Group: Add & Companies */}
-//             <div className="flex items-center gap-1" ref={dropdownRef}>
-//                 {/* ADD BUTTON */}
-//                 <div className="relative">
-//                     <button
-//                         onClick={(e) => { e.stopPropagation(); setIsOpen(!isOpen); }}
-//                         className="p-1.5 rounded hover:bg-blue-100 text-blue-600 transition-colors"
-//                         title="Add Item"
-//                     >
-//                         <Plus className="h-4 w-4" />
-//                     </button>
-
-//                     {/* Dropdown Logic */}
-//                     {isOpen && (
-//                     <div className="absolute bottom-full left-0 mb-1 w-[240px] bg-white border rounded shadow-xl z-50 flex flex-col">
-//                         <div className="p-2 border-b bg-gray-50">
-//                             <Input
-//                                 type="text"
-//                                 placeholder="Search..."
-//                                 value={search}
-//                                 onChange={(e) => setSearch(e.target.value)}
-//                                 className="h-8 text-xs"
-//                                 autoFocus
-//                                 onClick={(e) => e.stopPropagation()} 
-//                             />
-//                         </div>
-//                         <div className="max-h-[200px] overflow-y-auto">
-//                         {available.length > 0 ? (
-//                             available.map((item) => (
-//                             <button
-//                                 key={item.id}
-//                                 onClick={(e) => { e.stopPropagation(); handleAdd(item.id); }}
-//                                 className="w-full px-3 py-1.5 text-left hover:bg-blue-50 text-xs border-b last:border-0 truncate"
-//                             >
-//                                 {item.name}
-//                             </button>
-//                             ))
-//                         ) : search.trim() ? (
-//                             <button
-//                                 onClick={(e) => { e.stopPropagation(); handleCreate(); }}
-//                                 className="w-full p-2 text-center text-xs text-blue-600 font-medium hover:bg-blue-50"
-//                             >
-//                                 {creating ? <Loader2 className="h-3 w-3 animate-spin inline" /> : "Create +"}
-//                             </button>
-//                         ) : (
-//                             <div className="p-2 text-xs text-gray-400 text-center">Type to search</div>
-//                         )}
-//                         </div>
-//                     </div>
-//                     )}
-//                 </div>
-
-//                 {/* COMPANIES BUTTON */}
-//                 <button
-//                     onClick={(e) => { e.stopPropagation(); onViewCompanies?.(); }}
-//                     className="p-1.5 rounded hover:bg-purple-100 text-purple-600 transition-colors"
-//                     title="View Companies"
-//                 >
-//                     <Building2 className="h-4 w-4" />
-//                 </button>
-                
-//                 {/* DUMMY DOC BUTTON */}
-//                 <button
-//                     className="p-1.5 rounded hover:bg-gray-200 text-gray-500 transition-colors"
-//                     title="Documentation (Placeholder)"
-//                 >
-//                     <FileText className="h-4 w-4" />
-//                 </button>
-//             </div>
-
-//             <div className="w-px h-4 bg-gray-300 mx-0.5"></div>
-
-//             {/* Right Group: Actions */}
-//             <div className="flex items-center gap-0.5">
-//                 <button
-//                     onClick={(e) => { e.stopPropagation(); onCopy?.(); }}
-//                     className="p-1.5 rounded hover:bg-gray-200 text-gray-600 transition-colors"
-//                     title="Copy"
-//                 >
-//                     <ClipboardCopy className="h-3.5 w-3.5" />
-//                 </button>
-//                 <button
-//                     onClick={(e) => { e.stopPropagation(); onPaste?.(); }}
-//                     disabled={!canPaste}
-//                     className={`p-1.5 rounded transition-colors ${canPaste ? "hover:bg-gray-200 text-gray-600" : "text-gray-300"}`}
-//                     title="Paste"
-//                 >
-//                     <ClipboardPaste className="h-3.5 w-3.5" />
-//                 </button>
-//                 <button
-//                     onMouseDown={onDragHandleMouseDown}
-//                     className={`p-1.5 rounded cursor-grab active:cursor-grabbing transition-colors ${isDragActive ? "bg-blue-100 text-blue-600" : "hover:bg-gray-200 text-gray-600"}`}
-//                     title="Drag to fill"
-//                 >
-//                     <GripHorizontal className="h-3.5 w-3.5" />
-//                 </button>
-//             </div>
-
-//           </div>
-//         )}
-//       </div>
-//     </td>
-//   )
-// })
-
-// ---------------------- MenuGridCell (DUAL DROPDOWN: ADD + COMPANIES) ----------------------
-const MenuGridCell = memo(function MenuGridCell({
+// ---------------------- MenuGridCell (FINAL FIX) ----------------------
+const MenuGridCell = function MenuGridCell({
   date,
   service,
   mealPlan,
@@ -566,7 +288,6 @@ const MenuGridCell = memo(function MenuGridCell({
   prevItems,
   onCellMouseEnter,
   day,
-  // Data props for Company Logic
   companies = [],
   buildings = [],
   structureAssignments = [],
@@ -593,29 +314,25 @@ const MenuGridCell = memo(function MenuGridCell({
   prevItems?: string[]
   onCellMouseEnter?: () => void
   day?: string
-  // Updated Props
   companies?: any[]
   buildings?: any[]
   structureAssignments?: any[]
   selectedSubServiceId?: string
-  onViewCompanies?: () => void // Kept for safety but not used
+  onViewCompanies?: () => void 
   isActive: boolean
   onActivate: () => void
 }) {
-  // State: 'add' | 'company' | null
   const [activeDropdown, setActiveDropdown] = useState<"add" | "company" | null>(null)
   
   const [search, setSearch] = useState("")
   const [creating, setCreating] = useState(false)
   
-  // Position State
   const [coords, setCoords] = useState({ top: 0, left: 0, height: 0 })
   const [placement, setPlacement] = useState<"bottom" | "top">("bottom")
   
-  const buttonRef = useRef<HTMLDivElement>(null) // We use the container div as ref now
+  const buttonRef = useRef<HTMLDivElement>(null) 
   const dropdownRef = useRef<HTMLDivElement>(null)
 
-  // --- 1. CALCULATE COMPANIES (Only when needed) ---
   const assignedCompanies = useMemo(() => {
     if (activeDropdown !== "company") return []
     if (!structureAssignments || !selectedSubServiceId) return []
@@ -631,7 +348,6 @@ const MenuGridCell = memo(function MenuGridCell({
       const dayKey = (day || "").toLowerCase()
       const dayStructure = assignment.weekStructure?.[dayKey] || []
       
-      // Check Hierarchy
       const serviceInDay = dayStructure.find((s: any) => s.serviceId === service.id)
       if (!serviceInDay) return
       
@@ -652,7 +368,6 @@ const MenuGridCell = memo(function MenuGridCell({
     return result
   }, [activeDropdown, structureAssignments, companies, buildings, day, service.id, selectedSubServiceId, mealPlan.id, subMealPlan.id])
 
-  // --- 2. POSITION CALCULATION ---
   const updatePosition = useCallback(() => {
     if (!buttonRef.current || !activeDropdown) return
 
@@ -678,7 +393,6 @@ const MenuGridCell = memo(function MenuGridCell({
     }
   }, [activeDropdown])
 
-  // --- 3. SCROLL SYNC ---
   useLayoutEffect(() => {
     if (!activeDropdown) return
     updatePosition()
@@ -692,7 +406,6 @@ const MenuGridCell = memo(function MenuGridCell({
     }
   }, [activeDropdown, updatePosition])
 
-  // --- 4. CLICK OUTSIDE ---
   useEffect(() => {
     if (!activeDropdown) return
     const handleClickOutside = (e: MouseEvent) => {
@@ -704,7 +417,6 @@ const MenuGridCell = memo(function MenuGridCell({
     return () => document.removeEventListener("mousedown", handleClickOutside)
   }, [activeDropdown])
 
-  // Filter Items
   const filtered = useMemo(() => {
     if (!search.trim()) return allMenuItems.slice(0, 50)
     const lower = search.toLowerCase()
@@ -723,7 +435,6 @@ const MenuGridCell = memo(function MenuGridCell({
       if (createdItem && createdItem.id) {
         onAddItem(createdItem.id)
         setSearch("")
-        setActiveDropdown(null)
       }
     } catch (error) { console.error(error) } finally { setCreating(false) }
   }
@@ -731,8 +442,7 @@ const MenuGridCell = memo(function MenuGridCell({
   const handleAdd = (itemId: string) => {
     if (selectedMenuItemIds.includes(itemId)) return
     onAddItem(itemId)
-    setSearch("")
-    setActiveDropdown(null)
+    // Removed clearing search and closing dropdown to allow multiple selections
   }
 
   const onDragHandleMouseDown = (e: React.MouseEvent) => {
@@ -741,12 +451,14 @@ const MenuGridCell = memo(function MenuGridCell({
     onStartDrag?.(date, selectedMenuItemIds)
   }
 
-  // --- 5. RENDER CONTENT FOR PORTAL ---
   let dropdownContent = null;
   if (activeDropdown && typeof document !== "undefined") {
       dropdownContent = createPortal(
         <div
             ref={dropdownRef}
+            // --- FIX START: Stop propagation here to prevent Table "click outside" logic from firing ---
+            onMouseDown={(e) => e.stopPropagation()} 
+            // --- FIX END ---
             style={{
                 position: "fixed",
                 left: coords.left,
@@ -758,19 +470,26 @@ const MenuGridCell = memo(function MenuGridCell({
             }}
             className="bg-white border border-gray-200 rounded-md shadow-2xl flex flex-col animate-in fade-in zoom-in-95 duration-75"
         >
-            {/* ADD ITEM CONTENT */}
             {activeDropdown === 'add' && (
                 <>
-                    <div className="p-2 border-b bg-gray-50">
+                    <div className="p-2 border-b bg-gray-50 flex gap-2 items-center">
                         <Input
                             type="text"
                             placeholder="Search..."
                             value={search}
                             onChange={(e) => setSearch(e.target.value)}
-                            className="h-8 text-xs"
+                            className="h-8 text-xs flex-1"
                             autoFocus
+                            // Stop propagation on input click/focus too, just in case
+                            onMouseDown={(e) => e.stopPropagation()}
                             onClick={(e) => e.stopPropagation()} 
                         />
+                        <button 
+                            onClick={(e) => { e.stopPropagation(); setActiveDropdown(null); }}
+                            className="p-1 hover:bg-gray-200 rounded text-gray-500"
+                        >
+                            <X className="h-4 w-4" />
+                        </button>
                     </div>
                     <div className="overflow-y-auto flex-1">
                         {available.length > 0 ? (
@@ -797,7 +516,6 @@ const MenuGridCell = memo(function MenuGridCell({
                 </>
             )}
 
-            {/* COMPANY LIST CONTENT */}
             {activeDropdown === 'company' && (
                 <>
                     <div className="p-2 border-b bg-gradient-to-r from-purple-50 to-white font-medium text-xs text-purple-800 flex justify-between items-center">
@@ -847,13 +565,15 @@ const MenuGridCell = memo(function MenuGridCell({
         <div className="flex-1 p-1 space-y-1">
           {selectedMenuItemIds.map((itemId) => {
             const item = allMenuItems.find((i) => i.id === itemId)
-            if (!item) return null
+            const displayName = item ? item.name : `Loading... (${itemId})`
+            const textColor = item ? "text-gray-700" : "text-red-500 italic"
+
             return (
               <div
                 key={itemId}
                 className="group relative flex items-center justify-between bg-blue-50/50 hover:bg-blue-100 border border-transparent hover:border-blue-200 px-1.5 py-0.5 rounded text-xs transition-colors"
               >
-                <span className="truncate font-medium text-gray-700 leading-tight">{item.name}</span>
+                <span className={`truncate font-medium leading-tight ${textColor}`}>{displayName}</span>
                 {isActive && (
                     <button
                         onClick={(e) => { e.stopPropagation(); onRemoveItem(itemId); }}
@@ -867,14 +587,10 @@ const MenuGridCell = memo(function MenuGridCell({
           })}
         </div>
 
-        {/* Toolbar */}
         {isActive && (
           <div className="p-1 border-t bg-gray-50 flex items-center justify-between gap-1 animate-in fade-in zoom-in-95 duration-100">
             
-            {/* MAIN BUTTON GROUP - REF IS HERE */}
             <div className="flex items-center gap-1" ref={buttonRef}>
-                
-                {/* 1. ADD BUTTON */}
                 <button
                     onClick={(e) => {
                         e.stopPropagation();
@@ -887,7 +603,6 @@ const MenuGridCell = memo(function MenuGridCell({
                     <Plus className="h-4 w-4" />
                 </button>
 
-                {/* 2. COMPANY BUTTON */}
                 <button
                     onClick={(e) => { 
                         e.stopPropagation(); 
@@ -900,7 +615,6 @@ const MenuGridCell = memo(function MenuGridCell({
                     <Building2 className="h-4 w-4" />
                 </button>
                 
-                {/* RENDER PORTAL */}
                 {dropdownContent}
 
                 <button className="p-1.5 rounded hover:bg-gray-200 text-gray-500 transition-colors" title="Docs">
@@ -926,10 +640,9 @@ const MenuGridCell = memo(function MenuGridCell({
       </div>
     </td>
   )
-})
+}
 
-
-// ---------------------- ServiceTable ----------------------
+// ---------------------- ServiceTable (No Major Changes needed, just keeping context) ----------------------
 const ServiceTable = memo(function ServiceTable({
   service,
   subServices,
@@ -1016,8 +729,6 @@ const ServiceTable = memo(function ServiceTable({
   const [dragActive, setDragActive] = useState(false)
   const dragItemsRef = useRef<string[]>([])
   const [hoveredDate, setHoveredDate] = useState<string | null>(null)
-  
-  // NEW: Track active cell for single-cell interaction
   const [activeCell, setActiveCell] = useState<string | null>(null)
 
   useEffect(() => {
@@ -1036,7 +747,6 @@ const ServiceTable = memo(function ServiceTable({
     return () => observer.disconnect()
   }, [])
   
-  // Clear active cell when clicking outside table
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
         if (tableRef.current && !tableRef.current.contains(e.target as Node)) {
@@ -1096,12 +806,10 @@ const ServiceTable = memo(function ServiceTable({
           <table className="w-full border-collapse">
             <thead>
               <tr>
-                {/* 1. Reduced Width for First Column */}
                 <th className="border border-gray-300 bg-gray-100 p-2 sticky left-0 z-20 w-[130px] min-w-[130px] shadow-[2px_0_5px_rgba(0,0,0,0.05)]">
                     Meal Plan / Sub Meal
                 </th>
                 {displayDates.map(({ date, day }) => (
-                  /* 2. Reduced Width for Date Columns */
                   <th key={date} className="border border-gray-300 bg-gray-100 p-2 min-w-[150px] w-[150px]">
                     <div className="font-semibold text-sm">
                       {new Date(date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
@@ -1116,7 +824,6 @@ const ServiceTable = memo(function ServiceTable({
                 subMealPlans.map((subMealPlan, idx) => (
                   <tr key={`${mealPlan.id}-${subMealPlan.id}`}>
                     <td className="border border-gray-300 bg-gray-50 p-2 sticky left-0 z-10 w-[130px] min-w-[130px] text-xs shadow-[2px_0_5px_rgba(0,0,0,0.05)] whitespace-normal break-words align-top">
-                      {/* COLOR STRIP ASSIGNED TO SERVICE */}
                       <div 
                         className="absolute left-0 top-0 bottom-0 w-1" 
                         style={{ backgroundColor: service.color || '#cbd5e1' }}
@@ -1167,10 +874,6 @@ const ServiceTable = memo(function ServiceTable({
                           key={cellKey}
                           date={date}
                           service={service}
-                           companies={companies}
-  buildings={buildings}
-  structureAssignments={structureAssignments}
-  selectedSubServiceId={selectedSubServiceId}
                           mealPlan={mealPlan}
                           subMealPlan={subMealPlan}
                           selectedMenuItemIds={selectedItems}
@@ -1215,15 +918,12 @@ const ServiceTable = memo(function ServiceTable({
                             handleHoverDrag(date)
                           }}
                           day={day}
-                          onViewCompanies={() => {
-                            setSelectedMealPlan(mealPlan)
-                            setSelectedSubMealPlan(subMealPlan)
-                            setSelectedDate(date)
-                            setSelectedDay(day)
-                            setShowCompanyModal(true)
-                          }}
                           isActive={activeCell === cellKey}
                           onActivate={() => setActiveCell(cellKey)}
+                          companies={companies}
+                          buildings={buildings}
+                          structureAssignments={mealPlanStructureAssignments}
+                          selectedSubServiceId={selectedSubServiceId}
                         />
                       )
                     })}
@@ -1297,7 +997,6 @@ export default function CombinedMenuCreationPage() {
     }
   }, [])
 
-  // Mock userCompanyId for now.
   useEffect(() => {
     setUserCompanyId("company123") 
   }, [])
@@ -1433,60 +1132,10 @@ export default function CombinedMenuCreationPage() {
     }
   }, [])
 
-  const filterEmptyCells = (menuData: CombinedMenuData): CombinedMenuData => {
-    const filtered: CombinedMenuData = {}
-
-    Object.entries(menuData).forEach(([date, dayMenu]) => {
-      const filteredDayMenu: DayMenu = {}
-
-      Object.entries(dayMenu).forEach(([serviceId, serviceData]) => {
-        const filteredService: any = {}
-
-        Object.entries(serviceData).forEach(([subServiceId, subServiceData]) => {
-          const filteredSubService: any = {}
-
-          Object.entries(subServiceData).forEach(([mealPlanId, mealPlanData]) => {
-            const filteredMealPlan: any = {}
-
-            Object.entries(mealPlanData).forEach(([subMealPlanId, cell]) => {
-              if (cell.menuItemIds && cell.menuItemIds.length > 0) {
-                filteredMealPlan[subMealPlanId] = cell
-              }
-            })
-
-            if (Object.keys(filteredMealPlan).length > 0) {
-              filteredSubService[mealPlanId] = filteredMealPlan
-            }
-          })
-
-          if (Object.keys(filteredSubService).length > 0) {
-            filteredService[subServiceId] = filteredSubService
-          }
-        })
-
-        if (Object.keys(filteredService).length > 0) {
-          filteredDayMenu[serviceId] = filteredService
-        }
-      })
-
-      if (Object.keys(filteredDayMenu).length > 0) {
-        filtered[date] = filteredDayMenu
-      }
-    })
-
-    return filtered
-  }
-
   const handleSaveDraft = async () => {
     try {
       setSaving(true)
-      const filteredMenuData = filterEmptyCells(combinedMenu)
-
-      if (Object.keys(filteredMenuData).length === 0) {
-        toast({ title: "Error", description: "Please add menu items before saving", variant: "destructive" })
-        setSaving(false)
-        return
-      }
+      const filteredMenuData = combinedMenu
 
       const draftData = {
         startDate,
@@ -1553,7 +1202,6 @@ export default function CombinedMenuCreationPage() {
       await loadMenuItems()
     }
 
-    // Async block for generation and draft fetching
     setTimeout(async () => {
       const dates: Array<{ date: string; day: string }> = []
       const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
@@ -1564,7 +1212,6 @@ export default function CombinedMenuCreationPage() {
         current.setDate(current.getDate() + 1)
       }
 
-      // 1. Create Empty Skeleton
       const initialMenu: CombinedMenuData = {}
       dates.forEach(({ date }) => {
         initialMenu[date] = {}
@@ -1585,7 +1232,6 @@ export default function CombinedMenuCreationPage() {
         })
       })
 
-      // 2. Fetch and Merge Draft if exists
       let draftFound = false;
       try {
         const draftData = await combinedMenusService.getDraftByDateRange(startDate, endDate, userCompanyId)
@@ -1621,12 +1267,10 @@ export default function CombinedMenuCreationPage() {
         console.error("Error fetching draft during generation", e);
       }
 
-      // 3. Fetch Repetition Logs & Enrich with Names
       try {
         const logs = await repetitionLogsService.getByDateRange(startDate, endDate, userCompanyId)
         if (logs.length > 0) {
             
-            // Fix: Map over logs and inject names from local services state
             const enrichedLogs = logs.map((log: any) => {
                 const sName = log.serviceName || services.find(s => s.id === log.serviceId)?.name || "Unknown Service";
                 const ssName = log.subServiceName || subServices.find(ss => ss.id === log.subServiceId)?.name || "Unknown Sub-Service";
@@ -1716,10 +1360,8 @@ export default function CombinedMenuCreationPage() {
     }
   }, [repetitionLog])
 
-  // --- NEW: Remove Single Log ---
   const removeRepetitionLog = useCallback(async (logId: string) => {
     try {
-      // Optimistic update
       const logToRemove = repetitionLog.find(l => l.id === logId);
       setRepetitionLog(prev => prev.filter(l => l.id !== logId));
 
@@ -1760,7 +1402,6 @@ export default function CombinedMenuCreationPage() {
         return cell?.menuItemIds?.includes(menuItemId)
       })
 
-      // Look up names for logging
       const serviceName = services.find(s => s.id === serviceId)?.name || "Unknown Service";
       const subServiceName = subServices.find(s => s.id === subServiceId)?.name || "Unknown Sub-Service";
 
@@ -1829,19 +1470,29 @@ export default function CombinedMenuCreationPage() {
         }
       }
 
+      // --- FIXED STATE UPDATE LOGIC FOR MULTI SELECT SAFETY ---
       setCombinedMenu((prev) => {
         const newMenu = { ...prev }
+        // Safely create path copies to trigger re-renders
         if (!newMenu[date]) newMenu[date] = {}
+        newMenu[date] = { ...newMenu[date] }
+
         if (!newMenu[date][serviceId]) newMenu[date][serviceId] = {}
+        newMenu[date][serviceId] = { ...newMenu[date][serviceId] }
+
         if (!newMenu[date][serviceId][subServiceId]) newMenu[date][serviceId][subServiceId] = {}
+        newMenu[date][serviceId][subServiceId] = { ...newMenu[date][serviceId][subServiceId] }
+
         if (!newMenu[date][serviceId][subServiceId][mealPlanId]) newMenu[date][serviceId][subServiceId][mealPlanId] = {}
-        if (!newMenu[date][serviceId][subServiceId][mealPlanId][subMealPlanId]) {
-          newMenu[date][serviceId][subServiceId][mealPlanId][subMealPlanId] = { menuItemIds: [] }
-        }
-        const existingIds = newMenu[date][serviceId][subServiceId][mealPlanId][subMealPlanId].menuItemIds
+        newMenu[date][serviceId][subServiceId][mealPlanId] = { ...newMenu[date][serviceId][subServiceId][mealPlanId] }
+
+        const currentCell = newMenu[date][serviceId][subServiceId][mealPlanId][subMealPlanId] || { menuItemIds: [] }
+        const existingIds = currentCell.menuItemIds || []
+
         if (existingIds.includes(menuItemId)) {
           return prev
         }
+        
         newMenu[date][serviceId][subServiceId][mealPlanId][subMealPlanId] = {
           menuItemIds: [...existingIds, menuItemId],
         }
@@ -1860,7 +1511,6 @@ export default function CombinedMenuCreationPage() {
       subMealPlanId: string,
       menuItemId: string,
     ) => {
-      // 1. Remove from local menu state
       setCombinedMenu((prev) => {
         const newMenu = { ...prev }
         if (newMenu[date]?.[serviceId]?.[subServiceId]?.[mealPlanId]?.[subMealPlanId]) {
@@ -1873,8 +1523,6 @@ export default function CombinedMenuCreationPage() {
         return newMenu
       })
 
-      // 2. Remove associated repetition logs
-      // Check for any log entries that match the item being removed in this context
       const logsToRemove = repetitionLog.filter(log => 
           log.itemId === menuItemId &&
           log.attemptedDate === date &&
@@ -1887,7 +1535,6 @@ export default function CombinedMenuCreationPage() {
       if (logsToRemove.length > 0) {
           const ids = logsToRemove.map(l => l.id).filter(id => id);
           
-          // Allow re-logging by removing keys from tracking ref
           logsToRemove.forEach(log => {
                const keyObj = {
                   type: log.type,
@@ -1901,10 +1548,8 @@ export default function CombinedMenuCreationPage() {
                repetitionLogKeysRef.current.delete(JSON.stringify(keyObj));
           });
 
-          // Optimistically update UI state
           setRepetitionLog(prev => prev.filter(log => !ids.includes(log.id)));
 
-          // Delete from DB
           if (ids.length > 0) {
               try {
                   await repetitionLogsService.deleteAll(ids);
@@ -1941,17 +1586,37 @@ export default function CombinedMenuCreationPage() {
   const handleSaveCombinedMenu = async () => {
     try {
       setSaving(true)
-      const filteredMenuData = filterEmptyCells(combinedMenu)
+      
+      const filtered: CombinedMenuData = {}
+      Object.entries(combinedMenu).forEach(([date, dayMenu]) => {
+         const filteredDay: any = {}
+         Object.entries(dayMenu).forEach(([sId, sData]) => {
+             const filteredS: any = {}
+             Object.entries(sData).forEach(([ssId, ssData]) => {
+                 const filteredSS: any = {}
+                 Object.entries(ssData).forEach(([mpId, mpData]) => {
+                     const filteredMP: any = {}
+                     Object.entries(mpData).forEach(([smpId, cell]) => {
+                         if(cell.menuItemIds?.length > 0) filteredMP[smpId] = cell
+                     })
+                     if(Object.keys(filteredMP).length > 0) filteredSS[mpId] = filteredMP
+                 })
+                 if(Object.keys(filteredSS).length > 0) filteredS[ssId] = filteredSS
+             })
+             if(Object.keys(filteredS).length > 0) filteredDay[sId] = filteredS
+         })
+         if(Object.keys(filteredDay).length > 0) filtered[date] = filteredDay
+      })
 
-      if (Object.keys(filteredMenuData).length === 0) {
+      if (Object.keys(filtered).length === 0) {
         toast({ title: "Error", description: "Please add menu items before saving", variant: "destructive" })
         setSaving(false)
         return
       }
 
-      const combinedMenuData = { startDate, endDate, menuData: filteredMenuData, status: "active" }
+      const combinedMenuData = { startDate, endDate, menuData: filtered, status: "active" }
       const savedMenu = await combinedMenusService.add(combinedMenuData)
-      await generateCompanyMenus(savedMenu.id, filteredMenuData)
+      await generateCompanyMenus(savedMenu.id, filtered)
       toast({ title: "Success", description: "Combined menu saved and company menus generated successfully" })
       setShowModal(false)
       setStartDate("")
@@ -2097,7 +1762,6 @@ export default function CombinedMenuCreationPage() {
     ) => {
       const dates = dateRange.map((d) => d.date)
       
-      // Look up names for logging
       const serviceName = services.find(s => s.id === serviceId)?.name || "Unknown Service";
       const subServiceName = subServices.find(s => s.id === subServiceId)?.name || "Unknown Sub-Service";
 
@@ -2372,6 +2036,7 @@ export default function CombinedMenuCreationPage() {
                       combinedMenu={combinedMenu}
                       allItems={menuItems}
                       onAddItem={addMenuItemToCell}
+                      a
                       onRemoveItem={removeMenuItemFromCell}
                       onCreateItem={handleCreateItem}
                       visibleDates={visibleDates}
@@ -2489,7 +2154,7 @@ export default function CombinedMenuCreationPage() {
                       })
                     )}
                   </div>
-                </div>
+               </div>
               )}
             </div>
           </div>
