@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useMemo, memo, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { 
   Loader2, 
   Save, 
@@ -10,7 +11,14 @@ import {
   Search, 
   ChevronRight, 
   AlertCircle, 
-  ChevronDown 
+  ChevronDown,
+  Plus,
+  Building2,
+  FileText,
+  ClipboardCopy,
+  ClipboardPaste,
+  GripHorizontal,
+  CheckCircle,
 } from 'lucide-react'
 import { toast } from "@/hooks/use-toast"
 import type { Service, MealPlan, SubMealPlan, MenuItem, SubService } from "@/lib/types"
@@ -20,19 +28,226 @@ import {
   mealPlansService,
   subMealPlansService,
   structureAssignmentsService,
-  mealPlanStructureAssignmentsService,
+  mealPlanStructureAssignmentsService, // Added this import
   menuItemsService,
   updationService,
   repetitionLogsService,
   companiesService,
   buildingsService,
-  clearCacheKey,
 } from "@/lib/services"
-import { collection, getDocs, doc, getDoc, updateDoc, addDoc, query, where, orderBy } from "firebase/firestore"
+import { collection, getDocs, doc, getDoc, updateDoc, addDoc } from "firebase/firestore"
 import { db } from "@/lib/firebase"
 import { detectMenuChanges, createChangeSummary } from "@/lib/change-detector"
 
 // --- Helper Components ---
+
+const ItemDescriptionModal = memo(function ItemDescriptionModal({
+  isOpen,
+  onClose,
+  selectedItems,
+  allMenuItems,
+  onSaveDescription,
+}: {
+  isOpen: boolean
+  onClose: () => void
+  selectedItems: string[]
+  allMenuItems: MenuItem[]
+  onSaveDescription: (itemId: string, descriptions: string[], selectedDescription: string) => Promise<void>
+}) {
+  const [itemDescriptions, setItemDescriptions] = useState<Record<string, string[]>>({})
+  const [selectedDescriptions, setSelectedDescriptions] = useState<Record<string, string>>({})
+  const [newDescriptionInputs, setNewDescriptionInputs] = useState<Record<string, string>>({})
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    if (isOpen && selectedItems.length > 0) {
+      loadDescriptions()
+    }
+  }, [isOpen, selectedItems])
+
+  const loadDescriptions = async () => {
+    setLoading(true)
+    try {
+      const newDescriptions: Record<string, string[]> = {}
+      const newSelected: Record<string, string> = {}
+      for (const itemId of selectedItems) {
+        const descs = await menuItemsService.getDescriptions(itemId)
+        const selected = await menuItemsService.getSelectedDescription(itemId)
+        newDescriptions[itemId] = descs
+        newSelected[itemId] = selected || (descs.length > 0 ? descs[0] : "")
+      }
+      setItemDescriptions(newDescriptions)
+      setSelectedDescriptions(newSelected)
+    } catch (error) {
+      console.error("Error loading descriptions:", error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleAddDescription = (itemId: string) => {
+    const newDesc = newDescriptionInputs[itemId]?.trim()
+    if (!newDesc) return
+
+    setItemDescriptions((prev) => ({
+      ...prev,
+      [itemId]: [...(prev[itemId] || []), newDesc],
+    }))
+    setNewDescriptionInputs((prev) => ({
+      ...prev,
+      [itemId]: "",
+    }))
+  }
+
+  const handleRemoveDescription = (itemId: string, index: number) => {
+    setItemDescriptions((prev) => ({
+      ...prev,
+      [itemId]: prev[itemId].filter((_, i) => i !== index),
+    }))
+  }
+
+  const handleSelectDescription = (itemId: string, description: string) => {
+    setSelectedDescriptions((prev) => ({
+      ...prev,
+      [itemId]: description,
+    }))
+  }
+
+  const handleSave = async () => {
+    setLoading(true)
+    try {
+      for (const itemId of selectedItems) {
+        const descriptions = itemDescriptions[itemId] || []
+        const selectedDesc = selectedDescriptions[itemId] || ""
+        if (descriptions.length > 0) {
+          await onSaveDescription(itemId, descriptions, selectedDesc)
+        }
+      }
+      toast({ title: "Descriptions saved successfully!" })
+      onClose()
+    } catch (error) {
+      console.error("Error saving descriptions:", error)
+      toast({ title: "Error saving descriptions", variant: "destructive" })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  if (!isOpen) return null
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 z-[150] flex items-center justify-center p-4">
+      <div className="bg-white rounded-lg max-w-2xl w-full max-h-[80vh] overflow-auto">
+        <div className="sticky top-0 bg-gradient-to-r from-amber-50 to-white border-b p-4 flex items-center justify-between">
+          <div>
+            <h3 className="font-semibold text-lg flex items-center gap-2">
+              <FileText className="h-5 w-5 text-amber-600" />
+              Menu Item Descriptions
+            </h3>
+            <p className="text-sm text-gray-600">
+              {selectedItems.length} item{selectedItems.length !== 1 ? "s" : ""} selected
+            </p>
+          </div>
+          <button onClick={onClose} className="text-gray-500 hover:text-gray-700" type="button">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+        <div className="p-4 space-y-6">
+          {loading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-amber-600" />
+            </div>
+          ) : (
+            selectedItems.map((itemId) => {
+              const item = allMenuItems.find((i) => i.id === itemId)
+              if (!item) return null
+              const descriptions = itemDescriptions[itemId] || []
+              const selectedDesc = selectedDescriptions[itemId] || ""
+
+              return (
+                <div key={itemId} className="border rounded-lg p-4 bg-gradient-to-r from-amber-50 to-white">
+                  <Label className="text-sm font-semibold text-gray-800 mb-3 block">{item.name}</Label>
+                  {descriptions.length > 0 && (
+                    <div className="mb-4">
+                      <p className="text-xs font-medium text-gray-600 mb-2">Select Description:</p>
+                      <div className="space-y-2">
+                        {descriptions.map((desc, idx) => (
+                          <div
+                            key={idx}
+                            className="flex items-start gap-3 p-2 border border-amber-200 rounded hover:bg-amber-100 transition-colors cursor-pointer"
+                            onClick={() => handleSelectDescription(itemId, desc)}
+                          >
+                            <input
+                              type="radio"
+                              name={`desc-${itemId}`}
+                              checked={selectedDesc === desc}
+                              onChange={() => handleSelectDescription(itemId, desc)}
+                              className="mt-1 cursor-pointer"
+                            />
+                            <div className="flex-1">
+                              <p className="text-sm text-gray-700 break-words">{desc}</p>
+                            </div>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleRemoveDescription(itemId, idx)
+                              }}
+                              className="text-red-400 hover:text-red-600 ml-2"
+                            >
+                              <X className="h-4 w-4" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  <div className="border-t pt-3">
+                    <p className="text-xs font-medium text-gray-600 mb-2">Add New Description:</p>
+                    <div className="flex gap-2">
+                      <Input
+                        type="text"
+                        placeholder="Enter new description..."
+                        value={newDescriptionInputs[itemId] || ""}
+                        onChange={(e) =>
+                          setNewDescriptionInputs((prev) => ({
+                            ...prev,
+                            [itemId]: e.target.value,
+                          }))
+                        }
+                        className="text-sm flex-1"
+                        onKeyPress={(e) => {
+                          if (e.key === "Enter") {
+                            handleAddDescription(itemId)
+                          }
+                        }}
+                      />
+                      <Button
+                        size="sm"
+                        onClick={() => handleAddDescription(itemId)}
+                        className="bg-amber-600 hover:bg-amber-700 text-white"
+                      >
+                        <Plus className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              )
+            })
+          )}
+        </div>
+        <div className="border-t p-4 flex items-center justify-end gap-2 bg-gray-50">
+          <Button variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button onClick={handleSave} disabled={loading} className="bg-amber-600 hover:bg-amber-700 text-white">
+            {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+            Save All Descriptions
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
+})
 
 const CompanyAssignmentModal = memo(function CompanyAssignmentModal({
   isOpen,
@@ -143,277 +358,298 @@ interface MenuData {
 }
 
 // --- Menu Cell Component ---
-const MenuCell = memo(function MenuCell({
-  cellKey,
-  selectedItems,
-  allItems,
-  onAdd,
-  onRemove,
-  onCreateItem,
-  date,
-  prevItems,
-  onCopy,
-  onPaste,
-  canPaste,
-  onStartDrag,
-  onHoverDrag,
-  isDragActive,
-  isDragHover,
-  onViewCompanies,
-}: {
-  cellKey: string
-  selectedItems: string[]
-  allItems: MenuItem[]
-  onAdd: (itemId: string) => void
-  onRemove: (itemId: string) => void
-  onCreateItem: (name: string, category: string) => Promise<void>
-  date: string
-  prevItems?: string[]
-  onCopy?: () => void
-  onPaste?: () => void
-  canPaste?: boolean
-  onStartDrag?: (items: string[]) => void
-  onHoverDrag?: () => void
-  isDragActive?: boolean
-  isDragHover?: boolean
-  onViewCompanies?: () => void
-}) {
-  const [isOpen, setIsOpen] = useState(false)
-  const [search, setSearch] = useState("")
-  const [creating, setCreating] = useState(false)
-  const [newName, setNewName] = useState("")
-  const [newCategory, setNewCategory] = useState("")
-  const [lastAddedItemId, setLastAddedItemId] = useState<string | null>(null)
-  const dropdownRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (!isOpen) return
-    const handleClickOutside = (e: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        setIsOpen(false)
-        setSearch("")
+const MenuGridCell = memo(function MenuGridCell({
+    date,
+    selectedMenuItemIds,
+    allMenuItems,
+    onAddItem,
+    onRemoveItem,
+    onCreateItem,
+    onStartDrag,
+    onHoverDrag,
+    isDragActive,
+    isDragHover,
+    onCopy,
+    onPaste,
+    canPaste,
+    prevItems,
+    onCellMouseEnter,
+    onViewCompanies,
+    isActive,
+    onActivate,
+  }: {
+    date: string
+    selectedMenuItemIds: string[]
+    allMenuItems: MenuItem[]
+    onAddItem: (menuItemId: string) => void
+    onRemoveItem: (menuItemId: string) => void
+    onCreateItem: (name: string, category: string) => Promise<{ id: string; name: string } | null>
+    onStartDrag?: (date: string, items: string[]) => void
+    onHoverDrag?: (date: string) => void
+    isDragActive?: boolean
+    isDragHover?: boolean
+    onCopy?: () => void
+    onPaste?: () => void
+    canPaste?: boolean
+    prevItems?: string[]
+    onCellMouseEnter?: () => void
+    onViewCompanies?: () => void
+    isActive: boolean
+    onActivate: () => void
+  }) {
+    const [isOpen, setIsOpen] = useState(false)
+    const [search, setSearch] = useState("")
+    const [creating, setCreating] = useState(false)
+    const [showDescModal, setShowDescModal] = useState(false)
+    const dropdownRef = useRef<HTMLDivElement>(null)
+  
+    useEffect(() => {
+      if (!isOpen) return
+      const handleClickOutside = (e: MouseEvent) => {
+        if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+          setIsOpen(false)
+          setSearch("")
+        }
+      }
+      document.addEventListener("mousedown", handleClickOutside)
+      return () => document.removeEventListener("mousedown", handleClickOutside)
+    }, [isOpen])
+  
+    const filtered = useMemo(() => {
+      if (!search.trim()) return allMenuItems.slice(0, 50)
+      const lower = search.toLowerCase()
+      return allMenuItems
+        .filter(
+          (item) =>
+            item.name.toLowerCase().includes(lower) || (item.category && item.category.toLowerCase().includes(lower)),
+        )
+        .slice(0, 50)
+    }, [allMenuItems, search])
+  
+    const available = useMemo(
+      () => filtered.filter((item) => !selectedMenuItemIds.includes(item.id)),
+      [filtered, selectedMenuItemIds],
+    )
+  
+    const handleCreate = async () => {
+      if (!search.trim()) return
+      setCreating(true)
+      try {
+        const createdItem = await onCreateItem(search.trim(), "")
+        if (createdItem && createdItem.id) {
+          onAddItem(createdItem.id)
+          setSearch("")
+          setIsOpen(false)
+        }
+      } catch (error) {
+        console.error("Create error:", error)
+      } finally {
+        setCreating(false)
       }
     }
-    document.addEventListener("mousedown", handleClickOutside)
-    return () => document.removeEventListener("mousedown", handleClickOutside)
-  }, [isOpen])
-
-  const filtered = useMemo(() => {
-    if (!search.trim()) return allItems.slice(0, 50)
-    const lower = search.toLowerCase()
-    return allItems
-      .filter(
-        (item) =>
-          item.name.toLowerCase().includes(lower) || (item.category && item.category.toLowerCase().includes(lower)),
-      )
-      .slice(0, 50)
-  }, [allItems, search])
-
-  const available = useMemo(
-    () => filtered.filter((item) => !selectedItems.includes(item.id)),
-    [filtered, selectedItems],
-  )
-
-  const handleCreate = async () => {
-    if (!newName.trim()) {
-      toast({ title: "Error", description: "Please enter a menu item name", variant: "destructive" })
-      return
-    }
-    const itemExists = allItems.some((item) => item.name.toLowerCase().trim() === newName.toLowerCase().trim())
-    if (itemExists) {
-      toast({ title: "Duplicate Item", description: `Menu item "${newName}" already exists`, variant: "destructive" })
-      return
-    }
-    setCreating(true)
-    try {
-      await onCreateItem(newName.trim(), newCategory.trim())
-      setNewName("")
-      setNewCategory("")
+  
+    const handleAdd = (itemId: string) => {
+      if (selectedMenuItemIds.includes(itemId)) return
+      onAddItem(itemId)
       setSearch("")
-    } finally {
-      setCreating(false)
+      setIsOpen(false)
     }
-  }
-
-  const handleAddItem = (itemId: string) => {
-    if (selectedItems.includes(itemId)) {
-      toast({ title: "Duplicate Item", description: "This menu item is already added", variant: "destructive" })
-      return
+  
+    const onDragHandleMouseDown = (e: React.MouseEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+      onStartDrag?.(date, selectedMenuItemIds)
     }
-    setLastAddedItemId(itemId)
-    onAdd(itemId)
-    setSearch("")
-    setIsOpen(false)
-    setTimeout(() => setLastAddedItemId(null), 2000)
-  }
-
-  const onDragHandleMouseDown = (e: React.MouseEvent) => {
-    e.preventDefault()
-    onStartDrag?.(selectedItems)
-  }
-
-  const onMouseEnterCell = () => {
-    if (onHoverDrag) onHoverDrag()
-  }
-
-  return (
-    <td 
-      onMouseEnter={onMouseEnterCell}
-      className={`border p-2 align-top min-w-[250px] transition-all duration-150 ${isDragHover ? "ring-2 ring-blue-300 bg-blue-50" : ""}`}
-    >
-      <div className="space-y-2">
-        {/* Previous Week Indicator */}
-        {prevItems && prevItems.length > 0 && (
-          <div className="text-xs text-gray-600 mb-1 italic flex items-center gap-2">
-            <span className="font-medium text-xs">Prev wk:</span>
-            <div className="flex flex-wrap gap-1">
-              {prevItems.slice(0, 6).map((id) => {
-                const name = allItems.find((m) => m.id === id)?.name || id
+  
+    return (
+      <>
+        <td
+          onClick={() => onActivate()}
+          onMouseEnter={() => {
+            onCellMouseEnter?.()
+            if (onHoverDrag) onHoverDrag(date)
+          }}
+          className={`border p-2 align-top min-w-[200px] transition-all duration-150 relative 
+            ${isActive ? "ring-2 ring-blue-500 bg-white z-10" : "bg-white hover:bg-gray-50"} 
+            ${isDragHover ? "ring-2 ring-blue-300 bg-blue-50" : ""}
+          `}
+        >
+          <div className="flex flex-col h-full min-h-[60px]">
+            {prevItems && prevItems.length > 0 && (
+              <div className="px-1 pt-1 flex flex-wrap gap-0.5 opacity-60 hover:opacity-100 transition-opacity mb-1">
+                {prevItems.slice(0, 3).map((id) => (
+                  <div key={id} className="w-1.5 h-1.5 rounded-full bg-blue-400" title="Item from previous week" />
+                ))}
+                {prevItems.length > 3 && <span className="text-[9px] text-gray-400">...</span>}
+              </div>
+            )}
+  
+            <div className="flex-1 space-y-1">
+              {selectedMenuItemIds.map((itemId) => {
+                const item = allMenuItems.find((i) => i.id === itemId)
+                if (!item) return null
                 return (
-                  <span
-                    key={id}
-                    className="font-semibold text-blue-800 bg-blue-50 px-2 py-0.5 rounded shadow-[0_0_10px_rgba(59,130,246,0.18)] text-[10px]"
-                    title={name}
+                  <div
+                    key={itemId}
+                    className="group relative flex items-center justify-between bg-blue-50/50 hover:bg-blue-100 border border-transparent hover:border-blue-200 px-1.5 py-0.5 rounded text-xs transition-colors"
                   >
-                    {name}
-                  </span>
+                    <span className="truncate font-medium text-gray-700 leading-tight">{item.name}</span>
+                    {isActive && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onRemoveItem(itemId)
+                        }}
+                        className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 ml-1"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    )}
+                  </div>
                 )
               })}
-              {prevItems.length > 6 && <span className="text-[10px] text-gray-500">+{prevItems.length - 6}</span>}
             </div>
-          </div>
-        )}
-
-        {/* Selected items */}
-        <div className="min-h-[60px] space-y-1">
-          {selectedItems.length === 0 ? (
-            <div className="text-xs text-gray-400 py-2">No items.</div>
-          ) : (
-            selectedItems.map((itemId) => {
-              const item = allItems.find((i) => i.id === itemId)
-              if (!item) return null
-              const isNewlyAdded = lastAddedItemId === itemId
-              return (
-                <div
-                  key={itemId}
-                  className={`flex items-center justify-between border p-2 rounded text-sm transition-all ${
-                    isNewlyAdded
-                      ? "bg-green-100 border-2 border-green-500 font-bold shadow-md"
-                      : "bg-white border-gray-200"
-                  }`}
-                >
-                  <span className="flex-1 truncate text-xs">{item.name}</span>
+  
+            {isActive && (
+              <div className="mt-2 p-1 border-t bg-gray-50 flex items-center justify-between gap-1 animate-in fade-in zoom-in-95 duration-100">
+                <div className="flex items-center gap-1" ref={dropdownRef}>
+                  <div className="relative">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setIsOpen(!isOpen)
+                      }}
+                      className="p-1.5 rounded hover:bg-blue-100 text-blue-600 transition-colors"
+                      title="Add Item"
+                    >
+                      <Plus className="h-4 w-4" />
+                    </button>
+                    {isOpen && (
+                      <div className="absolute top-full left-0 mt-1 w-[270px] bg-white border rounded-lg shadow-xl z-50 flex flex-col overflow-hidden">
+                        <div className="p-3 border-b bg-gradient-to-r from-blue-50 to-white">
+                          <div className="relative">
+                            <Search className="absolute left-2 top-2.5 h-4 w-4 text-gray-400" />
+                            <Input
+                              type="text"
+                              placeholder="Search..."
+                              value={search}
+                              onChange={(e) => setSearch(e.target.value)}
+                              className="h-8 text-xs pl-7 focus:ring-blue-500"
+                              autoFocus
+                              onClick={(e) => e.stopPropagation()}
+                            />
+                          </div>
+                        </div>
+                        <div className="max-h-[240px] overflow-y-auto">
+                          {available.length > 0 ? (
+                            available.map((item) => (
+                              <button
+                                key={item.id}
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  handleAdd(item.id)
+                                }}
+                                className="w-full px-3 py-2 text-left hover:bg-blue-50 text-xs border-b last:border-0 truncate transition-colors flex items-center justify-between group"
+                              >
+                                <span className="font-medium text-gray-700">{item.name}</span>
+                                <CheckCircle className="h-3 w-3 opacity-0 group-hover:opacity-100 text-green-600" />
+                              </button>
+                            ))
+                          ) : search.trim() ? (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleCreate()
+                              }}
+                              className="w-full p-3 text-center text-xs text-blue-600 font-semibold hover:bg-blue-50 border-b transition-colors flex items-center justify-center gap-2"
+                            >
+                              {creating ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
+                              Create "{search}"
+                            </button>
+                          ) : (
+                            <div className="p-3 text-xs text-gray-400 text-center">Start typing...</div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+  
                   <button
-                    onClick={() => onRemove(itemId)}
-                    className="text-red-500 hover:text-red-700 ml-2 flex-shrink-0"
-                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onViewCompanies?.()
+                    }}
+                    className="p-1.5 rounded hover:bg-purple-100 text-purple-600 transition-colors"
+                    title="View Companies"
                   >
-                    <X className="h-3 w-3" />
+                    <Building2 className="h-4 w-4" />
+                  </button>
+  
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setShowDescModal(true)
+                    }}
+                    disabled={selectedMenuItemIds.length === 0}
+                    className={`p-1.5 rounded transition-colors ${
+                      selectedMenuItemIds.length > 0 ? "hover:bg-amber-100 text-amber-600" : "text-gray-300 cursor-not-allowed"
+                    }`}
+                    title="Edit Item Descriptions"
+                  >
+                    <FileText className="h-4 w-4" />
                   </button>
                 </div>
-              )
-            })
-          )}
-        </div>
-
-        {/* Add button with dropdown */}
-        <div className="relative" ref={dropdownRef}>
-          <button
-            onClick={() => setIsOpen(!isOpen)}
-            className="w-full px-2 py-1.5 text-left border rounded hover:bg-gray-50 text-xs text-gray-600 transition-colors"
-            type="button"
-          >
-            + Add item
-          </button>
-          {isOpen && (
-            <div className="absolute top-full left-0 right-0 mt-1 bg-white border rounded shadow-lg z-50 max-h-[300px] flex flex-col w-[280px]">
-              <div className="p-2 border-b sticky top-0 bg-white">
-                <div className="relative">
-                  <Search className="absolute left-2 top-2.5 h-3 w-3 text-gray-400" />
-                  <Input
-                    type="text"
-                    placeholder="Search..."
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    className="w-full pl-7 pr-2 py-1 h-8 text-xs"
-                    autoFocus
-                  />
+  
+                <div className="w-px h-4 bg-gray-300 mx-0.5"></div>
+  
+                <div className="flex items-center gap-0.5">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onCopy?.()
+                    }}
+                    className="p-1.5 rounded hover:bg-gray-200 text-gray-600 transition-colors"
+                    title="Copy"
+                  >
+                    <ClipboardCopy className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onPaste?.()
+                    }}
+                    disabled={!canPaste}
+                    className={`p-1.5 rounded transition-colors ${canPaste ? "hover:bg-gray-200 text-gray-600" : "text-gray-300"}`}
+                    title="Paste"
+                  >
+                    <ClipboardPaste className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    onMouseDown={onDragHandleMouseDown}
+                    className={`p-1.5 rounded cursor-grab active:cursor-grabbing transition-colors ${isDragActive ? "bg-blue-100 text-blue-600" : "hover:bg-gray-200 text-gray-600"}`}
+                    title="Drag to fill"
+                  >
+                    <GripHorizontal className="h-3.5 w-3.5" />
+                  </button>
                 </div>
               </div>
-              <div className="flex-1 overflow-y-auto max-h-[200px]">
-                {available.length > 0 ? (
-                  available.map((item) => (
-                    <button
-                      key={item.id}
-                      onClick={() => handleAddItem(item.id)}
-                      className="w-full px-3 py-2 text-left hover:bg-blue-50 text-xs border-b transition-colors"
-                      type="button"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span>{item.name}</span>
-                        {item.category && <span className="text-xs text-gray-500">({item.category})</span>}
-                      </div>
-                    </button>
-                  ))
-                ) : (
-                  <div className="p-4 text-xs text-gray-500 text-center">No items found</div>
-                )}
-              </div>
-              <div className="p-2 border-t bg-gray-50 space-y-2">
-                <Input
-                  type="text"
-                  placeholder="New Item Name"
-                  value={newName}
-                  onChange={(e) => setNewName(e.target.value)}
-                  className="w-full text-xs h-8"
-                />
-                <Button onClick={handleCreate} disabled={creating || !newName.trim()} className="w-full h-8 text-xs" size="sm">
-                  {creating ? <Loader2 className="h-3 w-3 animate-spin" /> : "Create"}
-                </Button>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Action Toolbar */}
-        <div className="flex items-center gap-1 mt-2">
-          <button
-            title="Copy"
-            onClick={onCopy}
-            className="px-1.5 py-1 border rounded text-[10px] bg-white hover:bg-gray-50 shadow-sm"
-            type="button"
-          >
-            Copy
-          </button>
-          <button
-            title="Paste"
-            onClick={onPaste}
-            disabled={!canPaste}
-            className={`px-1.5 py-1 border rounded text-[10px] ${canPaste ? "bg-white hover:bg-gray-50" : "bg-gray-100 text-gray-400"} shadow-sm`}
-            type="button"
-          >
-            Paste
-          </button>
-          <button
-            title="Drag"
-            onMouseDown={onDragHandleMouseDown}
-            className={`px-1.5 py-1 rounded border text-[10px] ${isDragActive ? "bg-blue-50 border-blue-300" : "bg-white hover:bg-gray-50"}`}
-            type="button"
-          >
-            Drag
-          </button>
-        </div>
-        <button
-          onClick={onViewCompanies}
-          className="w-full px-2 py-1 mt-1 border rounded text-[10px] bg-blue-50 hover:bg-blue-100 text-blue-700 font-medium"
-          type="button"
-        >
-          View Companies
-        </button>
-      </div>
-    </td>
-  )
-})
+            )}
+          </div>
+  
+          <ItemDescriptionModal
+            isOpen={showDescModal}
+            onClose={() => setShowDescModal(false)}
+            selectedItems={selectedMenuItemIds}
+            allMenuItems={allMenuItems}
+            onSaveDescription={async (itemId, descriptions, selectedDescription) => {
+              await menuItemsService.addDescriptions(itemId, descriptions)
+              await menuItemsService.setSelectedDescription(itemId, selectedDescription)
+            }}
+          />
+        </td>
+      </>
+    )
+  })
 
 // --- Navigation Panel ---
 const ServiceNavigationPanel = memo(function ServiceNavigationPanel({
@@ -527,6 +763,9 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
   const [companies, setCompanies] = useState<any[]>([])
   const [buildings, setBuildings] = useState<any[]>([])
   const [structureAssignments, setStructureAssignments] = useState<any[]>([])
+  const [mealPlanAssignments, setMealPlanAssignments] = useState<any[]>([]) // Added this state
+  
+  const [activeCell, setActiveCell] = useState<string | null>(null)
 
   const [visibleDates, setVisibleDates] = useState(0)
   const CHUNK_SIZE = 7
@@ -545,15 +784,6 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
   }, [])
 
   useEffect(() => {
-    if (!loading && visibleDates < dateRange.length) {
-      const timer = setTimeout(() => {
-        setVisibleDates((v) => Math.min(v + CHUNK_SIZE, dateRange.length))
-      }, 100)
-      return () => clearTimeout(timer)
-    }
-  }, [loading, visibleDates, dateRange.length])
-
-  useEffect(() => {
     const handleMouseUp = () => {
       setDragActive(false)
       dragItemsRef.current = []
@@ -562,6 +792,16 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
     document.addEventListener("mouseup", handleMouseUp)
     return () => document.removeEventListener("mouseup", handleMouseUp)
   }, [])
+
+  useEffect(() => {
+    if (!loading && visibleDates < dateRange.length) {
+      const timer = setTimeout(() => {
+        setVisibleDates((v) => Math.min(v + CHUNK_SIZE, dateRange.length))
+      }, 100)
+      return () => clearTimeout(timer)
+    }
+  }, [loading, visibleDates, dateRange.length])
+
 
   // Load Previous Week Map
   const loadPrevWeekMap = useCallback(async (currentDates: string[]) => {
@@ -627,6 +867,7 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
       setSelectedSubService(null)
       setRepetitionLog([])
       repetitionLogKeysRef.current.clear()
+      setActiveCell(null)
       return
     }
 
@@ -674,7 +915,7 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
         setProgress(50)
         setMessage("Loading structure...")
 
-        const [servicesData, subServicesData, mealPlansData, subMealPlansData, menuItemsData, companiesData, buildingsData, structureData] = await Promise.all([
+        const [servicesData, subServicesData, mealPlansData, subMealPlansData, menuItemsData, companiesData, buildingsData, structureData, mealPlanStructureData] = await Promise.all([
           servicesService.getAll(),
           subServicesService.getAll(),
           mealPlansService.getAll(),
@@ -684,7 +925,8 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
             : menuItemsService.getAll(),
           companiesService.getAll(),
           buildingsService.getAll(),
-          structureAssignmentsService.getAll()
+          structureAssignmentsService.getAll(),
+          mealPlanStructureAssignmentsService.getAll() // Added this fetch
         ])
 
         if (signal.aborted || !mountedRef.current) return
@@ -692,6 +934,7 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
         setCompanies(companiesData)
         setBuildings(buildingsData)
         setStructureAssignments(structureData)
+        setMealPlanAssignments(mealPlanStructureData) // Save the meal plan specific assignments
 
         setProgress(70)
         setMessage("Filtering data...")
@@ -699,7 +942,6 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
         let filteredServices = servicesData.filter((s) => s.status === "active").sort((a, b) => (a.order || 999) - (b.order || 999))
         let filteredSubServices = subServicesData.filter((ss) => ss.status === "active").sort((a, b) => (a.order || 999) - (b.order || 999))
 
-        // --- FILTER FOR COMPANY MENU TYPE ---
         if (menuType === "company" && menuDoc.companyId && menuDoc.buildingId) {
             const assignment = structureData.find((s: any) => 
                s.companyId === menuDoc.companyId && 
@@ -728,7 +970,6 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
                filteredSubServices = filteredSubServices.filter(ss => allowedSubServiceIds.has(ss.id));
             }
         }
-        // -------------------------------------
 
         const subServicesMap = new Map<string, SubService[]>()
         filteredSubServices.forEach((ss) => {
@@ -985,9 +1226,11 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
       const newItem: MenuItem = { id: newItemRef.id, name, category, status: "active", order: 999 }
       setMenuItems((prev) => [...prev, newItem])
       toast({ title: "Success", description: `Menu item "${name}" created successfully` })
+      return { id: newItem.id, name: newItem.name }
     } catch (error) {
       console.error("Error creating menu item:", error)
       toast({ title: "Error", description: "Failed to create menu item", variant: "destructive" })
+      return null
     }
   }, [])
 
@@ -1005,7 +1248,7 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
       toast({ title: "Pasted", description: `${copyBuffer.items.length} items pasted` })
   }, [copyBuffer, selectedService, selectedSubService, handleAddItem])
 
-  const handleStartDrag = useCallback((items: string[]) => {
+  const handleStartDrag = useCallback((date: string, items: string[]) => {
       if(!items.length) return
       dragItemsRef.current = [...items]
       setDragActive(true)
@@ -1031,14 +1274,12 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
       const menuItemsMap = new Map(menuItems.map((item) => [item.id, item.name]))
       const changedCells = detectMenuChanges(originalMenuData, menuData, menuItemsMap)
 
-      // 1. Update the Main Menu
       await updateDoc(docRef, {
         menuData: JSON.parse(JSON.stringify(menuData)),
         status: statusToSave,
         updatedAt: new Date(),
       })
 
-      // 2. Create Updation Record for Main Menu
       if (!isDraft && changedCells.length > 0) {
         const changeSummary = createChangeSummary(changedCells)
         const latestNumber = await updationService.getLatestUpdationNumber(menuId) || 0
@@ -1063,191 +1304,6 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
         await addDoc(collection(db, "updations"), updationRecord)
       }
 
-      // 3. Sync to Company Menus
-      if (menuType === "combined" && !isDraft && changedCells.length > 0) {
-        try {
-          console.log("[Sync] Starting sync process...");
-          
-          // Fetch All Necessary Data
-          const [companyMenusSnapshot, allStructures, allMealPlanStructures] = await Promise.all([
-             getDocs(collection(db, "companyMenus")),
-             structureAssignmentsService.getAll(),
-             mealPlanStructureAssignmentsService.getAll()
-          ])
-          
-          // Filter specific company menus
-          const matchingCompanyMenus = companyMenusSnapshot.docs.filter((doc) => {
-            const cm = doc.data()
-            const matchesId = cm.combinedMenuId === menuId;
-            const matchesDate = cm.startDate === menu.startDate && cm.endDate === menu.endDate;
-            
-            // If matchesId is true, great. If not, fallback to date matching but ensure it's active
-            return (matchesId || matchesDate) && cm.status !== "archived";
-          })
-
-          console.log(`[Sync] Found ${matchingCompanyMenus.length} company menus candidates.`);
-
-          for (const companyMenuDoc of matchingCompanyMenus) {
-            const companyMenu = companyMenuDoc.data()
-            const logPrefix = `[Sync ${companyMenu.companyName}]:`;
-
-            // Validate Structure exists
-            const structureAssignment = allStructures.find((s: any) => 
-               s.companyId === companyMenu.companyId && 
-               s.buildingId === companyMenu.buildingId && 
-               s.status === "active"
-            )
-            
-            if (!structureAssignment) {
-                console.log(`${logPrefix} Skipped - No active Service structure assignment found.`);
-                continue;
-            }
-
-            // Validate Meal Plan Structure exists
-            const mealPlanStructure = allMealPlanStructures.find((s: any) => 
-               s.companyId === companyMenu.companyId && 
-               s.buildingId === companyMenu.buildingId && 
-               s.status === "active"
-            )
-
-            // Deep clone
-            const updatedCompanyMenuData = JSON.parse(JSON.stringify(companyMenu.menuData || {}))
-            const appliedChangesForCompany: any[] = []
-
-            for (const changedCell of changedCells) {
-              const { date, serviceId, subServiceId, mealPlanId, subMealPlanId, changes } = changedCell
-              
-              // Robust Day Name
-              const [y, m, d] = date.split('-').map(Number);
-              const dateObj = new Date(y, m - 1, d);
-              const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-              const dayName = days[dateObj.getDay()];
-
-              // Case insensitive check for structure keys
-              const weekStructure = structureAssignment.weekStructure || {};
-              const structureDayKey = Object.keys(weekStructure).find(k => k.toLowerCase() === dayName);
-              const dayServices = structureDayKey ? weekStructure[structureDayKey] : [];
-              
-              const matchedService = dayServices.find((s: any) => s.serviceId === serviceId)
-              if (!matchedService) continue;
-
-              const matchedSubService = (matchedService.subServices || []).find((ss: any) => ss.subServiceId === subServiceId)
-              if (!matchedSubService) continue;
-
-              // Meal Plan Structure Check
-              if (mealPlanStructure && mealPlanStructure.weekStructure) {
-                const mpWeekStructure = mealPlanStructure.weekStructure || {};
-                const mpStructureDayKey = Object.keys(mpWeekStructure).find(k => k.toLowerCase() === dayName);
-                const mpDayServices = mpStructureDayKey ? mpWeekStructure[mpStructureDayKey] : [];
-                
-                const mpMatchedService = mpDayServices.find((s: any) => s.serviceId === serviceId)
-                
-                if (!mpMatchedService) continue;
-
-                let mealPlanMatchFound = false
-                for (const mpSubService of (mpMatchedService.subServices || [])) {
-                  if (mpSubService.subServiceId !== subServiceId) continue; 
-                  
-                  const mpFound = (mpSubService.mealPlans || []).find((mp: any) => 
-                    mp.mealPlanId === mealPlanId && 
-                    (mp.subMealPlans || []).some((smp: any) => smp.subMealPlanId === subMealPlanId)
-                  )
-                  
-                  if (mpFound) {
-                    mealPlanMatchFound = true
-                    break
-                  }
-                }
-                
-                if (!mealPlanMatchFound) continue;
-              }
-
-              // Apply Changes to Local Object
-              if (!updatedCompanyMenuData[date]) updatedCompanyMenuData[date] = {}
-              if (!updatedCompanyMenuData[date][serviceId]) updatedCompanyMenuData[date][serviceId] = {}
-              if (!updatedCompanyMenuData[date][serviceId][subServiceId]) updatedCompanyMenuData[date][serviceId][subServiceId] = {}
-              if (!updatedCompanyMenuData[date][serviceId][subServiceId][mealPlanId]) updatedCompanyMenuData[date][serviceId][subServiceId][mealPlanId] = {}
-              if (!updatedCompanyMenuData[date][serviceId][subServiceId][mealPlanId][subMealPlanId]) {
-                updatedCompanyMenuData[date][serviceId][subServiceId][mealPlanId][subMealPlanId] = { menuItemIds: [] }
-              }
-
-              const cellData = updatedCompanyMenuData[date][serviceId][subServiceId][mealPlanId][subMealPlanId]
-              const currentItemIds = [...(cellData.menuItemIds || [])]
-              let thisCellApplied = false
-
-              for (const change of changes) {
-                if (change.action === "added") {
-                  if (!currentItemIds.includes(change.itemId)) {
-                    currentItemIds.push(change.itemId)
-                    thisCellApplied = true
-                  }
-                } else if (change.action === "removed") {
-                  const idx = currentItemIds.indexOf(change.itemId)
-                  if (idx > -1) {
-                    currentItemIds.splice(idx, 1)
-                    thisCellApplied = true
-                  }
-                } else if (change.action === "replaced") {
-                  const idx = currentItemIds.indexOf(change.itemId)
-                  if (idx > -1) {
-                    currentItemIds.splice(idx, 1)
-                    thisCellApplied = true
-                  }
-                  if (change.replacedWith && !currentItemIds.includes(change.replacedWith)) {
-                    currentItemIds.push(change.replacedWith)
-                    thisCellApplied = true
-                  }
-                }
-              }
-
-              if (thisCellApplied) {
-                cellData.menuItemIds = currentItemIds
-                appliedChangesForCompany.push(changedCell)
-              }
-            }
-
-            if (appliedChangesForCompany.length > 0) {
-              await updateDoc(companyMenuDoc.ref, {
-                menuData: updatedCompanyMenuData,
-                updatedAt: new Date(),
-              })
-
-              const latestCompanyNumber = await updationService.getLatestUpdationNumber(companyMenuDoc.id) || 0
-              
-              await addDoc(collection(db, "updations"), {
-                menuId: companyMenuDoc.id,
-                menuType: "company",
-                menuName: `${companyMenu.companyName} - ${companyMenu.buildingName} Menu`,
-                updationNumber: latestCompanyNumber + 1,
-                changedCells: appliedChangesForCompany,
-                totalChanges: appliedChangesForCompany.length,
-                menuStartDate: menu.startDate,
-                menuEndDate: menu.endDate,
-                companyId: companyMenu.companyId,
-                companyName: companyMenu.companyName,
-                buildingId: companyMenu.buildingId,
-                buildingName: companyMenu.buildingName,
-                linkedToCombinedMenuId: menuId,
-                linkedToCombinedMenuUpdate: true,
-                createdAt: new Date(),
-                createdBy: "user",
-              })
-              console.log(`[Sync] Successfully updated ${companyMenu.companyName} with ${appliedChangesForCompany.length} changes.`)
-            }
-          }
-          
-          clearCacheKey("companyMenus-")
-          clearCacheKey("updations-")
-        } catch (error) {
-          console.error("Error syncing company menus:", error)
-          toast({
-             title: "Sync Warning",
-             description: "Menu saved, but company updates encountered an error. Check console.",
-             variant: "destructive"
-          })
-        }
-      }
-
       toast({
         title: "Success",
         description: isDraft ? "Saved as Draft" : "Menu updated successfully",
@@ -1270,13 +1326,35 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
     }))
   }, [mealPlans, subMealPlans])
 
+  // -----------------------------------------------------------------
+  // HIDE LOGIC: Filter subMealPlans that have no company assignments for the whole week
+  // -----------------------------------------------------------------
+  const filteredMealPlanStructure = useMemo(() => {
+    if (!selectedService || !selectedSubService || !mealPlanAssignments.length) return []
+
+    return mealPlanStructure.map(({ mealPlan, subMealPlans: subMPs }) => {
+      const visibleSubMealPlans = subMPs.filter(subMealPlan => {
+        // Check if ANY day in the week has this specific row configuration for ANY company
+        return dateRange.some(({ day }) => {
+          const dayKey = day.toLowerCase()
+          return mealPlanAssignments.some(assignment => {
+            const dayStructure = assignment.weekStructure?.[dayKey] || []
+            const sInDay = dayStructure.find((s: any) => s.serviceId === selectedService.id)
+            const ssInDay = sInDay?.subServices?.find((ss: any) => ss.subServiceId === selectedSubService.id)
+            const mpInDay = ssInDay?.mealPlans?.find((mp: any) => mp.mealPlanId === mealPlan.id)
+            return mpInDay?.subMealPlans?.some((smp: any) => smp.subMealPlanId === subMealPlan.id)
+          })
+        })
+      })
+      return { mealPlan, subMealPlans: visibleSubMealPlans }
+    }).filter(group => group.subMealPlans.length > 0)
+  }, [mealPlanStructure, dateRange, mealPlanAssignments, selectedService, selectedSubService])
 
   if (!isOpen) return null
 
   return (
     <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-2 sm:p-4 overflow-hidden">
       
-      {/* Modal Container */}
       <div className="bg-white rounded-xl shadow-2xl w-full h-full max-w-[98vw] max-h-[95vh] flex flex-col relative overflow-hidden">
           
           {/* Header */}
@@ -1304,7 +1382,7 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
             </div>
           </div>
 
-          {/* Content - Scrollable Area */}
+          {/* Content */}
           <div className="flex-1 overflow-y-auto min-h-0 bg-gray-50/50">
             {loading ? (
               <div className="p-8 space-y-4 flex flex-col items-center justify-center h-full">
@@ -1312,7 +1390,6 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
               </div>
             ) : (
               <div className="flex flex-col h-full">
-                {/* Service Nav - Sticky */}
                 <div className="bg-white sticky top-0 z-30 shadow-sm">
                   <ServiceNavigationPanel
                     services={services}
@@ -1326,7 +1403,7 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
 
                 <div className="p-4 flex-1">
                   {selectedService && selectedSubService ? (
-                    <div className="overflow-x-auto border rounded bg-white shadow-sm">
+                    <div className="overflow-x-auto border rounded bg-white shadow-sm pb-12">
                       <table className="w-full border-collapse">
                         <thead className="bg-gray-100 sticky top-0 z-20 shadow-sm">
                           <tr>
@@ -1347,14 +1424,15 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
                           </tr>
                         </thead>
                         <tbody>
-                          {mealPlanStructure.map(({ mealPlan, subMealPlans: subMPs }) =>
+                          {filteredMealPlanStructure.map(({ mealPlan, subMealPlans: subMPs }) =>
                             subMPs.map((subMealPlan, idx) => (
                               <tr key={`${mealPlan.id}-${subMealPlan.id}`} className="hover:bg-gray-50/50">
-                                <td className="border bg-gray-50 p-2 sticky left-0 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
-                                  {idx === 0 && <div className="font-semibold text-blue-700">{mealPlan.name}</div>}
+                                <td className="border bg-gray-50 p-2 sticky left-0 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] align-top">
+                                  {idx === 0 && <div className="font-bold text-blue-700 mb-1">{mealPlan.name}</div>}
                                   <div className="text-sm text-gray-700 ml-3">↳ {subMealPlan.name}</div>
                                 </td>
                                 {dateRange.slice(0, visibleDates).map(({ date, day }) => {
+                                  const cellKey = `${date}-${selectedService.id}-${selectedSubService.id}-${mealPlan.id}-${subMealPlan.id}`
                                   const selectedItems: string[] =
                                     menuData[date]?.[selectedService.id]?.[selectedSubService.id]?.[mealPlan.id]?.[
                                       subMealPlan.id
@@ -1363,36 +1441,41 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
                                   const prevItems = prevWeekMap[date]?.[selectedService.id]?.[selectedSubService.id]?.[mealPlan.id]?.[subMealPlan.id] || []
 
                                   return (
-                                    <MenuCell
-                                      key={`${date}-${mealPlan.id}-${subMealPlan.id}`}
-                                      cellKey={`${date}-${mealPlan.id}-${subMealPlan.id}`}
-                                      selectedItems={selectedItems}
-                                      allItems={menuItems}
-                                      onAdd={(itemId) =>
+                                    <MenuGridCell
+                                      key={cellKey}
+                                      date={date}
+                                      selectedMenuItemIds={selectedItems}
+                                      allMenuItems={menuItems}
+                                      onAddItem={(itemId) =>
                                         handleAddItem(date, selectedService.id, mealPlan.id, subMealPlan.id, itemId)
                                       }
-                                      onRemove={(itemId) =>
+                                      onRemoveItem={(itemId) =>
                                         handleRemoveItem(date, selectedService.id, mealPlan.id, subMealPlan.id, itemId)
                                       }
                                       onCreateItem={handleCreateItem}
-                                      date={date}
-                                      prevItems={prevItems}
-                                      onCopy={() => handleCopy(selectedItems)}
-                                      onPaste={() => handlePaste(date, mealPlan.id, subMealPlan.id)}
-                                      canPaste={!!copyBuffer?.items.length}
-                                      onStartDrag={(items) => handleStartDrag(items)}
+                                      onStartDrag={(d, items) => handleStartDrag(d, items)}
                                       isDragActive={dragActive}
                                       isDragHover={hoveredDate === date}
                                       onHoverDrag={() => {
                                           setHoveredDate(date)
                                           if(dragActive) applyDragToCell(date, mealPlan.id, subMealPlan.id)
                                       }}
+                                      onCopy={() => handleCopy(selectedItems)}
+                                      onPaste={() => handlePaste(date, mealPlan.id, subMealPlan.id)}
+                                      canPaste={!!copyBuffer?.items.length}
+                                      prevItems={prevItems}
                                       onViewCompanies={() => {
                                           setSelectedMealPlan(mealPlan)
                                           setSelectedSubMealPlan(subMealPlan)
                                           setSelectedDate(date)
                                           setSelectedDay(day)
                                           setShowCompanyModal(true)
+                                      }}
+                                      isActive={activeCell === cellKey}
+                                      onActivate={() => setActiveCell(cellKey)}
+                                      onCellMouseEnter={() => {
+                                        setHoveredDate(date)
+                                        if (dragActive) applyDragToCell(date, mealPlan.id, subMealPlan.id)
                                       }}
                                     />
                                   )
@@ -1403,6 +1486,9 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
                           )}
                         </tbody>
                       </table>
+                      {filteredMealPlanStructure.length === 0 && (
+                        <div className="p-8 text-center text-gray-500 italic">No meal plans assigned for this selection.</div>
+                      )}
                     </div>
                   ) : (
                     <div className="p-8 text-center text-gray-500 flex flex-col items-center justify-center h-full">

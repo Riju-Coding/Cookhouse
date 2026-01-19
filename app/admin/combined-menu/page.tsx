@@ -5,36 +5,40 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { 
-  Calendar, 
-  Save, 
-  X, 
-  Maximize2, 
-  Loader2, 
-  ArrowLeft, 
-  Plus, 
-  AlertCircle, 
+import {
+  Calendar,
+  Save,
+  X,
+  Maximize2,
+  Loader2,
+  ArrowLeft,
+  Plus,
+  AlertCircle,
   ChevronDown,
-  Building2, 
-  FileText, 
-  GripHorizontal, 
-  ClipboardCopy, 
-  ClipboardPaste 
+  Building2,
+  FileText,
+  GripHorizontal,
+  ClipboardCopy,
+  ClipboardPaste,
+  Search,
+  CheckCircle,
+  ExternalLink,
 } from "lucide-react"
 import Link from "next/link"
 import { toast } from "@/components/ui/use-toast"
 import type { Service, MealPlan, SubMealPlan, MenuItem, SubService } from "@/lib/types"
-import { 
-  getDocs, 
-  collection, 
-  addDoc, 
-  deleteDoc,
+import {
+  getDocs,
+  collection,
+  addDoc,
   doc,
   writeBatch,
-  serverTimestamp, 
-  query, 
-  where, 
-  orderBy 
+  serverTimestamp,
+  query,
+  where,
+  orderBy,
+  updateDoc,
+  getDoc,
 } from "firebase/firestore"
 import { db } from "@/lib/firebase"
 import {
@@ -47,10 +51,13 @@ import {
   structureAssignmentsService,
   mealPlanStructureAssignmentsService,
 } from "@/lib/services"
+// Import the Edit Modal to handle opening duplicates
+import { MenuEditModal } from "@/components/menu-edit-modal"
 
 // --- Types ---
 interface MenuCell {
   menuItemIds: string[]
+  selectedDescriptions?: Record<string, string> // Maps itemId to selected description
 }
 
 interface DayMenu {
@@ -80,6 +87,22 @@ const menuItemsService = {
         }) as MenuItem,
     )
   },
+  async addDescriptions(itemId: string, descriptions: string[]) {
+    const itemRef = doc(db, "menuItems", itemId)
+    await updateDoc(itemRef, { descriptions: descriptions || [] })
+  },
+  async getDescriptions(itemId: string): Promise<string[]> {
+    const docSnap = await getDoc(doc(db, "menuItems", itemId))
+    return docSnap.data()?.descriptions || []
+  },
+  async setSelectedDescription(itemId: string, selectedDescription: string) {
+    const itemRef = doc(db, "menuItems", itemId)
+    await updateDoc(itemRef, { selectedDescription })
+  },
+  async getSelectedDescription(itemId: string): Promise<string> {
+    const docSnap = await getDoc(doc(db, "menuItems", itemId))
+    return docSnap.data()?.selectedDescription || ""
+  },
 }
 
 const repetitionLogsService = {
@@ -96,19 +119,19 @@ const repetitionLogsService = {
       where("menuStartDate", "==", startDate),
       where("menuEndDate", "==", endDate),
       where("companyId", "==", companyId),
-      orderBy("createdAt", "desc")
+      orderBy("createdAt", "desc"),
     )
     const snapshot = await getDocs(q)
-    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+    return snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }))
   },
   async deleteAll(logIds: string[]) {
     const batch = writeBatch(db)
-    logIds.forEach(id => {
+    logIds.forEach((id) => {
       const ref = doc(db, "repetitionLogs", id)
       batch.delete(ref)
     })
     await batch.commit()
-  }
+  },
 }
 
 const combinedMenusService = {
@@ -120,13 +143,14 @@ const combinedMenusService = {
     })
     return { id: docRef.id }
   },
-  async checkDuplicate(startDate: string, endDate: string): Promise<boolean> {
+  async checkDuplicate(startDate: string, endDate: string): Promise<string | null> {
     const snapshot = await getDocs(collection(db, "combinedMenus"))
-    const isDuplicate = snapshot.docs.some((doc) => {
+    const duplicate = snapshot.docs.find((doc) => {
       const data = doc.data()
-      return data.startDate === startDate && data.endDate === endDate && data.status === "active"
+      // Check for exact date match and exclude archived menus
+      return data.startDate === startDate && data.endDate === endDate && data.status !== "archived"
     })
-    return isDuplicate
+    return duplicate ? duplicate.id : null
   },
   async getDraft(startDate: string, endDate: string, companyId: string): Promise<any | null> {
     const q = query(
@@ -139,7 +163,7 @@ const combinedMenusService = {
     const snapshot = await getDocs(q)
     if (snapshot.docs.length > 0) {
       const data = snapshot.docs[0].data()
-      return data.menuData || data 
+      return data.menuData || data
     }
     return null
   },
@@ -152,14 +176,14 @@ const combinedMenusService = {
       where("companyId", "==", companyId),
     )
     const snapshot = await getDocs(q)
-    
+
     if (!snapshot.empty) {
       const sortedDocs = snapshot.docs.sort((a, b) => {
-         const timeA = a.data().updatedAt?.toMillis?.() || 0;
-         const timeB = b.data().updatedAt?.toMillis?.() || 0;
-         return timeB - timeA; 
-      });
-      return { id: sortedDocs[0].id, ...sortedDocs[0].data() };
+        const timeA = a.data().updatedAt?.toMillis?.() || 0
+        const timeB = b.data().updatedAt?.toMillis?.() || 0
+        return timeB - timeA
+      })
+      return { id: sortedDocs[0].id, ...sortedDocs[0].data() }
     }
     return null
   },
@@ -177,89 +201,212 @@ const companyMenusService = {
 
 // --- Components ---
 
-const CompanyAssignmentModal = memo(function CompanyAssignmentModal({
+const ItemDescriptionModal = memo(function ItemDescriptionModal({
   isOpen,
   onClose,
-  mealPlan,
-  subMealPlan,
-  service,
-  selectedSubServiceId,
-  companies,
-  buildings,
-  structureAssignments,
-  date,
-  day,
+  selectedItems,
+  allMenuItems,
+  onSaveDescription,
 }: {
   isOpen: boolean
   onClose: () => void
-  mealPlan: MealPlan
-  subMealPlan: SubMealPlan
-  service: Service
-  selectedSubServiceId: string
-  companies: any[]
-  buildings: any[]
-  structureAssignments: any[]
-  date: string
-  day: string
+  selectedItems: string[]
+  allMenuItems: MenuItem[]
+  onSaveDescription: (itemId: string, descriptions: string[], selectedDescription: string) => Promise<void>
 }) {
-  const assignedCompanies = useMemo(() => {
-    const result: any[] = []
-    structureAssignments.forEach((assignment: any) => {
-      const company = companies.find((c: any) => c.id === assignment.companyId)
-      const building = buildings.find((b: any) => b.id === assignment.buildingId)
-      if (!company || !building) return
-      const dayKey = day.toLowerCase()
-      const dayStructure = assignment.weekStructure?.[dayKey] || []
-      const serviceInDay = dayStructure.find((s: any) => s.serviceId === service.id)
-      if (!serviceInDay) return
-      const subServiceInDay = serviceInDay.subServices?.find((ss: any) => ss.subServiceId === selectedSubServiceId)
-      if (!subServiceInDay) return
-      const mealPlanInDay = subServiceInDay.mealPlans?.find((mp: any) => mp.mealPlanId === mealPlan.id)
-      if (!mealPlanInDay) return
-      const subMealPlanInDay = mealPlanInDay.subMealPlans?.find((smp: any) => smp.subMealPlanId === subMealPlan.id)
-      if (!subMealPlanInDay) return
-      result.push({
-        companyId: company.id,
-        companyName: company.name,
-        buildingId: building.id,
-        buildingName: building.name,
-        day,
-      })
-    })
-    return result
-  }, [mealPlan, subMealPlan, service, selectedSubServiceId, companies, buildings, structureAssignments, date, day])
+  const [itemDescriptions, setItemDescriptions] = useState<Record<string, string[]>>({})
+  const [selectedDescriptions, setSelectedDescriptions] = useState<Record<string, string>>({})
+  const [newDescriptionInputs, setNewDescriptionInputs] = useState<Record<string, string>>({})
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    if (isOpen && selectedItems.length > 0) {
+      loadDescriptions()
+    }
+  }, [isOpen, selectedItems])
+
+  const loadDescriptions = async () => {
+    setLoading(true)
+    try {
+      const newDescriptions: Record<string, string[]> = {}
+      const newSelected: Record<string, string> = {}
+      for (const itemId of selectedItems) {
+        const descs = await menuItemsService.getDescriptions(itemId)
+        const selected = await menuItemsService.getSelectedDescription(itemId)
+        newDescriptions[itemId] = descs
+        newSelected[itemId] = selected || (descs.length > 0 ? descs[0] : "")
+      }
+      setItemDescriptions(newDescriptions)
+      setSelectedDescriptions(newSelected)
+    } catch (error) {
+      console.error("Error loading descriptions:", error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleAddDescription = (itemId: string) => {
+    const newDesc = newDescriptionInputs[itemId]?.trim()
+    if (!newDesc) return
+
+    setItemDescriptions((prev) => ({
+      ...prev,
+      [itemId]: [...(prev[itemId] || []), newDesc],
+    }))
+    setNewDescriptionInputs((prev) => ({
+      ...prev,
+      [itemId]: "",
+    }))
+  }
+
+  const handleRemoveDescription = (itemId: string, index: number) => {
+    setItemDescriptions((prev) => ({
+      ...prev,
+      [itemId]: prev[itemId].filter((_, i) => i !== index),
+    }))
+  }
+
+  const handleSelectDescription = (itemId: string, description: string) => {
+    setSelectedDescriptions((prev) => ({
+      ...prev,
+      [itemId]: description,
+    }))
+  }
+
+  const handleSave = async () => {
+    setLoading(true)
+    try {
+      for (const itemId of selectedItems) {
+        const descriptions = itemDescriptions[itemId] || []
+        const selectedDesc = selectedDescriptions[itemId] || ""
+        if (descriptions.length > 0) {
+          await onSaveDescription(itemId, descriptions, selectedDesc)
+        }
+      }
+      toast({ title: "Descriptions saved successfully!" })
+      onClose()
+    } catch (error) {
+      console.error("Error saving descriptions:", error)
+      toast({ title: "Error saving descriptions", variant: "destructive" })
+    } finally {
+      setLoading(false)
+    }
+  }
 
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 z-[100] flex items-center justify-center p-4">
-      <div className="bg-white rounded-lg max-w-md w-full max-h-[80vh] overflow-auto">
-        <div className="sticky top-0 bg-gradient-to-r from-blue-50 to-white border-b p-4 flex items-center justify-between">
+    <div className="fixed inset-0 bg-black bg-opacity-50 z-[150] flex items-center justify-center p-4">
+      <div className="bg-white rounded-lg max-w-2xl w-full max-h-[80vh] overflow-auto">
+        <div className="sticky top-0 bg-gradient-to-r from-amber-50 to-white border-b p-4 flex items-center justify-between">
           <div>
-            <h3 className="font-semibold text-lg">
-              {service.name} → {subMealPlan.name}
+            <h3 className="font-semibold text-lg flex items-center gap-2">
+              <FileText className="h-5 w-5 text-amber-600" />
+              Menu Item Descriptions
             </h3>
             <p className="text-sm text-gray-600">
-              {new Date(date).toLocaleDateString()} ({day})
+              {selectedItems.length} item{selectedItems.length !== 1 ? "s" : ""} selected
             </p>
           </div>
           <button onClick={onClose} className="text-gray-500 hover:text-gray-700" type="button">
             <X className="h-5 w-5" />
           </button>
         </div>
-        <div className="p-4">
-          {assignedCompanies.length === 0 ? (
-            <p className="text-sm text-gray-500">No companies assigned for this combination on {day}</p>
-          ) : (
-            <div className="space-y-2">
-              {assignedCompanies.map((comp, idx) => (
-                <div key={idx} className="p-3 border rounded bg-blue-50">
-                  <div className="font-medium text-sm">{comp.companyName}</div>
-                  <div className="text-xs text-gray-600">{comp.buildingName}</div>
-                </div>
-              ))}
+        <div className="p-4 space-y-6">
+          {loading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-amber-600" />
             </div>
+          ) : (
+            selectedItems.map((itemId) => {
+              const item = allMenuItems.find((i) => i.id === itemId)
+              if (!item) return null
+              const descriptions = itemDescriptions[itemId] || []
+              const selectedDesc = selectedDescriptions[itemId] || ""
+
+              return (
+                <div key={itemId} className="border rounded-lg p-4 bg-gradient-to-r from-amber-50 to-white">
+                  <Label className="text-sm font-semibold text-gray-800 mb-3 block">{item.name}</Label>
+
+                  {/* Existing Descriptions List */}
+                  {descriptions.length > 0 && (
+                    <div className="mb-4">
+                      <p className="text-xs font-medium text-gray-600 mb-2">Select Description:</p>
+                      <div className="space-y-2">
+                        {descriptions.map((desc, idx) => (
+                          <div
+                            key={idx}
+                            className="flex items-start gap-3 p-2 border border-amber-200 rounded hover:bg-amber-100 transition-colors cursor-pointer"
+                            onClick={() => handleSelectDescription(itemId, desc)}
+                          >
+                            <input
+                              type="radio"
+                              name={`desc-${itemId}`}
+                              checked={selectedDesc === desc}
+                              onChange={() => handleSelectDescription(itemId, desc)}
+                              className="mt-1 cursor-pointer"
+                            />
+                            <div className="flex-1">
+                              <p className="text-sm text-gray-700 break-words">{desc}</p>
+                            </div>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleRemoveDescription(itemId, idx)
+                              }}
+                              className="text-red-400 hover:text-red-600 ml-2"
+                            >
+                              <X className="h-4 w-4" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Add New Description */}
+                  <div className="border-t pt-3">
+                    <p className="text-xs font-medium text-gray-600 mb-2">Add New Description:</p>
+                    <div className="flex gap-2">
+                      <Input
+                        type="text"
+                        placeholder="Enter new description..."
+                        value={newDescriptionInputs[itemId] || ""}
+                        onChange={(e) =>
+                          setNewDescriptionInputs((prev) => ({
+                            ...prev,
+                            [itemId]: e.target.value,
+                          }))
+                        }
+                        className="text-sm flex-1"
+                        onKeyPress={(e) => {
+                          if (e.key === "Enter") {
+                            handleAddDescription(itemId)
+                          }
+                        }}
+                      />
+                      <Button
+                        size="sm"
+                        onClick={() => handleAddDescription(itemId)}
+                        className="bg-amber-600 hover:bg-amber-700 text-white"
+                      >
+                        <Plus className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              )
+            })
           )}
+        </div>
+        <div className="border-t p-4 flex items-center justify-end gap-2 bg-gray-50">
+          <Button variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button onClick={handleSave} disabled={loading} className="bg-amber-600 hover:bg-amber-700 text-white">
+            {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+            Save All Descriptions
+          </Button>
         </div>
       </div>
     </div>
@@ -270,6 +417,7 @@ const CompanyAssignmentModal = memo(function CompanyAssignmentModal({
 const MenuGridCell = memo(function MenuGridCell({
   date,
   service,
+  subServiceId, 
   mealPlan,
   subMealPlan,
   selectedMenuItemIds,
@@ -284,15 +432,17 @@ const MenuGridCell = memo(function MenuGridCell({
   onCopy,
   onPaste,
   canPaste,
-  prevItems,
   onCellMouseEnter,
   day,
-  onViewCompanies,
   isActive,
   onActivate,
+  companies,
+  buildings,
+  structureAssignments,
 }: {
   date: string
   service: Service
+  subServiceId: string
   mealPlan: MealPlan
   subMealPlan: SubMealPlan
   selectedMenuItemIds: string[]
@@ -310,27 +460,69 @@ const MenuGridCell = memo(function MenuGridCell({
   prevItems?: string[]
   onCellMouseEnter?: () => void
   day?: string
-  onViewCompanies?: () => void
   isActive: boolean
   onActivate: () => void
+  companies: any[]
+  buildings: any[]
+  structureAssignments: any[]
 }) {
   const [isOpen, setIsOpen] = useState(false)
+  const [isCompanyOpen, setIsCompanyOpen] = useState(false) // State for Company Dropdown
   const [search, setSearch] = useState("")
   const [creating, setCreating] = useState(false)
+  const [showDescModal, setShowDescModal] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
 
-  // Close dropdown if clicking outside
+  // Calculate assigned companies for this specific cell
+  const assignedCompanies = useMemo(() => {
+    if (!day || !companies || !structureAssignments) return []
+    const result: any[] = []
+    
+    structureAssignments.forEach((assignment: any) => {
+      const company = companies.find((c: any) => c.id === assignment.companyId)
+      const building = buildings.find((b: any) => b.id === assignment.buildingId)
+      
+      if (!company || !building) return
+      
+      const dayKey = day.toLowerCase()
+      const dayStructure = assignment.weekStructure?.[dayKey] || []
+      
+      const serviceInDay = dayStructure.find((s: any) => s.serviceId === service.id)
+      if (!serviceInDay) return
+      
+      const subServiceInDay = serviceInDay.subServices?.find((ss: any) => ss.subServiceId === subServiceId)
+      if (!subServiceInDay) return
+      
+      const mealPlanInDay = subServiceInDay.mealPlans?.find((mp: any) => mp.mealPlanId === mealPlan.id)
+      if (!mealPlanInDay) return
+      
+      const subMealPlanInDay = mealPlanInDay.subMealPlans?.find((smp: any) => smp.subMealPlanId === subMealPlan.id)
+      if (!subMealPlanInDay) return
+      
+      result.push({
+        companyId: company.id,
+        companyName: company.name,
+        buildingId: building.id,
+        buildingName: building.name,
+      })
+    })
+    return result
+  }, [mealPlan, subMealPlan, service, subServiceId, companies, buildings, structureAssignments, day])
+
+
+  // Close dropdowns if clicking outside
   useEffect(() => {
-    if (!isOpen) return
+    if (!isOpen && !isCompanyOpen) return
     const handleClickOutside = (e: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
         setIsOpen(false)
+        setIsCompanyOpen(false)
         setSearch("")
       }
     }
     document.addEventListener("mousedown", handleClickOutside)
     return () => document.removeEventListener("mousedown", handleClickOutside)
-  }, [isOpen])
+  }, [isOpen, isCompanyOpen])
 
   const filtered = useMemo(() => {
     if (!search.trim()) return allMenuItems.slice(0, 50)
@@ -383,163 +575,237 @@ const MenuGridCell = memo(function MenuGridCell({
   }
 
   return (
-    <td
-      onClick={(e) => {
-         onActivate();
-      }}
-      onMouseEnter={() => {
-        onCellMouseEnter?.()
-        if (onHoverDrag) onHoverDrag(date)
-      }}
-      className={`border border-gray-300 align-top min-w-[150px] transition-all duration-150 relative 
-        ${isActive ? "ring-2 ring-blue-500 bg-white z-10" : "bg-white hover:bg-gray-50"} 
-        ${isDragHover ? "ring-2 ring-blue-300 bg-blue-50" : ""}
-      `}
+    <>
+      <td
+      onClick={() => onActivate()}
+      onMouseEnter={() => { onCellMouseEnter?.(); if (onHoverDrag) onHoverDrag(date) }}
+       className={`border border-gray-300 align-top min-w-[200px] transition-all duration-150 relative 
+          ${isActive ? "ring-2 ring-blue-500 bg-white !z-[60]" : "bg-white hover:bg-gray-50 z-0"} 
+          ${isDragHover ? "ring-2 ring-blue-300 bg-blue-50" : ""}
+        `}
     >
-      <div className="flex flex-col h-full min-h-[60px]">
-        {/* Previous Items (Tiny Indicators) */}
-        {prevItems && prevItems.length > 0 && (
-          <div className="px-1 pt-1 flex flex-wrap gap-0.5 opacity-60 hover:opacity-100 transition-opacity">
-            {prevItems.slice(0, 3).map((id) => (
-              <div key={id} className="w-1.5 h-1.5 rounded-full bg-blue-400" title="Item from previous week used" />
-            ))}
-            {prevItems.length > 3 && <span className="text-[9px] text-gray-400">...</span>}
+        <div className="flex flex-col h-full min-h-[60px]">
+
+          {/* Selected Items List */}
+          <div className="flex-1 p-1 space-y-1">
+            {selectedMenuItemIds.map((itemId) => {
+              const item = allMenuItems.find((i) => i.id === itemId)
+              if (!item) return null
+              return (
+                <div
+                  key={itemId}
+                  className="group relative flex items-center justify-between bg-blue-50/50 hover:bg-blue-100 border border-transparent hover:border-blue-200 px-1.5 py-0.5 rounded text-xs transition-colors"
+                >
+                  <span className="truncate font-medium text-gray-700 leading-tight">{item.name}</span>
+                  {isActive && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onRemoveItem(itemId)
+                      }}
+                      className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 ml-1"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  )}
+                </div>
+              )
+            })}
           </div>
-        )}
 
-        {/* Selected Items List */}
-        <div className="flex-1 p-1 space-y-1">
-          {selectedMenuItemIds.map((itemId) => {
-            const item = allMenuItems.find((i) => i.id === itemId)
-            if (!item) return null
-            return (
-              <div
-                key={itemId}
-                className="group relative flex items-center justify-between bg-blue-50/50 hover:bg-blue-100 border border-transparent hover:border-blue-200 px-1.5 py-0.5 rounded text-xs transition-colors"
-              >
-                <span className="truncate font-medium text-gray-700 leading-tight">{item.name}</span>
-                {isActive && (
-                    <button
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            onRemoveItem(itemId);
-                        }}
-                        className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 ml-1"
-                    >
-                        <X className="h-3 w-3" />
-                    </button>
-                )}
-              </div>
-            )
-          })}
-        </div>
-
-        {/* Toolbar - Only visible when Active */}
-        {isActive && (
-          <div className="p-1 border-t bg-gray-50 flex items-center justify-between gap-1 animate-in fade-in zoom-in-95 duration-100">
-            
-            {/* Left Group: Add & Companies */}
-            <div className="flex items-center gap-1" ref={dropdownRef}>
-                {/* ADD BUTTON */}
+          {/* Toolbar - Only visible when Active */}
+          {isActive && (
+            <div className="p-1 border-t bg-gray-50 flex items-center justify-between gap-1 animate-in fade-in zoom-in-95 duration-100">
+              {/* Left Group: Add & Companies */}
+              <div className="flex items-center gap-1" ref={dropdownRef}>
+                {/* ADD BUTTON WITH ENHANCED DROPDOWN */}
                 <div className="relative">
-                    <button
-                        onClick={(e) => { e.stopPropagation(); setIsOpen(!isOpen); }}
-                        className="p-1.5 rounded hover:bg-blue-100 text-blue-600 transition-colors"
-                        title="Add Item"
-                    >
-                        <Plus className="h-4 w-4" />
-                    </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setIsOpen(!isOpen)
+                      setIsCompanyOpen(false) // Close other dropdown
+                    }}
+                    className="p-1.5 rounded hover:bg-blue-100 text-blue-600 transition-colors"
+                    title="Add Item"
+                  >
+                    <Plus className="h-4 w-4" />
+                  </button>
 
-                    {/* Dropdown Logic */}
-                    {isOpen && (
-                    <div className="absolute bottom-full left-0 mb-1 w-[240px] bg-white border rounded shadow-xl z-50 flex flex-col">
-                        <div className="p-2 border-b bg-gray-50">
-                            <Input
-                                type="text"
-                                placeholder="Search..."
-                                value={search}
-                                onChange={(e) => setSearch(e.target.value)}
-                                className="h-8 text-xs"
-                                autoFocus
-                                onClick={(e) => e.stopPropagation()} 
-                            />
+                  {/* Dropdown with Search */}
+                  {isOpen && (
+                    <div className="absolute bottom-full left-0 mb-1 w-[270px] bg-white border rounded-lg shadow-xl z-[100] flex flex-col overflow-hidden">
+                      {/* Search Header */}
+                      <div className="p-3 border-b bg-gradient-to-r from-blue-50 to-white">
+                        <div className="relative">
+                          <Search className="absolute left-2 top-2.5 h-4 w-4 text-gray-400" />
+                          <Input
+                            type="text"
+                            placeholder="Search menu items..."
+                            value={search}
+                            onChange={(e) => setSearch(e.target.value)}
+                            className="h-8 text-xs pl-7 focus:ring-blue-500"
+                            autoFocus
+                            onClick={(e) => e.stopPropagation()}
+                          />
                         </div>
-                        <div className="max-h-[200px] overflow-y-auto">
+                      </div>
+
+                      {/* Items List */}
+                      <div className="max-h-[240px] overflow-y-auto">
                         {available.length > 0 ? (
-                            available.map((item) => (
+                          available.map((item) => (
                             <button
-                                key={item.id}
-                                onClick={(e) => { e.stopPropagation(); handleAdd(item.id); }}
-                                className="w-full px-3 py-1.5 text-left hover:bg-blue-50 text-xs border-b last:border-0 truncate"
+                              key={item.id}
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleAdd(item.id)
+                              }}
+                              className="w-full px-3 py-2 text-left hover:bg-blue-50 text-xs border-b last:border-0 truncate transition-colors flex items-center justify-between group"
                             >
-                                {item.name}
+                              <span className="font-medium text-gray-700">{item.name}</span>
+                              <CheckCircle className="h-3 w-3 opacity-0 group-hover:opacity-100 text-green-600" />
                             </button>
-                            ))
+                          ))
                         ) : search.trim() ? (
-                            <button
-                                onClick={(e) => { e.stopPropagation(); handleCreate(); }}
-                                className="w-full p-2 text-center text-xs text-blue-600 font-medium hover:bg-blue-50"
-                            >
-                                {creating ? <Loader2 className="h-3 w-3 animate-spin inline" /> : "Create +"}
-                            </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleCreate()
+                            }}
+                            className="w-full p-3 text-center text-xs text-blue-600 font-semibold hover:bg-blue-50 border-b transition-colors flex items-center justify-center gap-2"
+                          >
+                            {creating ? (
+                              <>
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                                Creating...
+                              </>
+                            ) : (
+                              <>
+                                <Plus className="h-3 w-3" />
+                                Create "{search}"
+                              </>
+                            )}
+                          </button>
                         ) : (
-                            <div className="p-2 text-xs text-gray-400 text-center">Type to search</div>
+                          <div className="p-3 text-xs text-gray-400 text-center">Start typing to search</div>
                         )}
-                        </div>
+                      </div>
                     </div>
-                    )}
+                  )}
                 </div>
 
-                {/* COMPANIES BUTTON */}
-                <button
-                    onClick={(e) => { e.stopPropagation(); onViewCompanies?.(); }}
-                    className="p-1.5 rounded hover:bg-purple-100 text-purple-600 transition-colors"
-                    title="View Companies"
-                >
+                {/* COMPANIES BUTTON WITH DROPDOWN */}
+                <div className="relative">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setIsCompanyOpen(!isCompanyOpen)
+                      setIsOpen(false) // Close other dropdown
+                    }}
+                    className={`p-1.5 rounded transition-colors ${
+                        isCompanyOpen ? "bg-purple-100 text-purple-700" : "hover:bg-purple-100 text-purple-600"
+                    }`}
+                    title="View Assigned Companies"
+                  >
                     <Building2 className="h-4 w-4" />
-                </button>
-                
-                {/* DUMMY DOC BUTTON */}
+                  </button>
+
+                   {/* Companies Dropdown */}
+                   {isCompanyOpen && (
+                    <div className="absolute bottom-full left-0 mb-1 w-[250px] bg-white border rounded-lg shadow-xl z-[100] flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-150">
+                        <div className="p-2 border-b bg-purple-50">
+                            <h4 className="font-semibold text-xs text-purple-800 flex items-center gap-2">
+                                <Building2 className="h-3 w-3" />
+                                Assigned Companies ({assignedCompanies.length})
+                            </h4>
+                        </div>
+                        <div className="max-h-[200px] overflow-y-auto p-1">
+                            {assignedCompanies.length > 0 ? (
+                                assignedCompanies.map((comp, idx) => (
+                                    <div key={idx} className="p-2 hover:bg-purple-50 rounded border-b last:border-0 border-gray-100">
+                                        <div className="font-medium text-xs text-gray-800">{comp.companyName}</div>
+                                        <div className="text-[10px] text-gray-500">{comp.buildingName}</div>
+                                    </div>
+                                ))
+                            ) : (
+                                <div className="p-4 text-center text-xs text-gray-400 italic">
+                                    No companies assigned to this plan on {day}.
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                   )}
+                </div>
+
+                {/* DOC BUTTON - Only active when items are selected */}
                 <button
-                    className="p-1.5 rounded hover:bg-gray-200 text-gray-500 transition-colors"
-                    title="Documentation (Placeholder)"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setShowDescModal(true)
+                  }}
+                  disabled={selectedMenuItemIds.length === 0}
+                  className={`p-1.5 rounded transition-colors ${
+                    selectedMenuItemIds.length > 0
+                      ? "hover:bg-amber-100 text-amber-600"
+                      : "text-gray-300 cursor-not-allowed"
+                  }`}
+                  title={selectedMenuItemIds.length > 0 ? "Edit Item Descriptions" : "Select items first"}
                 >
-                    <FileText className="h-4 w-4" />
+                  <FileText className="h-4 w-4" />
                 </button>
+              </div>
+
+              <div className="w-px h-4 bg-gray-300 mx-0.5"></div>
+
+              {/* Right Group: Actions */}
+              <div className="flex items-center gap-0.5">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onCopy?.()
+                  }}
+                  className="p-1.5 rounded hover:bg-gray-200 text-gray-600 transition-colors"
+                  title="Copy"
+                >
+                  <ClipboardCopy className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onPaste?.()
+                  }}
+                  disabled={!canPaste}
+                  className={`p-1.5 rounded transition-colors ${canPaste ? "hover:bg-gray-200 text-gray-600" : "text-gray-300"}`}
+                  title="Paste"
+                >
+                  <ClipboardPaste className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  onMouseDown={onDragHandleMouseDown}
+                  className={`p-1.5 rounded cursor-grab active:cursor-grabbing transition-colors ${isDragActive ? "bg-blue-100 text-blue-600" : "hover:bg-gray-200 text-gray-600"}`}
+                  title="Drag to fill"
+                >
+                  <GripHorizontal className="h-3.5 w-3.5" />
+                </button>
+              </div>
             </div>
+          )}
+        </div>
+      </td>
 
-            <div className="w-px h-4 bg-gray-300 mx-0.5"></div>
-
-            {/* Right Group: Actions */}
-            <div className="flex items-center gap-0.5">
-                <button
-                    onClick={(e) => { e.stopPropagation(); onCopy?.(); }}
-                    className="p-1.5 rounded hover:bg-gray-200 text-gray-600 transition-colors"
-                    title="Copy"
-                >
-                    <ClipboardCopy className="h-3.5 w-3.5" />
-                </button>
-                <button
-                    onClick={(e) => { e.stopPropagation(); onPaste?.(); }}
-                    disabled={!canPaste}
-                    className={`p-1.5 rounded transition-colors ${canPaste ? "hover:bg-gray-200 text-gray-600" : "text-gray-300"}`}
-                    title="Paste"
-                >
-                    <ClipboardPaste className="h-3.5 w-3.5" />
-                </button>
-                <button
-                    onMouseDown={onDragHandleMouseDown}
-                    className={`p-1.5 rounded cursor-grab active:cursor-grabbing transition-colors ${isDragActive ? "bg-blue-100 text-blue-600" : "hover:bg-gray-200 text-gray-600"}`}
-                    title="Drag to fill"
-                >
-                    <GripHorizontal className="h-3.5 w-3.5" />
-                </button>
-            </div>
-
-          </div>
-        )}
-      </div>
-    </td>
+      {/* Description Modal */}
+      <ItemDescriptionModal
+        isOpen={showDescModal}
+        onClose={() => setShowDescModal(false)}
+        selectedItems={selectedMenuItemIds}
+        allMenuItems={allMenuItems}
+        onSaveDescription={async (itemId, descriptions, selectedDescription) => {
+          await menuItemsService.addDescriptions(itemId, descriptions)
+          await menuItemsService.setSelectedDescription(itemId, selectedDescription)
+        }}
+      />
+    </>
   )
 })
 
@@ -567,7 +833,6 @@ const ServiceTable = memo(function ServiceTable({
   companies,
   buildings,
   structureAssignments,
-  mealPlanStructureAssignments,
 }: {
   service: Service
   subServices: SubService[]
@@ -622,16 +887,12 @@ const ServiceTable = memo(function ServiceTable({
 }) {
   const [isVisible, setIsVisible] = useState(false)
   const tableRef = useRef<HTMLDivElement>(null)
-  const [showCompanyModal, setShowCompanyModal] = useState(false)
-  const [selectedMealPlan, setSelectedMealPlan] = useState<MealPlan | null>(null)
-  const [selectedSubMealPlan, setSelectedSubMealPlan] = useState<SubMealPlan | null>(null)
-  const [selectedDate, setSelectedDate] = useState<string>("")
-  const [selectedDay, setSelectedDay] = useState<string>("")
+  
   const [dragActive, setDragActive] = useState(false)
   const dragItemsRef = useRef<string[]>([])
   const [hoveredDate, setHoveredDate] = useState<string | null>(null)
-  
-  // NEW: Track active cell for single-cell interaction
+
+  // Track active cell for single-cell interaction
   const [activeCell, setActiveCell] = useState<string | null>(null)
 
   useEffect(() => {
@@ -649,17 +910,49 @@ const ServiceTable = memo(function ServiceTable({
     }
     return () => observer.disconnect()
   }, [])
-  
+
   // Clear active cell when clicking outside table
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-        if (tableRef.current && !tableRef.current.contains(e.target as Node)) {
-            setActiveCell(null);
-        }
+      if (tableRef.current && !tableRef.current.contains(e.target as Node)) {
+        setActiveCell(null)
+      }
     }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
+    document.addEventListener("mousedown", handleClickOutside)
+    return () => document.removeEventListener("mousedown", handleClickOutside)
+  }, [])
+
+  // -----------------------------------------------------------------------------------
+  // UPDATED: Filter Sub Meal Plan Rows based on Company Assignments for the whole row
+  // -----------------------------------------------------------------------------------
+  const filteredMealPlanStructure = useMemo(() => {
+    if (!selectedSubServiceId || !structureAssignments) return []
+
+    return mealPlanStructure.map(({ mealPlan, subMealPlans }) => {
+      const visibleSubMealPlans = subMealPlans.filter(subMealPlan => {
+        // Check if ANY day in the week has this specific row (mealPlan + subMealPlan) 
+        // assigned to ANY company for the current Service and Sub-Service.
+        return dateRange.some(({ day }) => {
+          const dayKey = day.toLowerCase()
+          return structureAssignments.some(assignment => {
+            const dayStructure = assignment.weekStructure?.[dayKey] || []
+            const serviceInDay = dayStructure.find((s: any) => s.serviceId === service.id)
+            if (!serviceInDay) return false
+            
+            const subServiceInDay = serviceInDay.subServices?.find((ss: any) => ss.subServiceId === selectedSubServiceId)
+            if (!subServiceInDay) return false
+            
+            const mealPlanInDay = subServiceInDay.mealPlans?.find((mp: any) => mp.mealPlanId === mealPlan.id)
+            if (!mealPlanInDay) return false
+            
+            return mealPlanInDay.subMealPlans?.some((smp: any) => smp.subMealPlanId === subMealPlan.id)
+          })
+        })
+      })
+      
+      return { mealPlan, subMealPlans: visibleSubMealPlans }
+    }).filter(group => group.subMealPlans.length > 0) // Hide Meal Plan header if all its children are hidden
+  }, [mealPlanStructure, dateRange, structureAssignments, service.id, selectedSubServiceId])
 
   const displayDates = useMemo(() => dateRange.slice(0, visibleDates), [dateRange, visibleDates])
 
@@ -706,38 +999,35 @@ const ServiceTable = memo(function ServiceTable({
           <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
         </div>
       ) : (
-        <div className="overflow-x-auto border border-gray-300 rounded pb-12">
+        <div className="overflow-x-visible border border-gray-300 rounded pb-12">
           <table className="w-full border-collapse">
             <thead>
               <tr>
-                {/* 1. Reduced Width for First Column */}
                 <th className="border border-gray-300 bg-gray-100 p-2 sticky left-0 z-20 w-[130px] min-w-[130px] shadow-[2px_0_5px_rgba(0,0,0,0.05)]">
-                    Meal Plan / Sub Meal
+                  Meal Plan / Sub Meal
                 </th>
                 {displayDates.map(({ date, day }) => (
-                  /* 2. Reduced Width for Date Columns */
                   <th key={date} className="border border-gray-300 bg-gray-100 p-2 min-w-[150px] w-[150px]">
                     <div className="font-semibold text-sm">
                       {new Date(date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
                     </div>
-                    <div className="text-xs text-gray-500 font-normal">{day.substring(0,3)}</div>
+                    <div className="text-xs text-gray-500 font-normal">{day.substring(0, 3)}</div>
                   </th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {mealPlanStructure.map(({ mealPlan, subMealPlans }) =>
+              {filteredMealPlanStructure.map(({ mealPlan, subMealPlans }) =>
                 subMealPlans.map((subMealPlan, idx) => (
                   <tr key={`${mealPlan.id}-${subMealPlan.id}`}>
                     <td className="border border-gray-300 bg-gray-50 p-2 sticky left-0 z-10 w-[130px] min-w-[130px] text-xs shadow-[2px_0_5px_rgba(0,0,0,0.05)] whitespace-normal break-words align-top">
-                      {/* COLOR STRIP ASSIGNED TO SERVICE */}
-                      <div 
-                        className="absolute left-0 top-0 bottom-0 w-1" 
-                        style={{ backgroundColor: service.color || '#cbd5e1' }}
+                      <div
+                        className="absolute left-0 top-0 bottom-0 w-1"
+                        style={{ backgroundColor: service.color || "#cbd5e1" }}
                       />
                       <div className="pl-2">
-                          {idx === 0 && <div className="font-bold text-blue-700 mb-1 leading-tight">{mealPlan.name}</div>}
-                          <div className="text-gray-600 leading-tight">{subMealPlan.name}</div>
+                        {idx === 0 && <div className="font-bold text-blue-700 mb-1 leading-tight">{mealPlan.name}</div>}
+                        <div className="text-gray-600 leading-tight">{subMealPlan.name}</div>
                       </div>
                     </td>
                     {displayDates.map(({ date, day }) => {
@@ -770,17 +1060,18 @@ const ServiceTable = memo(function ServiceTable({
                         )
                       }
 
-                        function handleHoverDrag(date: string) {
+                      function handleHoverDrag(date: string) {
                         if (!dragActive) return
                         setHoveredDate(date)
                         onHoverDragFromCell(date)
-                        }
+                      }
 
                       return (
                         <MenuGridCell
                           key={cellKey}
                           date={date}
                           service={service}
+                          subServiceId={selectedSubServiceId!}
                           mealPlan={mealPlan}
                           subMealPlan={subMealPlan}
                           selectedMenuItemIds={selectedItems}
@@ -825,15 +1116,11 @@ const ServiceTable = memo(function ServiceTable({
                             handleHoverDrag(date)
                           }}
                           day={day}
-                          onViewCompanies={() => {
-                            setSelectedMealPlan(mealPlan)
-                            setSelectedSubMealPlan(subMealPlan)
-                            setSelectedDate(date)
-                            setSelectedDay(day)
-                            setShowCompanyModal(true)
-                          }}
                           isActive={activeCell === cellKey}
                           onActivate={() => setActiveCell(cellKey)}
+                          companies={companies || []}
+                          buildings={buildings || []}
+                          structureAssignments={structureAssignments || []}
                         />
                       )
                     })}
@@ -842,28 +1129,12 @@ const ServiceTable = memo(function ServiceTable({
               )}
             </tbody>
           </table>
+          {filteredMealPlanStructure.length === 0 && (
+            <div className="p-8 text-center text-gray-500 italic border-t bg-gray-50">
+              No meal plans assigned to this sub-service for any company during this week.
+            </div>
+          )}
         </div>
-      )}
-      {selectedMealPlan && selectedSubMealPlan && selectedDate && selectedDay && (
-        <CompanyAssignmentModal
-          isOpen={showCompanyModal}
-          onClose={() => {
-            setShowCompanyModal(false)
-            setSelectedMealPlan(null)
-            setSelectedSubMealPlan(null)
-            setSelectedDate("")
-            setSelectedDay("")
-          }}
-          mealPlan={selectedMealPlan}
-          subMealPlan={selectedSubMealPlan}
-          service={service}
-          selectedSubServiceId={selectedSubServiceId || ""}
-          companies={companies || []}
-          buildings={buildings || []}
-          structureAssignments={structureAssignments || []}
-          date={selectedDate}
-          day={selectedDay}
-        />
       )}
     </div>
   )
@@ -892,13 +1163,16 @@ export default function CombinedMenuCreationPage() {
   const [buildings, setBuildings] = useState<any[]>([])
   const [mealPlanStructureAssignments, setMealPlanStructureAssignments] = useState<any[]>([])
   const [hasDraft, setHasDraft] = useState(false)
-  const [draftLoading, setDraftLoading] = useState(false)
   const [userCompanyId, setUserCompanyId] = useState<string>("")
   const dateRangeSet = useRef<Set<string>>(new Set())
   const repetitionLogKeysRef = useRef<Set<string>>(new Set())
   const [copyBuffer, setCopyBuffer] = useState<{ items: string[]; meta?: any } | null>(null)
   const [showLogPanel, setShowLogPanel] = useState(false)
   const mountedRef = useRef(true)
+
+  // New State for duplicate handling
+  const [duplicateMenuId, setDuplicateMenuId] = useState<string | null>(null)
+  const [showEditModal, setShowEditModal] = useState(false)
 
   useEffect(() => {
     mountedRef.current = true
@@ -909,7 +1183,7 @@ export default function CombinedMenuCreationPage() {
 
   // Mock userCompanyId for now.
   useEffect(() => {
-    setUserCompanyId("company123") 
+    setUserCompanyId("company123")
   }, [])
 
   useEffect(() => {
@@ -927,6 +1201,56 @@ export default function CombinedMenuCreationPage() {
       return () => clearTimeout(timer)
     }
   }, [showModal, visibleDates, dateRange.length])
+
+  // --- NEW: Date Selection Logic (Monday Only) ---
+  const handleWeekSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.value) {
+      setStartDate("")
+      setEndDate("")
+      setDuplicateMenuId(null)
+      return
+    }
+
+    const selectedDate = new Date(e.target.value)
+    if (isNaN(selectedDate.getTime())) return
+
+    // Calculate Monday
+    const day = selectedDate.getDay()
+    const diff = selectedDate.getDate() - day + (day === 0 ? -6 : 1) // adjust when day is sunday
+    const monday = new Date(selectedDate.setDate(diff))
+    const mondayString = monday.toISOString().split("T")[0]
+
+    // Calculate Sunday (End Date)
+    const sunday = new Date(monday)
+    sunday.setDate(monday.getDate() + 6)
+    const sundayString = sunday.toISOString().split("T")[0]
+
+    setStartDate(mondayString)
+    setEndDate(sundayString)
+    setDuplicateMenuId(null) // Reset duplicate check
+
+    // Check for duplicate immediately
+    try {
+      const existingId = await combinedMenusService.checkDuplicate(mondayString, sundayString)
+      if (existingId) {
+        setDuplicateMenuId(existingId)
+        toast({
+          title: "Menu Exists",
+          description: "A menu for this week already exists.",
+          variant: "default",
+        })
+      }
+    } catch (error) {
+      console.error("Error checking duplicate:", error)
+    }
+  }
+
+  // Open Edit Modal Logic
+  const handleOpenEdit = () => {
+    if (duplicateMenuId) {
+      setShowEditModal(true)
+    }
+  }
 
   const loadData = async () => {
     try {
@@ -1118,13 +1442,12 @@ export default function CombinedMenuCreationPage() {
   }
 
   const generateDateRange = async () => {
-    if (!startDate || !endDate) {
-      toast({
-        title: "Validation Error",
-        description: "Please select both start and end dates",
-        variant: "destructive",
-      })
-      return
+    if (!startDate || !endDate) return
+    
+    // Logic for duplicate handling
+    if (duplicateMenuId) {
+        handleOpenEdit()
+        return
     }
 
     const start = new Date(startDate)
@@ -1137,14 +1460,16 @@ export default function CombinedMenuCreationPage() {
 
     setGeneratingGrid(true)
 
+    // Re-check duplicate just in case
     try {
-      const isDuplicate = await combinedMenusService.checkDuplicate(startDate, endDate)
-      if (isDuplicate) {
+      const isDuplicateId = await combinedMenusService.checkDuplicate(startDate, endDate)
+      if (isDuplicateId) {
         setGeneratingGrid(false)
+        setDuplicateMenuId(isDuplicateId)
         toast({
           title: "Menu Already Exists",
-          description: `A combined menu for ${startDate} to ${endDate} already exists. Please select a different date range.`,
-          variant: "destructive",
+          description: `A combined menu for ${startDate} to ${endDate} already exists.`,
+          variant: "default",
         })
         return
       }
@@ -1196,74 +1521,74 @@ export default function CombinedMenuCreationPage() {
       })
 
       // 2. Fetch and Merge Draft if exists
-      let draftFound = false;
+      let draftFound = false
       try {
         const draftData = await combinedMenusService.getDraftByDateRange(startDate, endDate, userCompanyId)
         if (draftData && draftData.menuData) {
-            draftFound = true;
-            setHasDraft(true);
-            Object.entries(draftData.menuData).forEach(([dDate, dayData]: [string, any]) => {
-                if (!initialMenu[dDate]) return;
+          draftFound = true
+          setHasDraft(true)
+          Object.entries(draftData.menuData).forEach(([dDate, dayData]: [string, any]) => {
+            if (!initialMenu[dDate]) return
 
-                Object.entries(dayData).forEach(([svcId, svcData]: [string, any]) => {
-                    if (!initialMenu[dDate][svcId]) return;
+            Object.entries(dayData).forEach(([svcId, svcData]: [string, any]) => {
+              if (!initialMenu[dDate][svcId]) return
 
-                    Object.entries(svcData).forEach(([subSvcId, subSvcData]: [string, any]) => {
-                        if (!initialMenu[dDate][svcId][subSvcId]) return;
+              Object.entries(svcData).forEach(([subSvcId, subSvcData]: [string, any]) => {
+                if (!initialMenu[dDate][svcId][subSvcId]) return
 
-                        Object.entries(subSvcData).forEach(([mpId, mpData]: [string, any]) => {
-                            if (!initialMenu[dDate][svcId][subSvcId][mpId]) return;
+                Object.entries(subSvcData).forEach(([mpId, mpData]: [string, any]) => {
+                  if (!initialMenu[dDate][svcId][subSvcId][mpId]) return
 
-                            Object.entries(mpData).forEach(([smpId, cellData]: [string, any]) => {
-                                if (initialMenu[dDate][svcId][subSvcId][mpId][smpId]) {
-                                    initialMenu[dDate][svcId][subSvcId][mpId][smpId] = cellData;
-                                }
-                            });
-                        });
-                    });
-                });
-            });
-            toast({ title: "Draft Restored", description: "Found an existing draft for these dates." });
+                  Object.entries(mpData).forEach(([smpId, cellData]: [string, any]) => {
+                    if (initialMenu[dDate][svcId][subSvcId][mpId][smpId]) {
+                      initialMenu[dDate][svcId][subSvcId][mpId][smpId] = cellData
+                    }
+                  })
+                })
+              })
+            })
+          })
+          toast({ title: "Draft Restored", description: "Found an existing draft for these dates." })
         } else {
-            setHasDraft(false);
+          setHasDraft(false)
         }
       } catch (e) {
-        console.error("Error fetching draft during generation", e);
+        console.error("Error fetching draft during generation", e)
       }
 
       // 3. Fetch Repetition Logs & Enrich with Names
       try {
         const logs = await repetitionLogsService.getByDateRange(startDate, endDate, userCompanyId)
         if (logs.length > 0) {
-            
-            // Fix: Map over logs and inject names from local services state
-            const enrichedLogs = logs.map((log: any) => {
-                const sName = log.serviceName || services.find(s => s.id === log.serviceId)?.name || "Unknown Service";
-                const ssName = log.subServiceName || subServices.find(ss => ss.id === log.subServiceId)?.name || "Unknown Sub-Service";
-                return {
-                    ...log,
-                    serviceName: sName,
-                    subServiceName: ssName
-                };
-            });
+          // Map over logs and inject names from local services state
+          const enrichedLogs = logs.map((log: any) => {
+            const sName = log.serviceName || services.find((s) => s.id === log.serviceId)?.name || "Unknown Service"
+            const ssName =
+              log.subServiceName || subServices.find((ss) => ss.id === log.subServiceId)?.name || "Unknown Sub-Service"
+            return {
+              ...log,
+              serviceName: sName,
+              subServiceName: ssName,
+            }
+          })
 
-            setRepetitionLog(enrichedLogs);
+          setRepetitionLog(enrichedLogs)
 
-            enrichedLogs.forEach((entry: any) => {
-                const keyObj = {
-                    type: entry.type,
-                    itemId: entry.itemId ?? "",
-                    attemptedDate: entry.attemptedDate ?? "",
-                    serviceId: entry.serviceId ?? "",
-                    subServiceId: entry.subServiceId ?? "",
-                    mealPlanId: entry.mealPlanId ?? "",
-                    subMealPlanId: entry.subMealPlanId ?? "",
-                }
-                repetitionLogKeysRef.current.add(JSON.stringify(keyObj));
-            })
+          enrichedLogs.forEach((entry: any) => {
+            const keyObj = {
+              type: entry.type,
+              itemId: entry.itemId ?? "",
+              attemptedDate: entry.attemptedDate ?? "",
+              serviceId: entry.serviceId ?? "",
+              subServiceId: entry.subServiceId ?? "",
+              mealPlanId: entry.mealPlanId ?? "",
+              subMealPlanId: entry.subMealPlanId ?? "",
+            }
+            repetitionLogKeysRef.current.add(JSON.stringify(keyObj))
+          })
         }
-      } catch(e) {
-        console.error("Error fetching repetition logs", e);
+      } catch (e) {
+        console.error("Error fetching repetition logs", e)
       }
 
       if (mountedRef.current) {
@@ -1279,62 +1604,69 @@ export default function CombinedMenuCreationPage() {
     }, 100)
   }
 
-  const addRepetitionLog = useCallback(async (entry: any) => {
-    try {
-      const keyObj = {
-        type: entry.type,
-        itemId: entry.itemId ?? JSON.stringify(entry.items ?? ""),
-        attemptedDate: entry.attemptedDate ?? entry.appliedToDate ?? "",
-        serviceId: entry.serviceId ?? "",
-        subServiceId: entry.subServiceId ?? "",
-        mealPlanId: entry.mealPlanId ?? "",
-        subMealPlanId: entry.subMealPlanId ?? "",
-      }
-      const key = JSON.stringify(keyObj)
-      if (repetitionLogKeysRef.current.has(key)) {
-        return
-      }
-      repetitionLogKeysRef.current.add(key)
+  const addRepetitionLog = useCallback(
+    async (entry: any) => {
+      try {
+        const keyObj = {
+          type: entry.type,
+          itemId: entry.itemId ?? JSON.stringify(entry.items ?? ""),
+          attemptedDate: entry.attemptedDate ?? entry.appliedToDate ?? "",
+          serviceId: entry.serviceId ?? "",
+          subServiceId: entry.subServiceId ?? "",
+          mealPlanId: entry.mealPlanId ?? "",
+          subMealPlanId: entry.subMealPlanId ?? "",
+        }
+        const key = JSON.stringify(keyObj)
+        if (repetitionLogKeysRef.current.has(key)) {
+          return
+        }
+        repetitionLogKeysRef.current.add(key)
 
-      const fullEntry = {
-        ...entry,
-        menuStartDate: startDate,
-        menuEndDate: endDate,
-        companyId: userCompanyId,
-      }
+        const fullEntry = {
+          ...entry,
+          menuStartDate: startDate,
+          menuEndDate: endDate,
+          companyId: userCompanyId,
+        }
 
-      const result = await repetitionLogsService.add(fullEntry);
-      
-      setRepetitionLog((p) => [{ ...fullEntry, id: result.id, time: fullEntry.time || new Date().toISOString() }, ...p])
-    } catch (err) {
-      console.error("Error adding repetition log", err);
-    }
-  }, [startDate, endDate, userCompanyId])
+        const result = await repetitionLogsService.add(fullEntry)
+
+        setRepetitionLog((p) => [
+          { ...fullEntry, id: result.id, time: fullEntry.time || new Date().toISOString() },
+          ...p,
+        ])
+      } catch (err) {
+        console.error("Error adding repetition log", err)
+      }
+    },
+    [startDate, endDate, userCompanyId],
+  )
 
   const clearRepetitionLog = useCallback(async () => {
     try {
-        const ids = repetitionLog.map(l => l.id).filter(id => id);
-        if (ids.length > 0) {
-            await repetitionLogsService.deleteAll(ids);
-        }
-        setRepetitionLog([])
-        repetitionLogKeysRef.current.clear()
-        toast({ title: "Logs Cleared", description: "All detection logs have been removed." })
-    } catch(e) {
-        console.error("Error clearing logs", e);
-        toast({ title: "Error", description: "Failed to clear logs from database", variant: "destructive" });
+      const ids = repetitionLog.map((l) => l.id).filter((id) => id)
+      if (ids.length > 0) {
+        await repetitionLogsService.deleteAll(ids)
+      }
+      setRepetitionLog([])
+      repetitionLogKeysRef.current.clear()
+      toast({ title: "Logs Cleared", description: "All detection logs have been removed." })
+    } catch (e) {
+      console.error("Error clearing logs", e)
+      toast({ title: "Error", description: "Failed to clear logs from database", variant: "destructive" })
     }
   }, [repetitionLog])
 
-  // --- NEW: Remove Single Log ---
-  const removeRepetitionLog = useCallback(async (logId: string) => {
-    try {
-      // Optimistic update
-      const logToRemove = repetitionLog.find(l => l.id === logId);
-      setRepetitionLog(prev => prev.filter(l => l.id !== logId));
+  // --- Remove Single Log ---
+  const removeRepetitionLog = useCallback(
+    async (logId: string) => {
+      try {
+        // Optimistic update
+        const logToRemove = repetitionLog.find((l) => l.id === logId)
+        setRepetitionLog((prev) => prev.filter((l) => l.id !== logId))
 
-      if (logToRemove) {
-         const keyObj = {
+        if (logToRemove) {
+          const keyObj = {
             type: logToRemove.type,
             itemId: logToRemove.itemId,
             attemptedDate: logToRemove.attemptedDate,
@@ -1342,17 +1674,19 @@ export default function CombinedMenuCreationPage() {
             subServiceId: logToRemove.subServiceId,
             mealPlanId: logToRemove.mealPlanId,
             subMealPlanId: logToRemove.subMealPlanId,
-         }
-         repetitionLogKeysRef.current.delete(JSON.stringify(keyObj));
-      }
+          }
+          repetitionLogKeysRef.current.delete(JSON.stringify(keyObj))
+        }
 
-      await repetitionLogsService.deleteAll([logId]);
-      toast({ title: "Log Removed", description: "Log entry removed." });
-    } catch (error) {
-      console.error("Error removing log:", error);
-      toast({ title: "Error", description: "Failed to remove log", variant: "destructive" });
-    }
-  }, [repetitionLog]);
+        await repetitionLogsService.deleteAll([logId])
+        toast({ title: "Log Removed", description: "Log entry removed." })
+      } catch (error) {
+        console.error("Error removing log:", error)
+        toast({ title: "Error", description: "Failed to remove log", variant: "destructive" })
+      }
+    },
+    [repetitionLog],
+  )
 
   const addMenuItemToCell = useCallback(
     async (
@@ -1371,15 +1705,15 @@ export default function CombinedMenuCreationPage() {
       })
 
       // Look up names for logging
-      const serviceName = services.find(s => s.id === serviceId)?.name || "Unknown Service";
-      const subServiceName = subServices.find(s => s.id === subServiceId)?.name || "Unknown Sub-Service";
+      const serviceName = services.find((s) => s.id === serviceId)?.name || "Unknown Service"
+      const subServiceName = subServices.find((s) => s.id === subServiceId)?.name || "Unknown Sub-Service"
 
-      const currentSubMealPlan = subMealPlans.find(smp => smp.id === subMealPlanId);
-      const isRepeatAllowed = currentSubMealPlan?.isRepeatPlan || false;
+      const currentSubMealPlan = subMealPlans.find((smp) => smp.id === subMealPlanId)
+      const isRepeatAllowed = currentSubMealPlan?.isRepeatPlan || false
 
       if (inWeek) {
         if (!isRepeatAllowed) {
-            const entry = {
+          const entry = {
             type: "In-week duplicate",
             itemId: menuItemId,
             itemName: menuItems.find((m) => m.id === menuItemId)?.name || menuItemId,
@@ -1391,13 +1725,13 @@ export default function CombinedMenuCreationPage() {
             subMealPlanId,
             attemptedDate: date,
             time: new Date().toISOString(),
-            }
-            addRepetitionLog(entry)
-            toast({
+          }
+          addRepetitionLog(entry)
+          toast({
             title: "Duplicate in week",
             description: `${entry.itemName} already exists in the week for this row.`,
             variant: "destructive",
-            })
+          })
         }
       }
 
@@ -1411,8 +1745,8 @@ export default function CombinedMenuCreationPage() {
         prevWeekMap[date][serviceId][subServiceId][mealPlanId][subMealPlanId].includes(menuItemId)
 
       if (prevHas && !inWeek) {
-         if (!isRepeatAllowed) {
-            const entry = {
+        if (!isRepeatAllowed) {
+          const entry = {
             type: "Prev-week repeat",
             itemId: menuItemId,
             itemName: menuItems.find((m) => m.id === menuItemId)?.name || menuItemId,
@@ -1423,19 +1757,19 @@ export default function CombinedMenuCreationPage() {
             mealPlanId,
             subMealPlanId,
             prevDate: (() => {
-                const d = new Date(date)
-                d.setDate(d.getDate() - 7)
-                return d.toISOString().split("T")[0]
+              const d = new Date(date)
+              d.setDate(d.getDate() - 7)
+              return d.toISOString().split("T")[0]
             })(),
             attemptedDate: date,
             time: new Date().toISOString(),
-            }
-            addRepetitionLog(entry)
-            toast({
+          }
+          addRepetitionLog(entry)
+          toast({
             title: "Repeat from previous week",
             description: `${entry.itemName} was used on ${entry.prevDate}.`,
             variant: "destructive",
-            })
+          })
         }
       }
 
@@ -1484,45 +1818,42 @@ export default function CombinedMenuCreationPage() {
       })
 
       // 2. Remove associated repetition logs
-      // Check for any log entries that match the item being removed in this context
-      const logsToRemove = repetitionLog.filter(log => 
+      const logsToRemove = repetitionLog.filter(
+        (log) =>
           log.itemId === menuItemId &&
           log.attemptedDate === date &&
           log.serviceId === serviceId &&
           log.subServiceId === subServiceId &&
           log.mealPlanId === mealPlanId &&
-          log.subMealPlanId === subMealPlanId
-      );
+          log.subMealPlanId === subMealPlanId,
+      )
 
       if (logsToRemove.length > 0) {
-          const ids = logsToRemove.map(l => l.id).filter(id => id);
-          
-          // Allow re-logging by removing keys from tracking ref
-          logsToRemove.forEach(log => {
-               const keyObj = {
-                  type: log.type,
-                  itemId: log.itemId,
-                  attemptedDate: log.attemptedDate,
-                  serviceId: log.serviceId,
-                  subServiceId: log.subServiceId,
-                  mealPlanId: log.mealPlanId,
-                  subMealPlanId: log.subMealPlanId,
-               }
-               repetitionLogKeysRef.current.delete(JSON.stringify(keyObj));
-          });
+        const ids = logsToRemove.map((l) => l.id).filter((id) => id)
 
-          // Optimistically update UI state
-          setRepetitionLog(prev => prev.filter(log => !ids.includes(log.id)));
-
-          // Delete from DB
-          if (ids.length > 0) {
-              try {
-                  await repetitionLogsService.deleteAll(ids);
-                  toast({ title: "Log Removed", description: "Removed associated duplicate warning." });
-              } catch (error) {
-                  console.error("Failed to delete logs from DB", error);
-              }
+        logsToRemove.forEach((log) => {
+          const keyObj = {
+            type: log.type,
+            itemId: log.itemId,
+            attemptedDate: log.attemptedDate,
+            serviceId: log.serviceId,
+            subServiceId: log.subServiceId,
+            mealPlanId: log.mealPlanId,
+            subMealPlanId: log.subMealPlanId,
           }
+          repetitionLogKeysRef.current.delete(JSON.stringify(keyObj))
+        })
+
+        setRepetitionLog((prev) => prev.filter((log) => !ids.includes(log.id)))
+
+        if (ids.length > 0) {
+          try {
+            await repetitionLogsService.deleteAll(ids)
+            toast({ title: "Log Removed", description: "Removed associated duplicate warning." })
+          } catch (error) {
+            console.error("Failed to delete logs from DB", error)
+          }
+        }
       }
     },
     [repetitionLog],
@@ -1573,7 +1904,7 @@ export default function CombinedMenuCreationPage() {
       setRepetitionLog([])
       repetitionLogKeysRef.current.clear()
       setCopyBuffer(null)
-      setHasDraft(false) 
+      setHasDraft(false)
     } catch (error) {
       console.error("Error saving combined menu:", error)
       toast({ title: "Error", description: "Failed to save combined menu", variant: "destructive" })
@@ -1706,13 +2037,12 @@ export default function CombinedMenuCreationPage() {
       subMealPlanId: string,
     ) => {
       const dates = dateRange.map((d) => d.date)
-      
-      // Look up names for logging
-      const serviceName = services.find(s => s.id === serviceId)?.name || "Unknown Service";
-      const subServiceName = subServices.find(s => s.id === subServiceId)?.name || "Unknown Sub-Service";
 
-      const currentSubMealPlan = subMealPlans.find(smp => smp.id === subMealPlanId);
-      const isRepeatAllowed = currentSubMealPlan?.isRepeatPlan || false;
+      const serviceName = services.find((s) => s.id === serviceId)?.name || "Unknown Service"
+      const subServiceName = subServices.find((s) => s.id === subServiceId)?.name || "Unknown Sub-Service"
+
+      const currentSubMealPlan = subMealPlans.find((smp) => smp.id === subMealPlanId)
+      const isRepeatAllowed = currentSubMealPlan?.isRepeatPlan || false
 
       items.forEach((menuItemId) => {
         const inWeek = dates.some((d) => {
@@ -1724,26 +2054,20 @@ export default function CombinedMenuCreationPage() {
         if (inWeek) {
           if (!isRepeatAllowed) {
             const entry = {
-                type: "In-week duplicate",
-                itemId: menuItemId,
-                itemName: menuItems.find((m) => m.id === menuItemId)?.name || menuItemId,
-                serviceId,
-                serviceName,
-                subServiceId,
-                subServiceName,
-                mealPlanId,
-                subMealPlanId,
-                attemptedDate: date,
-                time: new Date().toISOString(),
+              type: "In-week duplicate",
+              itemId: menuItemId,
+              itemName: menuItems.find((m) => m.id === menuItemId)?.name || menuItemId,
+              serviceId,
+              serviceName,
+              subServiceId,
+              subServiceName,
+              mealPlanId,
+              subMealPlanId,
+              attemptedDate: date,
+              time: new Date().toISOString(),
             }
             addRepetitionLog(entry)
-            toast({
-                title: "Duplicate in week",
-                description: `${entry.itemName} already exists in the week for this row.`,
-                variant: "destructive",
-            })
           }
-          return
         }
 
         const prevHas =
@@ -1758,29 +2082,24 @@ export default function CombinedMenuCreationPage() {
         if (prevHas) {
           if (!isRepeatAllowed) {
             const entry = {
-                type: "Prev-week repeat",
-                itemId: menuItemId,
-                itemName: menuItems.find((m) => m.id === menuItemId)?.name || menuItemId,
-                serviceId,
-                serviceName,
-                subServiceId,
-                subServiceName,
-                mealPlanId,
-                subMealPlanId,
-                prevDate: (() => {
+              type: "Prev-week repeat",
+              itemId: menuItemId,
+              itemName: menuItems.find((m) => m.id === menuItemId)?.name || menuItemId,
+              serviceId,
+              serviceName,
+              subServiceId,
+              subServiceName,
+              mealPlanId,
+              subMealPlanId,
+              prevDate: (() => {
                 const d = new Date(date)
                 d.setDate(d.getDate() - 7)
                 return d.toISOString().split("T")[0]
-                })(),
-                attemptedDate: date,
-                time: new Date().toISOString(),
+              })(),
+              attemptedDate: date,
+              time: new Date().toISOString(),
             }
             addRepetitionLog(entry)
-            toast({
-                title: "Repeat from previous week",
-                description: `${entry.itemName} was used on ${entry.prevDate}.`,
-                variant: "destructive",
-            })
           }
         }
       })
@@ -1816,7 +2135,7 @@ export default function CombinedMenuCreationPage() {
       applyItemsToCell(date, copyBuffer.items.slice(), serviceId, subServiceId, mealPlanId, subMealPlanId)
       toast({ title: "Pasted", description: `Pasted ${copyBuffer.items.length} item(s) to ${date}` })
     },
-    [copyBuffer, applyItemsToCell, menuItems],
+    [copyBuffer, applyItemsToCell],
   )
 
   const clearCopyBuffer = useCallback(() => {
@@ -1852,48 +2171,73 @@ export default function CombinedMenuCreationPage() {
         </div>
       </div>
 
-      <Card className="mb-6">
+      <Card className="mb-6 max-w-xl mx-auto shadow-md">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Calendar className="h-5 w-5" />
-            Select Date Range
+            Select Menu Week
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="startDate">Start Date</Label>
-              <Input id="startDate" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="endDate">End Date</Label>
-              <Input id="endDate" type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
-            </div>
-            <div className="flex items-end">
-              <Button onClick={generateDateRange} disabled={generatingGrid} className="w-full">
-                {generatingGrid ? (
-                  <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Generating Grid...
-                  </>
-                ) : (
-                  <>
-                    <Maximize2 className="h-4 w-4 mr-2" />
-                    Open Menu Grid
-                  </>
-                )}
-              </Button>
-            </div>
+          <div className="space-y-2">
+            <Label htmlFor="weekPicker">Select Week (Any date, snaps to Monday)</Label>
+            <Input 
+                id="weekPicker"
+                type="date" 
+                value={startDate} 
+                onChange={handleWeekSelect}
+                className="w-full" 
+            />
+            {startDate && endDate && (
+                <div className={`mt-2 p-3 rounded text-sm flex items-center justify-between ${duplicateMenuId ? 'bg-amber-50 text-amber-800 border border-amber-200' : 'bg-blue-50 text-blue-800 border border-blue-200'}`}>
+                    <span>
+                        <strong>Week:</strong> {new Date(startDate).toLocaleDateString()} — {new Date(endDate).toLocaleDateString()}
+                    </span>
+                    {duplicateMenuId && (
+                        <div className="flex items-center gap-1 font-bold animate-pulse">
+                            <AlertCircle className="h-4 w-4" />
+                            <span>Menu Exists</span>
+                        </div>
+                    )}
+                </div>
+            )}
+          </div>
+
+          <div className="flex flex-col gap-2 mt-4">
+            {duplicateMenuId ? (
+                <Button 
+                    onClick={handleOpenEdit} 
+                    className="w-full bg-amber-600 hover:bg-amber-700 text-white"
+                >
+                    <ExternalLink className="h-4 w-4 mr-2" />
+                    Open Existing Menu
+                </Button>
+            ) : (
+                <Button onClick={generateDateRange} disabled={generatingGrid || !startDate} className="w-full">
+                    {generatingGrid ? (
+                    <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Generating Grid...
+                    </>
+                    ) : (
+                    <>
+                        <Maximize2 className="h-4 w-4 mr-2" />
+                        Create New Grid
+                    </>
+                    )}
+                </Button>
+            )}
           </div>
         </CardContent>
       </Card>
 
-      {startDate && endDate && hasDraft && !showModal && (
+      {startDate && endDate && hasDraft && !showModal && !duplicateMenuId && (
         <Card className="mb-6 border-l-4 border-l-purple-500 bg-purple-50">
           <CardContent className="pt-6">
             <div className="flex flex-wrap items-center gap-3">
               <div className="text-sm text-gray-700">
-                <span className="font-medium">Draft available.</span> It will be loaded automatically when you open the grid.
+                <span className="font-medium">Draft available.</span> It will be loaded automatically when you open the
+                grid.
               </div>
             </div>
           </CardContent>
@@ -1902,8 +2246,8 @@ export default function CombinedMenuCreationPage() {
 
       {showModal && (
         <>
-          <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-lg w-full h-full flex flex-col max-h-[90vh] relative">
+          <div className="fixed inset-0  bg-opacity-50 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-lg w-full h-full flex flex-col  absolute">
               <div className="flex items-center justify-between p-4 border-b bg-gradient-to-r from-white to-blue-50">
                 <div>
                   <h2 className="text-xl font-bold">Combined Menu Grid</h2>
@@ -1933,7 +2277,7 @@ export default function CombinedMenuCreationPage() {
                   ) : null}
                   <Button
                     onClick={handleSaveDraft}
-                    disabled={saving || draftLoading || Object.keys(combinedMenu).length === 0}
+                    disabled={saving || Object.keys(combinedMenu).length === 0}
                     variant="outline"
                     size="sm"
                     className="border-purple-300 text-purple-700 hover:bg-purple-100 bg-transparent"
@@ -2011,16 +2355,16 @@ export default function CombinedMenuCreationPage() {
               <button
                 onClick={() => setShowLogPanel(!showLogPanel)}
                 className={`fixed bottom-6 right-6 h-14 w-14 rounded-full shadow-lg z-[60] flex items-center justify-center transition-all duration-200 border-2 border-white ${
-                  repetitionLog.length > 0 
-                    ? "bg-red-500 hover:bg-red-600 text-white animate-in zoom-in" 
+                  repetitionLog.length > 0
+                    ? "bg-red-500 hover:bg-red-600 text-white animate-in zoom-in"
                     : "bg-gray-400 hover:bg-gray-500 text-white"
                 }`}
                 title="Toggle Repetition Logs"
               >
-                 <div className="flex flex-col items-center">
-                    {showLogPanel ? <ChevronDown className="h-6 w-6" /> : <AlertCircle className="h-5 w-5" />}
-                    {!showLogPanel && <span className="text-[10px] font-bold">{repetitionLog.length}</span>}
-                 </div>
+                <div className="flex flex-col items-center">
+                  {showLogPanel ? <ChevronDown className="h-6 w-6" /> : <AlertCircle className="h-5 w-5" />}
+                  {!showLogPanel && <span className="text-[10px] font-bold">{repetitionLog.length}</span>}
+                </div>
               </button>
 
               {/* Log Panel */}
@@ -2028,12 +2372,17 @@ export default function CombinedMenuCreationPage() {
                 <div className="border-t bg-white p-4 animate-in slide-in-from-bottom-10 z-50 shadow-[0_-5px_20px_rgba(0,0,0,0.1)]">
                   <div className="flex items-center justify-between mb-3">
                     <div className="font-semibold text-sm flex items-center gap-2">
-                        <AlertCircle className="h-4 w-4 text-red-500"/>
-                        Repetition Log
+                      <AlertCircle className="h-4 w-4 text-red-500" />
+                      Repetition Log
                     </div>
                     <div className="flex items-center gap-2">
                       <div className="text-xs text-gray-500">{repetitionLog.length} entries</div>
-                      <Button variant="ghost" size="sm" onClick={clearRepetitionLog} className="text-red-600 hover:bg-red-50">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={clearRepetitionLog}
+                        className="text-red-600 hover:bg-red-50"
+                      >
                         Clear All Logs
                       </Button>
                     </div>
@@ -2059,13 +2408,18 @@ export default function CombinedMenuCreationPage() {
                               </div>
                               <div className="flex items-center gap-2">
                                 <div className="text-xs whitespace-nowrap opacity-75">
-                                    {entry.createdAt?.toDate 
-                                        ? entry.createdAt.toDate().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) 
-                                        : entry.time 
-                                            ? new Date(entry.time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) 
-                                            : ""}
+                                  {entry.createdAt?.toDate
+                                    ? entry.createdAt
+                                        .toDate()
+                                        .toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+                                    : entry.time
+                                      ? new Date(entry.time).toLocaleTimeString([], {
+                                          hour: "2-digit",
+                                          minute: "2-digit",
+                                        })
+                                      : ""}
                                 </div>
-                                <button 
+                                <button
                                   onClick={() => removeRepetitionLog(entry.id)}
                                   className="text-gray-400 hover:text-red-600 transition-colors p-0.5 rounded-full hover:bg-red-100"
                                   title="Dismiss this log"
@@ -2074,9 +2428,10 @@ export default function CombinedMenuCreationPage() {
                                 </button>
                               </div>
                             </div>
-                            
+
                             <div className="mb-1 font-medium text-gray-700 border-b border-gray-200 pb-1">
-                                {entry.serviceName || "Service"} <span className="text-gray-400">/</span> {entry.subServiceName || "Sub-Service"}
+                              {entry.serviceName || "Service"} <span className="text-gray-400">/</span>{" "}
+                              {entry.subServiceName || "Sub-Service"}
                             </div>
 
                             <div className={isError ? "text-red-600" : "text-gray-600"}>
@@ -2105,6 +2460,15 @@ export default function CombinedMenuCreationPage() {
           </div>
         </>
       )}
+
+      {/* Edit Modal (Triggered on Duplicate) */}
+      <MenuEditModal
+        isOpen={showEditModal}
+        onClose={() => setShowEditModal(false)}
+        menuId={duplicateMenuId || ""}
+        menuType="combined"
+        preloadedMenuItems={menuItems}
+      />
     </div>
   )
 }
