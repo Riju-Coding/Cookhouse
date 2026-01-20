@@ -28,7 +28,7 @@ import {
   mealPlansService,
   subMealPlansService,
   structureAssignmentsService,
-  mealPlanStructureAssignmentsService, // Added this import
+  mealPlanStructureAssignmentsService,
   menuItemsService,
   updationService,
   repetitionLogsService,
@@ -249,95 +249,6 @@ const ItemDescriptionModal = memo(function ItemDescriptionModal({
   )
 })
 
-const CompanyAssignmentModal = memo(function CompanyAssignmentModal({
-  isOpen,
-  onClose,
-  mealPlan,
-  subMealPlan,
-  service,
-  selectedSubService,
-  companies,
-  buildings,
-  structureAssignments,
-  date,
-  day,
-}: {
-  isOpen: boolean
-  onClose: () => void
-  mealPlan: MealPlan
-  subMealPlan: SubMealPlan
-  service: Service
-  selectedSubService: SubService
-  companies: any[]
-  buildings: any[]
-  structureAssignments: any[]
-  date: string
-  day: string
-}) {
-  const assignedCompanies = useMemo(() => {
-    const result: any[] = []
-    structureAssignments.forEach((assignment: any) => {
-      const company = companies.find((c: any) => c.id === assignment.companyId)
-      const building = buildings.find((b: any) => b.id === assignment.buildingId)
-      if (!company || !building) return
-      const dayKey = day.toLowerCase()
-      const dayStructure = assignment.weekStructure?.[dayKey] || []
-      const serviceInDay = dayStructure.find((s: any) => s.serviceId === service.id)
-      if (!serviceInDay) return
-      const subServiceInDay = serviceInDay.subServices?.find((ss: any) => ss.subServiceId === selectedSubService.id)
-      if (!subServiceInDay) return
-      const mealPlanInDay = subServiceInDay.mealPlans?.find((mp: any) => mp.mealPlanId === mealPlan.id)
-      if (!mealPlanInDay) return
-      const subMealPlanInDay = mealPlanInDay.subMealPlans?.find((smp: any) => smp.subMealPlanId === subMealPlan.id)
-      if (!subMealPlanInDay) return
-      result.push({
-        companyId: company.id,
-        companyName: company.name,
-        buildingId: building.id,
-        buildingName: building.name,
-        day,
-      })
-    })
-    return result
-  }, [mealPlan, subMealPlan, service, selectedSubService, companies, buildings, structureAssignments, date, day])
-
-  if (!isOpen) return null
-
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 z-[100] flex items-center justify-center p-4">
-      <div className="bg-white rounded-lg max-w-md w-full max-h-[80vh] overflow-auto shadow-2xl">
-        <div className="sticky top-0 bg-gradient-to-r from-blue-50 to-white border-b p-4 flex items-center justify-between">
-          <div>
-            <h3 className="font-semibold text-lg">
-              {service.name} → {subMealPlan.name}
-            </h3>
-            <p className="text-sm text-gray-600">
-              {new Date(date).toLocaleDateString()} ({day})
-            </p>
-          </div>
-          <button onClick={onClose} className="text-gray-500 hover:text-gray-700" type="button">
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-        <div className="p-4">
-          {assignedCompanies.length === 0 ? (
-            <p className="text-sm text-gray-500">No companies assigned for this combination on {day}</p>
-          ) : (
-            <div className="space-y-2">
-              {assignedCompanies.map((comp, idx) => (
-                <div key={idx} className="p-3 border rounded bg-blue-50">
-                  <div className="font-medium text-sm">{comp.companyName}</div>
-                  <div className="text-xs text-gray-600">{comp.buildingName}</div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  )
-})
-
 interface MenuEditModalProps {
   isOpen: boolean
   onClose: () => void
@@ -360,6 +271,11 @@ interface MenuData {
 // --- Menu Cell Component ---
 const MenuGridCell = memo(function MenuGridCell({
     date,
+    day,
+    service,
+    subServiceId,
+    mealPlan,
+    subMealPlan,
     selectedMenuItemIds,
     allMenuItems,
     onAddItem,
@@ -374,11 +290,18 @@ const MenuGridCell = memo(function MenuGridCell({
     canPaste,
     prevItems,
     onCellMouseEnter,
-    onViewCompanies,
     isActive,
     onActivate,
+    companies,
+    buildings,
+    structureAssignments,
   }: {
     date: string
+    day: string
+    service: Service
+    subServiceId: string
+    mealPlan: MealPlan
+    subMealPlan: SubMealPlan
     selectedMenuItemIds: string[]
     allMenuItems: MenuItem[]
     onAddItem: (menuItemId: string) => void
@@ -393,36 +316,70 @@ const MenuGridCell = memo(function MenuGridCell({
     canPaste?: boolean
     prevItems?: string[]
     onCellMouseEnter?: () => void
-    onViewCompanies?: () => void
     isActive: boolean
     onActivate: () => void
+    companies: any[]
+    buildings: any[]
+    structureAssignments: any[]
   }) {
     const [isOpen, setIsOpen] = useState(false)
+    const [isCompanyOpen, setIsCompanyOpen] = useState(false)
     const [search, setSearch] = useState("")
     const [creating, setCreating] = useState(false)
     const [showDescModal, setShowDescModal] = useState(false)
     const dropdownRef = useRef<HTMLDivElement>(null)
+
+    // Calculate assigned companies for this specific cell logic
+    const assignedCompanies = useMemo(() => {
+        if (!day || !companies || !structureAssignments) return []
+        const result: any[] = []
+        const dayKey = day.toLowerCase()
+        
+        structureAssignments.forEach((assignment: any) => {
+            const company = companies.find((c: any) => c.id === assignment.companyId)
+            const building = buildings.find((b: any) => b.id === assignment.buildingId)
+            
+            if (!company || !building) return
+            
+            const dayStructure = assignment.weekStructure?.[dayKey] || []
+            const serviceInDay = dayStructure.find((s: any) => s.serviceId === service.id)
+            if (!serviceInDay) return
+            
+            const subServiceInDay = serviceInDay.subServices?.find((ss: any) => ss.subServiceId === subServiceId)
+            if (!subServiceInDay) return
+            
+            const mealPlanInDay = subServiceInDay.mealPlans?.find((mp: any) => mp.mealPlanId === mealPlan.id)
+            if (!mealPlanInDay) return
+            
+            const subMealPlanInDay = mealPlanInDay.subMealPlans?.find((smp: any) => smp.subMealPlanId === subMealPlan.id)
+            if (!subMealPlanInDay) return
+            
+            result.push({
+                companyName: company.name,
+                buildingName: building.name,
+            })
+        })
+        return result
+    }, [day, companies, structureAssignments, service.id, subServiceId, mealPlan.id, subMealPlan.id])
   
     useEffect(() => {
-      if (!isOpen) return
+      if (!isOpen && !isCompanyOpen) return
       const handleClickOutside = (e: MouseEvent) => {
         if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
           setIsOpen(false)
+          setIsCompanyOpen(false)
           setSearch("")
         }
       }
       document.addEventListener("mousedown", handleClickOutside)
       return () => document.removeEventListener("mousedown", handleClickOutside)
-    }, [isOpen])
+    }, [isOpen, isCompanyOpen])
   
     const filtered = useMemo(() => {
       if (!search.trim()) return allMenuItems.slice(0, 50)
       const lower = search.toLowerCase()
       return allMenuItems
-        .filter(
-          (item) =>
-            item.name.toLowerCase().includes(lower) || (item.category && item.category.toLowerCase().includes(lower)),
-        )
+        .filter((item) => item.name.toLowerCase().includes(lower))
         .slice(0, 50)
     }, [allMenuItems, search])
   
@@ -441,24 +398,21 @@ const MenuGridCell = memo(function MenuGridCell({
           setSearch("")
           setIsOpen(false)
         }
-      } catch (error) {
-        console.error("Create error:", error)
       } finally {
         setCreating(false)
       }
     }
   
     const handleAdd = (itemId: string) => {
-      if (selectedMenuItemIds.includes(itemId)) return
       onAddItem(itemId)
       setSearch("")
       setIsOpen(false)
     }
-  
+
     const onDragHandleMouseDown = (e: React.MouseEvent) => {
-      e.preventDefault()
-      e.stopPropagation()
-      onStartDrag?.(date, selectedMenuItemIds)
+        e.preventDefault()
+        e.stopPropagation()
+        onStartDrag?.(date, selectedMenuItemIds)
     }
   
     return (
@@ -469,21 +423,12 @@ const MenuGridCell = memo(function MenuGridCell({
             onCellMouseEnter?.()
             if (onHoverDrag) onHoverDrag(date)
           }}
-          className={`border p-2 align-top min-w-[200px] transition-all duration-150 relative 
-            ${isActive ? "ring-2 ring-blue-500 bg-white z-10" : "bg-white hover:bg-gray-50"} 
+          className={`border border-gray-300 p-2 align-top min-w-[200px] transition-all duration-150 relative 
+            ${isActive ? "ring-2 ring-blue-500 bg-white z-[60]" : "bg-white hover:bg-gray-50"} 
             ${isDragHover ? "ring-2 ring-blue-300 bg-blue-50" : ""}
           `}
         >
           <div className="flex flex-col h-full min-h-[60px]">
-            {prevItems && prevItems.length > 0 && (
-              <div className="px-1 pt-1 flex flex-wrap gap-0.5 opacity-60 hover:opacity-100 transition-opacity mb-1">
-                {prevItems.slice(0, 3).map((id) => (
-                  <div key={id} className="w-1.5 h-1.5 rounded-full bg-blue-400" title="Item from previous week" />
-                ))}
-                {prevItems.length > 3 && <span className="text-[9px] text-gray-400">...</span>}
-              </div>
-            )}
-  
             <div className="flex-1 space-y-1">
               {selectedMenuItemIds.map((itemId) => {
                 const item = allMenuItems.find((i) => i.id === itemId)
@@ -518,6 +463,7 @@ const MenuGridCell = memo(function MenuGridCell({
                       onClick={(e) => {
                         e.stopPropagation()
                         setIsOpen(!isOpen)
+                        setIsCompanyOpen(false)
                       }}
                       className="p-1.5 rounded hover:bg-blue-100 text-blue-600 transition-colors"
                       title="Add Item"
@@ -525,65 +471,76 @@ const MenuGridCell = memo(function MenuGridCell({
                       <Plus className="h-4 w-4" />
                     </button>
                     {isOpen && (
-                      <div className="absolute top-full left-0 mt-1 w-[270px] bg-white border rounded-lg shadow-xl z-50 flex flex-col overflow-hidden">
+                      <div className="absolute bottom-full left-0 mb-1 w-[270px] bg-white border rounded-lg shadow-xl z-[100] flex flex-col overflow-hidden">
                         <div className="p-3 border-b bg-gradient-to-r from-blue-50 to-white">
-                          <div className="relative">
-                            <Search className="absolute left-2 top-2.5 h-4 w-4 text-gray-400" />
                             <Input
                               type="text"
                               placeholder="Search..."
                               value={search}
                               onChange={(e) => setSearch(e.target.value)}
-                              className="h-8 text-xs pl-7 focus:ring-blue-500"
+                              className="h-8 text-xs focus:ring-blue-500"
                               autoFocus
                               onClick={(e) => e.stopPropagation()}
                             />
-                          </div>
                         </div>
                         <div className="max-h-[240px] overflow-y-auto">
-                          {available.length > 0 ? (
-                            available.map((item) => (
+                          {available.map((item) => (
                               <button
                                 key={item.id}
                                 onClick={(e) => {
                                   e.stopPropagation()
                                   handleAdd(item.id)
                                 }}
-                                className="w-full px-3 py-2 text-left hover:bg-blue-50 text-xs border-b last:border-0 truncate transition-colors flex items-center justify-between group"
+                                className="w-full px-3 py-2 text-left hover:bg-blue-50 text-xs border-b last:border-0 truncate flex items-center justify-between group"
                               >
                                 <span className="font-medium text-gray-700">{item.name}</span>
                                 <CheckCircle className="h-3 w-3 opacity-0 group-hover:opacity-100 text-green-600" />
                               </button>
-                            ))
-                          ) : search.trim() ? (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                handleCreate()
-                              }}
-                              className="w-full p-3 text-center text-xs text-blue-600 font-semibold hover:bg-blue-50 border-b transition-colors flex items-center justify-center gap-2"
-                            >
-                              {creating ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
-                              Create "{search}"
-                            </button>
-                          ) : (
-                            <div className="p-3 text-xs text-gray-400 text-center">Start typing...</div>
-                          )}
+                            ))}
+                            {search.trim() && (
+                                <button onClick={(e) => { e.stopPropagation(); handleCreate() }} className="w-full p-3 text-center text-xs text-blue-600 font-semibold hover:bg-blue-50">
+                                    {creating ? "Creating..." : `Create "${search}"`}
+                                </button>
+                            )}
                         </div>
                       </div>
                     )}
                   </div>
   
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onViewCompanies?.()
-                    }}
-                    className="p-1.5 rounded hover:bg-purple-100 text-purple-600 transition-colors"
-                    title="View Companies"
-                  >
-                    <Building2 className="h-4 w-4" />
-                  </button>
+                  <div className="relative">
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation()
+                            setIsCompanyOpen(!isCompanyOpen)
+                            setIsOpen(false)
+                        }}
+                        className={`p-1.5 rounded transition-colors ${isCompanyOpen ? "bg-purple-100 text-purple-700" : "hover:bg-purple-100 text-purple-600"}`}
+                        title="View Companies"
+                    >
+                        <Building2 className="h-4 w-4" />
+                    </button>
+                    {isCompanyOpen && (
+                        <div className="absolute bottom-full left-0 mb-1 w-[250px] bg-white border rounded-lg shadow-xl z-[100] flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-150">
+                            <div className="p-2 border-b bg-purple-50">
+                                <h4 className="font-semibold text-xs text-purple-800 flex items-center gap-2">
+                                    Assigned Companies ({assignedCompanies.length})
+                                </h4>
+                            </div>
+                            <div className="max-h-[200px] overflow-y-auto p-1">
+                                {assignedCompanies.length > 0 ? (
+                                    assignedCompanies.map((comp, idx) => (
+                                        <div key={idx} className="p-2 hover:bg-purple-50 rounded border-b last:border-0 border-gray-100">
+                                            <div className="font-medium text-xs text-gray-800">{comp.companyName}</div>
+                                            <div className="text-[10px] text-gray-500">{comp.buildingName}</div>
+                                        </div>
+                                    ))
+                                ) : (
+                                    <div className="p-4 text-center text-xs text-gray-400 italic">No companies assigned.</div>
+                                )}
+                            </div>
+                        </div>
+                    )}
+                  </div>
   
                   <button
                     onClick={(e) => {
@@ -592,7 +549,7 @@ const MenuGridCell = memo(function MenuGridCell({
                     }}
                     disabled={selectedMenuItemIds.length === 0}
                     className={`p-1.5 rounded transition-colors ${
-                      selectedMenuItemIds.length > 0 ? "hover:bg-amber-100 text-amber-600" : "text-gray-300 cursor-not-allowed"
+                      selectedMenuItemIds.length > 0 ? "hover:bg-amber-100 text-amber-600" : "text-gray-300"
                     }`}
                     title="Edit Item Descriptions"
                   >
@@ -600,37 +557,10 @@ const MenuGridCell = memo(function MenuGridCell({
                   </button>
                 </div>
   
-                <div className="w-px h-4 bg-gray-300 mx-0.5"></div>
-  
                 <div className="flex items-center gap-0.5">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onCopy?.()
-                    }}
-                    className="p-1.5 rounded hover:bg-gray-200 text-gray-600 transition-colors"
-                    title="Copy"
-                  >
-                    <ClipboardCopy className="h-3.5 w-3.5" />
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onPaste?.()
-                    }}
-                    disabled={!canPaste}
-                    className={`p-1.5 rounded transition-colors ${canPaste ? "hover:bg-gray-200 text-gray-600" : "text-gray-300"}`}
-                    title="Paste"
-                  >
-                    <ClipboardPaste className="h-3.5 w-3.5" />
-                  </button>
-                  <button
-                    onMouseDown={onDragHandleMouseDown}
-                    className={`p-1.5 rounded cursor-grab active:cursor-grabbing transition-colors ${isDragActive ? "bg-blue-100 text-blue-600" : "hover:bg-gray-200 text-gray-600"}`}
-                    title="Drag to fill"
-                  >
-                    <GripHorizontal className="h-3.5 w-3.5" />
-                  </button>
+                  <button onClick={(e) => { e.stopPropagation(); onCopy?.() }} className="p-1.5 rounded hover:bg-gray-200 text-gray-600"><ClipboardCopy className="h-3.5 w-3.5" /></button>
+                  <button onClick={(e) => { e.stopPropagation(); onPaste?.() }} disabled={!canPaste} className={`p-1.5 rounded ${canPaste ? "hover:bg-gray-200 text-gray-600" : "text-gray-300"}`}><ClipboardPaste className="h-3.5 w-3.5" /></button>
+                  <button onMouseDown={onDragHandleMouseDown} className={`p-1.5 rounded cursor-grab active:cursor-grabbing transition-colors ${isDragActive ? "bg-blue-100 text-blue-600" : "hover:bg-gray-200 text-gray-600"}`}><GripHorizontal className="h-3.5 w-3.5" /></button>
                 </div>
               </div>
             )}
@@ -755,15 +685,9 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
   const [hoveredDate, setHoveredDate] = useState<string | null>(null)
   const [showLogPanel, setShowLogPanel] = useState(false)
 
-  const [showCompanyModal, setShowCompanyModal] = useState(false)
-  const [selectedMealPlan, setSelectedMealPlan] = useState<MealPlan | null>(null)
-  const [selectedSubMealPlan, setSelectedSubMealPlan] = useState<SubMealPlan | null>(null)
-  const [selectedDate, setSelectedDate] = useState<string>("")
-  const [selectedDay, setSelectedDay] = useState<string>("")
   const [companies, setCompanies] = useState<any[]>([])
   const [buildings, setBuildings] = useState<any[]>([])
-  const [structureAssignments, setStructureAssignments] = useState<any[]>([])
-  const [mealPlanAssignments, setMealPlanAssignments] = useState<any[]>([]) // Added this state
+  const [mealPlanAssignments, setMealPlanAssignments] = useState<any[]>([])
   
   const [activeCell, setActiveCell] = useState<string | null>(null)
 
@@ -926,15 +850,14 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
           companiesService.getAll(),
           buildingsService.getAll(),
           structureAssignmentsService.getAll(),
-          mealPlanStructureAssignmentsService.getAll() // Added this fetch
+          mealPlanStructureAssignmentsService.getAll()
         ])
 
         if (signal.aborted || !mountedRef.current) return
 
         setCompanies(companiesData)
         setBuildings(buildingsData)
-        setStructureAssignments(structureData)
-        setMealPlanAssignments(mealPlanStructureData) // Save the meal plan specific assignments
+        setMealPlanAssignments(mealPlanStructureData)
 
         setProgress(70)
         setMessage("Filtering data...")
@@ -1326,15 +1249,11 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
     }))
   }, [mealPlans, subMealPlans])
 
-  // -----------------------------------------------------------------
-  // HIDE LOGIC: Filter subMealPlans that have no company assignments for the whole week
-  // -----------------------------------------------------------------
   const filteredMealPlanStructure = useMemo(() => {
     if (!selectedService || !selectedSubService || !mealPlanAssignments.length) return []
 
     return mealPlanStructure.map(({ mealPlan, subMealPlans: subMPs }) => {
       const visibleSubMealPlans = subMPs.filter(subMealPlan => {
-        // Check if ANY day in the week has this specific row configuration for ANY company
         return dateRange.some(({ day }) => {
           const dayKey = day.toLowerCase()
           return mealPlanAssignments.some(assignment => {
@@ -1353,9 +1272,9 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-2 sm:p-4 overflow-hidden">
+    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center overflow-hidden">
       
-      <div className="bg-white rounded-xl shadow-2xl w-full h-full max-w-[98vw] max-h-[95vh] flex flex-col relative overflow-hidden">
+      <div className="bg-white shadow-2xl w-full h-full flex flex-col relative overflow-hidden">
           
           {/* Header */}
           <div className="border-b p-4 flex-none flex items-center justify-between bg-white z-40">
@@ -1407,11 +1326,11 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
                       <table className="w-full border-collapse">
                         <thead className="bg-gray-100 sticky top-0 z-20 shadow-sm">
                           <tr>
-                            <th className="border p-2 sticky left-0 z-30 bg-gray-100 min-w-[200px] shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
+                            <th className="border border-gray-300 p-2 sticky left-0 z-30 bg-gray-100 min-w-[200px] shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
                               Meal Plan / Sub Meal
                             </th>
                             {dateRange.slice(0, visibleDates).map(({ date, day }) => (
-                              <th key={date} className="border p-2 min-w-[250px] text-left">
+                              <th key={date} className="border border-gray-300 p-2 min-w-[250px] text-left">
                                 <div className="font-semibold">
                                   {new Date(date).toLocaleDateString("en-US", {
                                     month: "short",
@@ -1427,7 +1346,7 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
                           {filteredMealPlanStructure.map(({ mealPlan, subMealPlans: subMPs }) =>
                             subMPs.map((subMealPlan, idx) => (
                               <tr key={`${mealPlan.id}-${subMealPlan.id}`} className="hover:bg-gray-50/50">
-                                <td className="border bg-gray-50 p-2 sticky left-0 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] align-top">
+                                <td className="border border-gray-300 bg-gray-200 p-2 sticky left-0 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] align-top">
                                   {idx === 0 && <div className="font-bold text-blue-700 mb-1">{mealPlan.name}</div>}
                                   <div className="text-sm text-gray-700 ml-3">↳ {subMealPlan.name}</div>
                                 </td>
@@ -1444,6 +1363,11 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
                                     <MenuGridCell
                                       key={cellKey}
                                       date={date}
+                                      day={day}
+                                      service={selectedService}
+                                      subServiceId={selectedSubService.id}
+                                      mealPlan={mealPlan}
+                                      subMealPlan={subMealPlan}
                                       selectedMenuItemIds={selectedItems}
                                       allMenuItems={menuItems}
                                       onAddItem={(itemId) =>
@@ -1464,19 +1388,15 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
                                       onPaste={() => handlePaste(date, mealPlan.id, subMealPlan.id)}
                                       canPaste={!!copyBuffer?.items.length}
                                       prevItems={prevItems}
-                                      onViewCompanies={() => {
-                                          setSelectedMealPlan(mealPlan)
-                                          setSelectedSubMealPlan(subMealPlan)
-                                          setSelectedDate(date)
-                                          setSelectedDay(day)
-                                          setShowCompanyModal(true)
-                                      }}
                                       isActive={activeCell === cellKey}
                                       onActivate={() => setActiveCell(cellKey)}
                                       onCellMouseEnter={() => {
                                         setHoveredDate(date)
                                         if (dragActive) applyDragToCell(date, mealPlan.id, subMealPlan.id)
                                       }}
+                                      companies={companies}
+                                      buildings={buildings}
+                                      structureAssignments={mealPlanAssignments}
                                     />
                                   )
                                 })}
@@ -1572,24 +1492,6 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
                   </div>
               </div>
           )}
-
-          {/* Company Modal */}
-          {selectedMealPlan && selectedSubMealPlan && selectedService && selectedSubService && (
-            <CompanyAssignmentModal
-                isOpen={showCompanyModal}
-                onClose={() => setShowCompanyModal(false)}
-                mealPlan={selectedMealPlan}
-                subMealPlan={selectedSubMealPlan}
-                service={selectedService}
-                selectedSubService={selectedSubService}
-                companies={companies}
-                buildings={buildings}
-                structureAssignments={structureAssignments}
-                date={selectedDate}
-                day={selectedDay}
-            />
-          )}
-
       </div>
     </div>
   )

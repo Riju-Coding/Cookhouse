@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect, useMemo, Fragment } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -443,23 +443,19 @@ export default function MealPlanStructurePage() {
           const structure = groupedByBuilding.get(structureKey)
 
           if (structure && structure.weekStructure) {
-            // Clean sheet name for Excel (max 31 chars)
             const safeCompanyName = company.name.substring(0, 10).replace(/[\\*?:/[\]]/g, "")
             const safeBuildingName = building.name.substring(0, 15).replace(/[\\*?:/[\]]/g, "")
             const sheetName = `${safeCompanyName} - ${safeBuildingName}`
 
             const sheetData: any[] = []
 
-            // Header Section
             sheetData.push([`MEAL PLAN STRUCTURE: ${company.name}`])
             sheetData.push([`Building: ${building.name}`])
-            sheetData.push([]) // spacer
+            sheetData.push([])
 
-            // Column Headers
             const headers = ["Service / Sub-Service / Sub-Meal Plan", ...DAYS.map((day) => day.charAt(0).toUpperCase() + day.slice(1))]
             sheetData.push(headers)
 
-            // Extract Matrix logic for this building to identify all unique Services & Sub-Services
             const serviceMapForExcel = new Map<string, { serviceId: string; subServices: Set<string> }>()
             Object.values(structure.weekStructure).forEach((dayServices: any) => {
               if (!dayServices) return
@@ -472,21 +468,15 @@ export default function MealPlanStructurePage() {
               })
             })
 
-            // Generate rows with hierarchy
             serviceMapForExcel.forEach((svcInfo, serviceId) => {
               const serviceName = getServiceName(serviceId)
-              
-              // 1. ADD SERVICE GROUP HEADER (Uppercase for visibility)
               sheetData.push([serviceName.toUpperCase(), "", "", "", "", "", "", ""])
 
               svcInfo.subServices.forEach((subServiceId) => {
                 const subServiceName = getSubServiceName(subServiceId)
-                
-                // 2. ADD SUB-SERVICE NAME
                 sheetData.push([`   • ${subServiceName}`, "", "", "", "", "", "", ""])
 
-                // Collect all unique Sub-Meal Plans assigned to this Sub-Service across the ENTIRE week
-                const uniqueSubMealPlansInSubService = new Map<string, string>() // ID -> Name
+                const uniqueSubMealPlansInSubService = new Map<string, string>()
                 DAYS.forEach(day => {
                    const dayService = structure.weekStructure[day]?.find((s: any) => s.serviceId === serviceId)
                    const daySubService = dayService?.subServices?.find((ss: any) => ss.subServiceId === subServiceId)
@@ -497,21 +487,18 @@ export default function MealPlanStructurePage() {
                    })
                 })
 
-                // 3. ADD ROWS FOR EACH UNIQUE SUB-MEAL PLAN
                 uniqueSubMealPlansInSubService.forEach((smpName, smpId) => {
-                    const rowData = [`      - ${smpName}`] // Further indented
+                    const rowData = [`      - ${smpName}`]
 
                     DAYS.forEach((day) => {
                         const dayService = structure.weekStructure[day]?.find((s: any) => s.serviceId === serviceId)
                         const daySubService = dayService?.subServices?.find((ss: any) => ss.subServiceId === subServiceId)
                         
-                        // Check if THIS specific sub meal plan exists on THIS day
                         const isAssigned = daySubService?.mealPlans?.some((mp: any) => 
                             mp.subMealPlans?.some((sub: any) => sub.subMealPlanId === smpId)
                         )
 
                         if (isAssigned) {
-                            // User requested day name in the cell if present
                             rowData.push(day.charAt(0).toUpperCase() + day.slice(1))
                         } else {
                             rowData.push("-")
@@ -520,12 +507,10 @@ export default function MealPlanStructurePage() {
                     sheetData.push(rowData)
                 })
               })
-              sheetData.push([]) // Spacer after each service group
+              sheetData.push([])
             })
 
             const worksheet = XLSX.utils.aoa_to_sheet(sheetData)
-            
-            // Set Column Widths
             const colWidths = [{ wch: 45 }, ...DAYS.map(() => ({ wch: 15 }))]
             worksheet["!cols"] = colWidths
 
@@ -786,7 +771,7 @@ export default function MealPlanStructurePage() {
           <div className="flex-1 overflow-hidden relative bg-gray-50/50">
             <ScrollArea className="h-full w-full">
               <div className="min-w-[1400px] pb-20">
-                <Table>
+                <Table className="border-collapse">
                   <TableHeader className="sticky top-0 z-30 shadow-sm bg-white">
                     <TableRow>
                       <TableHead className="w-[300px] font-bold bg-white border-r border-b text-gray-900 sticky left-0 z-30 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
@@ -804,11 +789,12 @@ export default function MealPlanStructurePage() {
                   </TableHeader>
                   <TableBody className="bg-white">
                     {matrixRows.map((svc) => (
-                      <div key={`svc-${svc.serviceId}`} className="display-contents">
+                      <Fragment key={`svc-group-${svc.serviceId}`}>
                         <TableRow className="bg-blue-50 hover:bg-blue-50/80">
                           <TableCell className="font-bold text-blue-900 py-3 border-b border-r sticky left-0 bg-blue-50 z-20">
                             {svc.serviceName}
                           </TableCell>
+                          {/* ColSpan must be 8 (1 for label + 7 for days) */}
                           <TableCell colSpan={7} className="border-b bg-blue-50/30"></TableCell>
                         </TableRow>
 
@@ -863,7 +849,7 @@ export default function MealPlanStructurePage() {
                             })}
                           </TableRow>
                         ))}
-                      </div>
+                      </Fragment>
                     ))}
                   </TableBody>
                 </Table>
@@ -991,13 +977,13 @@ function MealPlanSelector({
             variant="outline"
             className={`w-full justify-between text-left font-normal h-auto min-h-[40px] py-2 px-3 whitespace-normal ${hasSelection ? "bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100" : "text-gray-500 hover:text-gray-700"}`}
           >
-            <div className="flex flex-col gap-1 w-full overflow-hidden">
+            <div className="flex flex-col gap-1 w-full overflow-hidden text-left">
               {hasSelection ? (
                 assignedMealPlans.map((mp, idx) => (
                   <div key={idx} className="flex flex-col text-xs font-medium border-b border-blue-100 last:border-0 pb-1 last:pb-0 mb-1 last:mb-0">
                     <span className="font-bold text-blue-900">{mp.mealPlanName}</span>
                     {mp.subMealPlans.length > 0 && (
-                        <span className="text-[10px] text-blue-500 italic pl-2">
+                        <span className="text-[10px] text-blue-500 italic pl-2 text-left">
                            ↳ {mp.subMealPlans.map(s => s.subMealPlanName).join(", ")}
                         </span>
                     )}
