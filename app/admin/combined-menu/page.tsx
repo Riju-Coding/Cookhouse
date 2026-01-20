@@ -571,13 +571,13 @@ const MenuGridCell = function MenuGridCell({
             return (
               <div
                 key={itemId}
-                className="group relative flex items-center justify-between bg-blue-50/50 hover:bg-blue-100 border border-transparent hover:border-blue-200 px-1.5 py-0.5 rounded text-xs transition-colors"
+                className="group relative flex items-start justify-between bg-blue-50/50 hover:bg-blue-100 border border-transparent hover:border-blue-200 px-1.5 py-1 rounded text-xs transition-colors"
               >
-                <span className={`truncate font-medium leading-tight ${textColor}`}>{displayName}</span>
+                <span className={`whitespace-normal break-words text-left font-medium leading-tight ${textColor}`}>{displayName}</span>
                 {isActive && (
                     <button
                         onClick={(e) => { e.stopPropagation(); onRemoveItem(itemId); }}
-                        className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 ml-1"
+                        className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 ml-2 shrink-0 mt-0.5"
                     >
                         <X className="h-3 w-3" />
                     </button>
