@@ -305,5 +305,96 @@ export interface Category extends BaseEntity {
   type: "menu-item" | "ingredient" | "service" | "general"
   status: string
 }
+// Add this interface to firestore.ts
+export interface Vendor extends BaseEntity {
+  name: string
+  email: string
+  phone: string
+  contactPerson: string
+  address: string
+  logo?: string
+  description?: string
+  status: string
+  serviceAreas: string[]
+  cuisineTypes: string[]
+  rating: number
+  totalOrders: number
+  registrationNumber: string
+  gstNumber: string
+  bankDetails: {
+    accountName: string
+    accountNumber: string
+    ifscCode: string
+    bankName: string
+  }
+  createdBy?: string
+}
+
+export interface VendorContract extends BaseEntity {
+  vendorId: string
+  vendorName: string
+  companyId: string
+  companyName: string
+  buildingIds: string[]
+  buildingNames: string[]
+  contractNumber: string
+  startDate: string
+  endDate: string
+  status: "active" | "expired" | "terminated"
+  servicesOffered: {
+    serviceId: string
+    serviceName: string
+    subServices: {
+      subServiceId: string
+      subServiceName: string
+      baseRate: number
+    }[]
+  }[]
+  terms: {
+    paymentTerms: string
+    minimumOrder: number
+    cancellationPolicy: string
+    qualityStandards: string
+    penaltyClause: string
+  }
+  autoRenewal: boolean
+}
+export interface Employee extends BaseEntity {
+  employeeId: string
+  name: string
+  email: string
+  phone: string
+  companyId: string
+  companyName: string
+  buildingId: string
+  buildingName: string
+  department: string
+  designation: string
+  role: "employee" | "company_admin"
+  profileImage?: string
+  status: "active" | "inactive"
+  preferences: {
+    dietaryRestrictions: string[]
+    allergies: string[]
+    spiceLevel: string
+  }
+  activeSubscriptions: {
+    serviceId: string
+    serviceName: string
+    subServiceId: string
+    subServiceName: string
+    daysOfWeek: string[]
+    startDate: string
+    endDate: string
+  }[]
+  firebaseUid?: string
+}
+
+export const employeesService = new FirestoreService<Employee>("employees")
+
+export const vendorContractsService = new FirestoreService<VendorContract>("vendorContracts")
+
+// Add this service instance at the bottom of firestore.ts
+export const vendorsService = new FirestoreService<Vendor>("vendors")
 
 export const categoriesService = new FirestoreService<Category>("categories")

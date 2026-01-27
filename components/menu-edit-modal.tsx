@@ -29,15 +29,94 @@ import {
   subMealPlansService,
   structureAssignmentsService,
   mealPlanStructureAssignmentsService,
-  menuItemsService,
-  updationService,
-  repetitionLogsService,
   companiesService,
   buildingsService,
 } from "@/lib/services"
-import { collection, getDocs, doc, getDoc, updateDoc, addDoc } from "firebase/firestore"
+import { collection, getDocs, doc, getDoc, updateDoc, addDoc, query, where, writeBatch, serverTimestamp } from "firebase/firestore"
 import { db } from "@/lib/firebase"
 import { detectMenuChanges, createChangeSummary } from "@/lib/change-detector"
+
+// --- Local Services Definition (To prevent import errors) ---
+
+const menuItemsService = {
+  async getAll(): Promise<MenuItem[]> {
+    const snapshot = await getDocs(collection(db, "menuItems"))
+    return snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }) as MenuItem)
+  },
+  async getDescriptions(itemId: string): Promise<string[]> {
+    const docSnap = await getDoc(doc(db, "menuItems", itemId))
+    return docSnap.data()?.descriptions || []
+  },
+  async addDescriptions(itemId: string, descriptions: string[]) {
+    await updateDoc(doc(db, "menuItems", itemId), { descriptions })
+  },
+  async getSelectedDescription(itemId: string): Promise<string> {
+    const docSnap = await getDoc(doc(db, "menuItems", itemId))
+    return docSnap.data()?.selectedDescription || ""
+  },
+  async setSelectedDescription(itemId: string, selectedDescription: string) {
+    await updateDoc(doc(db, "menuItems", itemId), { selectedDescription })
+  },
+}
+
+const repetitionLogsService = {
+  async add(data: any) {
+    const docRef = await addDoc(collection(db, "repetitionLogs"), {
+      ...data,
+      createdAt: serverTimestamp(),
+    })
+    return { id: docRef.id }
+  },
+  async getByDateRange(startDate: string, endDate: string, companyId: string) {
+    const q = query(
+      collection(db, "repetitionLogs"),
+      where("menuStartDate", "==", startDate),
+      where("menuEndDate", "==", endDate),
+      where("companyId", "==", companyId)
+    )
+    const snapshot = await getDocs(q)
+    return snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }))
+  },
+  async deleteAll(ids: string[]) {
+    const batch = writeBatch(db)
+    ids.forEach((id) => {
+      const ref = doc(db, "repetitionLogs", id)
+      batch.delete(ref)
+    })
+    await batch.commit()
+  },
+}
+
+const companyMenusService = {
+  async add(data: any) {
+    await addDoc(collection(db, "companyMenus"), {
+      ...data,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    })
+  },
+  async update(id: string, data: any) {
+    await updateDoc(doc(db, "companyMenus", id), {
+      ...data,
+      updatedAt: serverTimestamp(),
+    })
+  }
+}
+
+const updationService = {
+  async getLatestUpdationNumber(menuId: string): Promise<number> {
+    const q = query(collection(db, "updations"), where("menuId", "==", menuId))
+    const snapshot = await getDocs(q)
+    let max = 0
+    snapshot.forEach((doc) => {
+      const data = doc.data()
+      if (data.updationNumber && data.updationNumber > max) {
+        max = data.updationNumber
+      }
+    })
+    return max
+  }
+}
 
 // --- Helper Components ---
 
@@ -688,6 +767,7 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
   const [companies, setCompanies] = useState<any[]>([])
   const [buildings, setBuildings] = useState<any[]>([])
   const [mealPlanAssignments, setMealPlanAssignments] = useState<any[]>([])
+  const [allStructureAssignments, setAllStructureAssignments] = useState<any[]>([])
   
   const [activeCell, setActiveCell] = useState<string | null>(null)
 
@@ -858,6 +938,7 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
         setCompanies(companiesData)
         setBuildings(buildingsData)
         setMealPlanAssignments(mealPlanStructureData)
+        setAllStructureAssignments(structureData) // Store structure data for later generation
 
         setProgress(70)
         setMessage("Filtering data...")
@@ -1184,6 +1265,124 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
       })
   }, [dragActive, selectedService, selectedSubService, handleAddItem])
 
+  // --- Company Menu Generation Logic (Sync with Update instead of Delete) ---
+  const generateCompanyMenus = async (combinedMenuId: string, filteredMenuData: any) => {
+    try {
+      // 1. Get existing company menus for this combined ID
+      const q = query(collection(db, 'companyMenus'), where('combinedMenuId', '==', combinedMenuId));
+      const querySnapshot = await getDocs(q);
+      const existingCompanyMenus = querySnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+
+      const activeCompanies = companies.filter((c: any) => c.status === "active")
+      let count = 0;
+
+      for (const company of activeCompanies) {
+        const companyBuildings = buildings.filter((b: any) => b.companyId === company.id && b.status === "active")
+
+        for (const building of companyBuildings) {
+          // Use stored assignments
+          const structureAssignment = allStructureAssignments.find(
+            (sa: any) => sa.companyId === company.id && sa.buildingId === building.id && sa.status === "active",
+          )
+          const mealPlanStructureData = mealPlanAssignments.find(
+            (mpsa: any) => mpsa.companyId === company.id && mpsa.buildingId === building.id && mpsa.status === "active",
+          )
+
+          if (structureAssignment && mealPlanStructureData) {
+            const companyMenuData = buildCompanyMenu(
+              company,
+              building,
+              structureAssignment,
+              mealPlanStructureData,
+              filteredMenuData,
+              dateRange,
+            )
+
+            // Check if this specific company menu already exists
+            const existing = existingCompanyMenus.find((m: any) => m.companyId === company.id && m.buildingId === building.id);
+            
+            if (existing) {
+                // Update existing document (Preserve ID)
+                await companyMenusService.update(existing.id, { ...companyMenuData, combinedMenuId, status: "active" });
+            } else {
+                // Create new document
+                await companyMenusService.add({ ...companyMenuData, combinedMenuId, status: "active" });
+            }
+            count++;
+          }
+        }
+      }
+      return count;
+    } catch (error) {
+      console.error("Error generating company menus:", error)
+      throw error
+    }
+  }
+
+  const buildCompanyMenu = (
+    company: any,
+    building: any,
+    structureAssignment: any,
+    mealPlanStructureData: any,
+    combinedMenu: any,
+    dateRange: Array<{ date: string; day: string }>,
+  ) => {
+    const companyMenuData: any = {}
+
+    dateRange.forEach(({ date, day }) => {
+      const dayKey = day.toLowerCase()
+      const dayServices = structureAssignment.weekStructure[dayKey] || []
+      const dayMealPlanStructure = mealPlanStructureData.weekStructure[dayKey] || []
+
+      companyMenuData[date] = {}
+
+      dayServices.forEach((service: any) => {
+        const serviceId = service.serviceId
+        const serviceMealPlanStructure = dayMealPlanStructure.find((s: any) => s.serviceId === serviceId)
+
+        if (serviceMealPlanStructure && combinedMenu[date]?.[serviceId]) {
+          companyMenuData[date][serviceId] = {}
+
+          serviceMealPlanStructure.subServices.forEach((subService: any) => {
+            if (!companyMenuData[date][serviceId][subService.subServiceId]) {
+              companyMenuData[date][serviceId][subService.subServiceId] = {}
+            }
+
+            subService.mealPlans.forEach((mealPlan: any) => {
+              const mealPlanId = mealPlan.mealPlanId
+
+              if (combinedMenu[date][serviceId][subService.subServiceId]?.[mealPlanId]) {
+                if (!companyMenuData[date][serviceId][subService.subServiceId][mealPlanId]) {
+                  companyMenuData[date][serviceId][subService.subServiceId][mealPlanId] = {}
+                }
+
+                mealPlan.subMealPlans.forEach((subMealPlan: any) => {
+                  const subMealPlanId = subMealPlan.subMealPlanId
+
+                  if (combinedMenu[date][serviceId][subService.subServiceId][mealPlanId]?.[subMealPlanId]) {
+                    companyMenuData[date][serviceId][subService.subServiceId][mealPlanId][subMealPlanId] = {
+                      ...combinedMenu[date][serviceId][subService.subServiceId][mealPlanId][subMealPlanId],
+                    }
+                  }
+                })
+              }
+            })
+          })
+        }
+      })
+    })
+
+    return {
+      companyId: company.id,
+      buildingId: building.id,
+      companyName: company.name,
+      buildingName: building.name,
+      startDate: dateRange[0].date,
+      endDate: dateRange[dateRange.length - 1].date,
+      menuData: companyMenuData,
+    }
+  }
+
 
   const handleSave = async (isDraft = false) => {
     if (!menu) return
@@ -1194,15 +1393,52 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
       const docRef = doc(db, collectionName, menuId)
       const statusToSave = isDraft ? "draft" : menu.status
 
+      // Detect if this is an activation or update of an active combined menu
+      const shouldSyncCompanyMenus = menuType === "combined" && !isDraft;
+
+      // 1. Calculate Diff (Tracking) - Before any DB Operations
       const menuItemsMap = new Map(menuItems.map((item) => [item.id, item.name]))
       const changedCells = detectMenuChanges(originalMenuData, menuData, menuItemsMap)
 
+      // 2. Update the menu document (Master)
       await updateDoc(docRef, {
         menuData: JSON.parse(JSON.stringify(menuData)),
-        status: statusToSave,
+        status: shouldSyncCompanyMenus ? "active" : statusToSave, 
         updatedAt: new Date(),
       })
 
+      // 3. Sync Company Menus (Update/Create without deleting existing)
+      if (shouldSyncCompanyMenus) {
+        toast({ title: "Syncing company menus...", description: "Updating existing menus and creating new ones." })
+        
+        // Filter empty structure before generating
+        const filtered: any = {}
+        Object.entries(menuData).forEach(([date, dayMenu]: [string, any]) => {
+            const filteredDay: any = {}
+            Object.entries(dayMenu).forEach(([sId, sData]: [string, any]) => {
+                const filteredS: any = {}
+                Object.entries(sData).forEach(([ssId, ssData]: [string, any]) => {
+                    const filteredSS: any = {}
+                    Object.entries(ssData).forEach(([mpId, mpData]: [string, any]) => {
+                        const filteredMP: any = {}
+                        Object.entries(mpData).forEach(([smpId, cell]: [string, any]) => {
+                            if(cell.menuItemIds?.length > 0) filteredMP[smpId] = cell
+                        })
+                        if(Object.keys(filteredMP).length > 0) filteredSS[mpId] = filteredMP
+                    })
+                    if(Object.keys(filteredSS).length > 0) filteredS[ssId] = filteredSS
+                })
+                if(Object.keys(filteredS).length > 0) filteredDay[sId] = filteredS
+            })
+            if(Object.keys(filteredDay).length > 0) filtered[date] = filteredDay
+        })
+
+        // This function now Updates existing menus instead of Deleting + Creating
+        const count = await generateCompanyMenus(menuId, filtered)
+        toast({ title: "Sync Complete", description: `Updated/Created ${count} company menus.` })
+      }
+
+      // 4. Record Updation if active and changed
       if (!isDraft && changedCells.length > 0) {
         const changeSummary = createChangeSummary(changedCells)
         const latestNumber = await updationService.getLatestUpdationNumber(menuId) || 0
@@ -1229,7 +1465,7 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
 
       toast({
         title: "Success",
-        description: isDraft ? "Saved as Draft" : "Menu updated successfully",
+        description: isDraft ? "Saved as Draft" : "Menu updated successfully.",
       })
 
       onSave?.()
@@ -1285,6 +1521,7 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
               {menu && (
                 <p className="text-sm text-gray-600 mt-1">
                   {new Date(menu.startDate).toLocaleDateString()} to {new Date(menu.endDate).toLocaleDateString()}
+                  {menu.status === 'draft' && <span className="ml-2 bg-purple-100 text-purple-700 px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wider">Draft</span>}
                 </p>
               )}
             </div>
@@ -1439,7 +1676,7 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
               ) : (
                 <>
                   <Save className="h-4 w-4 mr-2" />
-                  Save Changes
+                  {menuType === 'combined' && menu?.status === 'draft' ? "Save & Activate" : "Save Changes"}
                 </>
               )}
             </Button>

@@ -129,7 +129,7 @@ export function MenuViewModal({ isOpen, onClose, menuId, menuType, preloadedMenu
         let filteredMealPlans = mealPlansData
           .filter((mp: any) => mp.status === "active")
           .sort((a: any, b: any) => (a.order || 999) - (b.order || 999))
-        const filteredSubMealPlans = subMealPlansData
+        let filteredSubMealPlans = subMealPlansData
           .filter((smp: any) => smp.status === "active")
           .sort((a: any, b: any) => (a.order || 999) - (b.order || 999))
 
@@ -162,10 +162,13 @@ export function MenuViewModal({ isOpen, onClose, menuId, menuType, preloadedMenu
             })
             filteredServices = filteredServices.filter((s) => serviceIds.has(s.id))
           }
-
+          
+          // Initial filter for Meal Plans and Sub Meal Plans (Global)
+          // Note: We still do refined filtering per Service inside the render loop
           if (mealPlanStructure) {
             const mealPlanIds = new Set<string>()
             const subMealPlanIds = new Set<string>()
+            
             Object.values(mealPlanStructure.weekStructure || {}).forEach((dayServices: any) => {
               dayServices.forEach((service: any) => {
                 service.subServices?.forEach((subService: any) => {
@@ -178,19 +181,15 @@ export function MenuViewModal({ isOpen, onClose, menuId, menuType, preloadedMenu
                 })
               })
             })
+
             filteredMealPlans = filteredMealPlans.filter((mp) => mealPlanIds.has(mp.id))
-            const assignedSubMealPlans = filteredSubMealPlans.filter(
-              (smp) => smp.status === "active" && subMealPlanIds.has(smp.id),
-            )
-            setSubMealPlans(assignedSubMealPlans)
+            filteredSubMealPlans = filteredSubMealPlans.filter((smp) => subMealPlanIds.has(smp.id))
           }
         }
 
         setServices(filteredServices)
         setMealPlans(filteredMealPlans)
-        if (menuType !== "company" || !foundMealPlanStructure) {
-          setSubMealPlans(filteredSubMealPlans)
-        }
+        setSubMealPlans(filteredSubMealPlans)
 
         const start = new Date(data.startDate)
         const end = new Date(data.endDate)
@@ -269,8 +268,10 @@ export function MenuViewModal({ isOpen, onClose, menuId, menuType, preloadedMenu
         worksheet.addRow(headers)
         currentRow++
 
-        mealPlans.forEach((mealPlan) => {
-          const relatedSubMealPlans = subMealPlans.filter((smp) => smp.mealPlanId === mealPlan.id)
+        // Filter for export as well
+        const validMealPlans = getFilteredStructureForService(service.id)
+
+        validMealPlans.forEach(({ mealPlan, subMealPlans: relatedSubMealPlans }) => {
           relatedSubMealPlans.forEach((subMealPlan, idx) => {
             const row: any[] = []
             row.push(idx === 0 ? mealPlan.name : "")
@@ -355,12 +356,48 @@ export function MenuViewModal({ isOpen, onClose, menuId, menuType, preloadedMenu
     })
   }
 
+  // Basic structure mapping
   const mealPlanStructure = useMemo(() => {
     return mealPlans.map((mealPlan) => ({
       mealPlan,
       subMealPlans: subMealPlans.filter((smp) => smp.mealPlanId === mealPlan.id),
     }))
   }, [mealPlans, subMealPlans])
+
+  // Helper to filter sub meal plans based on Structure Assignment for a specific Service
+  const getFilteredStructureForService = (serviceId: string) => {
+    return mealPlanStructure.map(({ mealPlan, subMealPlans }) => {
+        // If combined, show all
+        if (menuType === "combined") {
+            return { mealPlan, subMealPlans };
+        }
+
+        // If company, verify assignment for THIS service
+        if (!foundMealPlanStructure?.weekStructure) return { mealPlan, subMealPlans: [] };
+
+        const allowedSubMealPlanIds = new Set<string>();
+
+        // Check every day of the week
+        Object.values(foundMealPlanStructure.weekStructure).forEach((dayServices: any) => {
+            const serviceData = dayServices.find((s: any) => s.serviceId === serviceId);
+            if (serviceData && serviceData.subServices) {
+                serviceData.subServices.forEach((ss: any) => {
+                    if (ss.mealPlans) {
+                        const mpData = ss.mealPlans.find((mp: any) => mp.mealPlanId === mealPlan.id);
+                        if (mpData && mpData.subMealPlans) {
+                            mpData.subMealPlans.forEach((smp: any) => {
+                                allowedSubMealPlanIds.add(smp.subMealPlanId);
+                            });
+                        }
+                    }
+                });
+            }
+        });
+
+        const filteredSub = subMealPlans.filter(smp => allowedSubMealPlanIds.has(smp.id));
+        return { mealPlan, subMealPlans: filteredSub };
+    }).filter(group => group.subMealPlans.length > 0);
+  };
 
   useEffect(() => {
     if (menu && menuItems.length === 0 && !menuItemsLoaded) {
@@ -565,7 +602,11 @@ export function MenuViewModal({ isOpen, onClose, menuId, menuType, preloadedMenu
                     </div>
                   )}
 
-                  {services.map((service) => (
+                  {services.map((service) => {
+                    const serviceSpecificStructure = getFilteredStructureForService(service.id);
+                    if (serviceSpecificStructure.length === 0) return null; // Don't show service if no rows
+
+                    return (
                     <div key={service.id} className="mb-8 p-4">
                       <h2 className="text-xl font-bold mb-4 bg-black text-white p-3 rounded">{service.name}</h2>
 
@@ -586,9 +627,9 @@ export function MenuViewModal({ isOpen, onClose, menuId, menuType, preloadedMenu
                             </tr>
                           </thead>
                           <tbody>
-                            {mealPlanStructure.map(({ mealPlan, subMealPlans: relatedSubMealPlans }) => {
+                            {serviceSpecificStructure.map(({ mealPlan, subMealPlans: relatedSubMealPlans }) => {
                               return relatedSubMealPlans
-                                .filter(subMealPlan => shouldShowRow(service.id, mealPlan.id, subMealPlan)) // FILTERING APPLIED HERE
+                                .filter(subMealPlan => shouldShowRow(service.id, mealPlan.id, subMealPlan)) 
                                 .map((subMealPlan, idx) => (
                                 <tr key={`${mealPlan.id}-${subMealPlan.id}`}>
                                   <td className="border bg-gray-50 p-2 sticky left-0 z-10">
@@ -716,7 +757,7 @@ export function MenuViewModal({ isOpen, onClose, menuId, menuType, preloadedMenu
                         </table>
                       </div>
                     </div>
-                  ))}
+                  )})}
                 </div>
               </div>
             ) : (
