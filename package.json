@@ -47,6 +47,7 @@
     "exceljs": "^4.4.0",
     "file-saver": "^2.0.5",
     "firebase": "latest",
+    "firebase-admin": "^13.6.0",
     "geist": "latest",
     "input-otp": "latest",
     "lucide-react": "^0.454.0",

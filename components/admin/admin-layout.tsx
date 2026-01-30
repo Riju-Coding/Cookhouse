@@ -62,6 +62,7 @@ const navigation = [
   { name: "Structure Assignment", href: "/admin/structure-assignment", icon: Calendar, category: "organization" },
   { name: "Structure Management", href: "/admin/structure-management", icon: Settings, category: "organization" },
   { name: "Meal Plan Structure", href: "/admin/meal-plan-structure", icon: FileText, category: "organization" },
+  { name: "Vendors Management", href: "/admin/vendors", icon: FileText, category: "vendors" },
 ]
 
 const categories = [
@@ -72,6 +73,7 @@ const categories = [
   { key: "services", label: "Services Management", icon: Settings },
   { key: "organization", label: "Organization", icon: Building2 },
   { key: "menu-management", label: "Menu Management", icon: Building2 },
+  { key: "vendors", label: "Vendors Management", icon: Building2 },
 ]
 
 export function AdminLayout({ children }: AdminLayoutProps) {

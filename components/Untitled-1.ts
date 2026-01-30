@@ -1,7 +1,6 @@
 "use client"
-import { useState, useEffect, useCallback, useMemo, memo, useRef, useLayoutEffect } from "react"
+import { useState, useEffect, useCallback, useMemo, memo, useRef } from "react"
 import type React from "react"
-import { createPortal } from "react-dom"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -414,8 +413,8 @@ const ItemDescriptionModal = memo(function ItemDescriptionModal({
   )
 })
 
-// ---------------------- MenuGridCell (FINAL FIX) ----------------------
-const MenuGridCell = function MenuGridCell({
+// ---------------------- MenuGridCell (Redesigned) ----------------------
+const MenuGridCell = memo(function MenuGridCell({
   date,
   service,
   subServiceId, 
@@ -529,28 +528,44 @@ const MenuGridCell = function MenuGridCell({
     if (!search.trim()) return allMenuItems.slice(0, 50)
     const lower = search.toLowerCase()
     return allMenuItems
-      .filter((item) => item.name.toLowerCase().includes(lower) || (item.category && item.category.toLowerCase().includes(lower)))
+      .filter(
+        (item) =>
+          item.name.toLowerCase().includes(lower) || (item.category && item.category.toLowerCase().includes(lower)),
+      )
       .slice(0, 50)
   }, [allMenuItems, search])
 
-  const available = useMemo(() => filtered.filter((item) => !selectedMenuItemIds.includes(item.id)), [filtered, selectedMenuItemIds])
+  const available = useMemo(
+    () => filtered.filter((item) => !selectedMenuItemIds.includes(item.id)),
+    [filtered, selectedMenuItemIds],
+  )
 
   const handleCreate = async () => {
-    if (!search.trim()) return
+    if (!search.trim()) {
+      return
+    }
     setCreating(true)
     try {
       const createdItem = await onCreateItem(search.trim(), "")
       if (createdItem && createdItem.id) {
         onAddItem(createdItem.id)
         setSearch("")
+        setIsOpen(false)
       }
-    } catch (error) { console.error(error) } finally { setCreating(false) }
+    } catch (error) {
+      console.error("Create error:", error)
+    } finally {
+      setCreating(false)
+    }
   }
 
   const handleAdd = (itemId: string) => {
-    if (selectedMenuItemIds.includes(itemId)) return
+    if (selectedMenuItemIds.includes(itemId)) {
+      return
+    }
     onAddItem(itemId)
-    // Removed clearing search and closing dropdown to allow multiple selections
+    setSearch("")
+    setIsOpen(false)
   }
 
   const onDragHandleMouseDown = (e: React.MouseEvent) => {
@@ -792,9 +807,9 @@ const MenuGridCell = function MenuGridCell({
       />
     </>
   )
-}
+})
 
-// ---------------------- ServiceTable (No Major Changes needed, just keeping context) ----------------------
+// ---------------------- ServiceTable ----------------------
 const ServiceTable = memo(function ServiceTable({
   service,
   subServices,
@@ -1166,6 +1181,7 @@ export default function CombinedMenuCreationPage() {
     }
   }, [])
 
+  // Mock userCompanyId for now.
   useEffect(() => {
     setUserCompanyId("company123")
   }, [])
@@ -1351,10 +1367,60 @@ export default function CombinedMenuCreationPage() {
     }
   }, [])
 
+  const filterEmptyCells = (menuData: CombinedMenuData): CombinedMenuData => {
+    const filtered: CombinedMenuData = {}
+
+    Object.entries(menuData).forEach(([date, dayMenu]) => {
+      const filteredDayMenu: DayMenu = {}
+
+      Object.entries(dayMenu).forEach(([serviceId, serviceData]) => {
+        const filteredService: any = {}
+
+        Object.entries(serviceData).forEach(([subServiceId, subServiceData]) => {
+          const filteredSubService: any = {}
+
+          Object.entries(subServiceData).forEach(([mealPlanId, mealPlanData]) => {
+            const filteredMealPlan: any = {}
+
+            Object.entries(mealPlanData).forEach(([subMealPlanId, cell]) => {
+              if (cell.menuItemIds && cell.menuItemIds.length > 0) {
+                filteredMealPlan[subMealPlanId] = cell
+              }
+            })
+
+            if (Object.keys(filteredMealPlan).length > 0) {
+              filteredSubService[mealPlanId] = filteredMealPlan
+            }
+          })
+
+          if (Object.keys(filteredSubService).length > 0) {
+            filteredService[subServiceId] = filteredSubService
+          }
+        })
+
+        if (Object.keys(filteredService).length > 0) {
+          filteredDayMenu[serviceId] = filteredService
+        }
+      })
+
+      if (Object.keys(filteredDayMenu).length > 0) {
+        filtered[date] = filteredDayMenu
+      }
+    })
+
+    return filtered
+  }
+
   const handleSaveDraft = async () => {
     try {
       setSaving(true)
-      const filteredMenuData = combinedMenu
+      const filteredMenuData = filterEmptyCells(combinedMenu)
+
+      if (Object.keys(filteredMenuData).length === 0) {
+        toast({ title: "Error", description: "Please add menu items before saving", variant: "destructive" })
+        setSaving(false)
+        return
+      }
 
       const draftData = {
         startDate,
@@ -1422,6 +1488,7 @@ export default function CombinedMenuCreationPage() {
       await loadMenuItems()
     }
 
+    // Async block for generation and draft fetching
     setTimeout(async () => {
       const dates: Array<{ date: string; day: string }> = []
       const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
@@ -1432,6 +1499,7 @@ export default function CombinedMenuCreationPage() {
         current.setDate(current.getDate() + 1)
       }
 
+      // 1. Create Empty Skeleton
       const initialMenu: CombinedMenuData = {}
       dates.forEach(({ date }) => {
         initialMenu[date] = {}
@@ -1488,6 +1556,7 @@ export default function CombinedMenuCreationPage() {
         console.error("Error fetching draft during generation", e)
       }
 
+      // 3. Fetch Repetition Logs & Enrich with Names
       try {
         const logs = await repetitionLogsService.getByDateRange(startDate, endDate, userCompanyId)
         if (logs.length > 0) {
@@ -1704,29 +1773,19 @@ export default function CombinedMenuCreationPage() {
         }
       }
 
-      // --- FIXED STATE UPDATE LOGIC FOR MULTI SELECT SAFETY ---
       setCombinedMenu((prev) => {
         const newMenu = { ...prev }
-        // Safely create path copies to trigger re-renders
         if (!newMenu[date]) newMenu[date] = {}
-        newMenu[date] = { ...newMenu[date] }
-
         if (!newMenu[date][serviceId]) newMenu[date][serviceId] = {}
-        newMenu[date][serviceId] = { ...newMenu[date][serviceId] }
-
         if (!newMenu[date][serviceId][subServiceId]) newMenu[date][serviceId][subServiceId] = {}
-        newMenu[date][serviceId][subServiceId] = { ...newMenu[date][serviceId][subServiceId] }
-
         if (!newMenu[date][serviceId][subServiceId][mealPlanId]) newMenu[date][serviceId][subServiceId][mealPlanId] = {}
-        newMenu[date][serviceId][subServiceId][mealPlanId] = { ...newMenu[date][serviceId][subServiceId][mealPlanId] }
-
-        const currentCell = newMenu[date][serviceId][subServiceId][mealPlanId][subMealPlanId] || { menuItemIds: [] }
-        const existingIds = currentCell.menuItemIds || []
-
+        if (!newMenu[date][serviceId][subServiceId][mealPlanId][subMealPlanId]) {
+          newMenu[date][serviceId][subServiceId][mealPlanId][subMealPlanId] = { menuItemIds: [] }
+        }
+        const existingIds = newMenu[date][serviceId][subServiceId][mealPlanId][subMealPlanId].menuItemIds
         if (existingIds.includes(menuItemId)) {
           return prev
         }
-        
         newMenu[date][serviceId][subServiceId][mealPlanId][subMealPlanId] = {
           menuItemIds: [...existingIds, menuItemId],
         }
@@ -1745,6 +1804,7 @@ export default function CombinedMenuCreationPage() {
       subMealPlanId: string,
       menuItemId: string,
     ) => {
+      // 1. Remove from local menu state
       setCombinedMenu((prev) => {
         const newMenu = { ...prev }
         if (newMenu[date]?.[serviceId]?.[subServiceId]?.[mealPlanId]?.[subMealPlanId]) {
@@ -1822,37 +1882,17 @@ export default function CombinedMenuCreationPage() {
   const handleSaveCombinedMenu = async () => {
     try {
       setSaving(true)
-      
-      const filtered: CombinedMenuData = {}
-      Object.entries(combinedMenu).forEach(([date, dayMenu]) => {
-         const filteredDay: any = {}
-         Object.entries(dayMenu).forEach(([sId, sData]) => {
-             const filteredS: any = {}
-             Object.entries(sData).forEach(([ssId, ssData]) => {
-                 const filteredSS: any = {}
-                 Object.entries(ssData).forEach(([mpId, mpData]) => {
-                     const filteredMP: any = {}
-                     Object.entries(mpData).forEach(([smpId, cell]) => {
-                         if(cell.menuItemIds?.length > 0) filteredMP[smpId] = cell
-                     })
-                     if(Object.keys(filteredMP).length > 0) filteredSS[mpId] = filteredMP
-                 })
-                 if(Object.keys(filteredSS).length > 0) filteredS[ssId] = filteredSS
-             })
-             if(Object.keys(filteredS).length > 0) filteredDay[sId] = filteredS
-         })
-         if(Object.keys(filteredDay).length > 0) filtered[date] = filteredDay
-      })
+      const filteredMenuData = filterEmptyCells(combinedMenu)
 
-      if (Object.keys(filtered).length === 0) {
+      if (Object.keys(filteredMenuData).length === 0) {
         toast({ title: "Error", description: "Please add menu items before saving", variant: "destructive" })
         setSaving(false)
         return
       }
 
-      const combinedMenuData = { startDate, endDate, menuData: filtered, status: "active" }
+      const combinedMenuData = { startDate, endDate, menuData: filteredMenuData, status: "active" }
       const savedMenu = await combinedMenusService.add(combinedMenuData)
-      await generateCompanyMenus(savedMenu.id, filtered)
+      await generateCompanyMenus(savedMenu.id, filteredMenuData)
       toast({ title: "Success", description: "Combined menu saved and company menus generated successfully" })
       setShowModal(false)
       setStartDate("")
@@ -2286,7 +2326,6 @@ export default function CombinedMenuCreationPage() {
                       combinedMenu={combinedMenu}
                       allItems={menuItems}
                       onAddItem={addMenuItemToCell}
-                      
                       onRemoveItem={removeMenuItemFromCell}
                       onCreateItem={handleCreateItem}
                       visibleDates={visibleDates}
@@ -2415,7 +2454,7 @@ export default function CombinedMenuCreationPage() {
                       })
                     )}
                   </div>
-               </div>
+                </div>
               )}
             </div>
           </div>

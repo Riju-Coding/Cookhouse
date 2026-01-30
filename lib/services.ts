@@ -2,14 +2,14 @@ import { getDocs, collection, query, where } from "firebase/firestore"
 import { db } from "@/lib/firebase"
 import type { Service, MealPlan, SubMealPlan, MenuItem, MenuUpdation } from "@/lib/types"
 
-interface Company {
+export interface Company {
   id: string
   name: string
   status?: string
   order?: number
 }
 
-interface Building {
+export interface Building {
   id: string
   companyId: string
   name: string
@@ -22,7 +22,10 @@ interface StructureAssignment {
   companyId: string
   buildingId: string
   weekStructure: {
-    [day: string]: Array<{ serviceId: string }>
+    [day: string]: Array<{
+      subServices: any ;
+      serviceId: string 
+}>
   }
   status?: string
 }
