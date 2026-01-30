@@ -22,7 +22,10 @@ interface StructureAssignment {
   companyId: string
   buildingId: string
   weekStructure: {
-    [day: string]: Array<{ serviceId: string }>
+    [day: string]: Array<{
+      subServices: any ;
+      serviceId: string 
+}>
   }
   status?: string
 }
