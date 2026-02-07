@@ -19,6 +19,8 @@ import {
   ClipboardPaste,
   GripHorizontal,
   CheckCircle,
+  Calendar,
+  Utensils
 } from 'lucide-react'
 import { toast } from "@/hooks/use-toast"
 import type { Service, MealPlan, SubMealPlan, MenuItem, SubService } from "@/lib/types"
@@ -328,6 +330,113 @@ const ItemDescriptionModal = memo(function ItemDescriptionModal({
   )
 })
 
+const ConflictDetailsDrawer = memo(function ConflictDetailsDrawer({
+  isOpen,
+  onClose,
+  analysisData
+}: {
+  isOpen: boolean
+  onClose: () => void
+  analysisData: any[] // Contains full summary and occurrences
+}) {
+  if (!isOpen) return null
+
+  return (
+    <div className="fixed inset-0 z-[200] flex justify-end">
+      <div 
+        className="absolute inset-0 bg-black/20 backdrop-blur-sm transition-opacity" 
+        onClick={onClose}
+      />
+      
+      <div className="relative w-full max-w-2xl bg-white shadow-2xl h-full flex flex-col animate-in slide-in-from-right duration-300">
+        
+        {/* Header */}
+        <div className="p-5 border-b bg-red-50 flex items-start justify-between">
+          <div>
+            <h3 className="text-xl font-bold text-red-900 flex items-center gap-2">
+              <AlertCircle className="h-6 w-6 text-red-600" />
+              Conflict Analysis
+            </h3>
+            <p className="text-sm text-red-700 mt-1">
+              Found {analysisData.length} item{analysisData.length !== 1 ? "s" : ""} with repetition issues.
+            </p>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-red-100 rounded-full text-red-700">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        {/* Scrollable Content */}
+        <div className="flex-1 overflow-y-auto p-6 space-y-8 bg-gray-50/50">
+          {analysisData.map((itemAnalysis, idx) => (
+            <div key={idx} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+              
+              {/* 1️⃣ Repetition Summary (Top of Panel) */}
+              <div className="p-5 border-b bg-gradient-to-r from-gray-50 to-white">
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="text-lg font-bold text-gray-900">{itemAnalysis.itemName}</h4>
+                  <span className="bg-red-100 text-red-700 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide border border-red-200">
+                     Repeated {itemAnalysis.totalCount} Times
+                  </span>
+                </div>
+                <p className="text-sm text-gray-600">
+                  This item appears in <strong>{itemAnalysis.totalCount} places</strong> this week. 
+                  Below is the complete list of occurrences.
+                </p>
+              </div>
+
+              {/* 2️⃣ Repetition Details Table */}
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm text-left">
+                  <thead className="text-xs text-gray-500 uppercase bg-gray-100 border-b">
+                    <tr>
+                      <th className="px-4 py-3">Date & Day</th>
+                      <th className="px-4 py-3">Service</th>
+                      <th className="px-4 py-3">Meal Plan</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {itemAnalysis.occurrences.map((occ: any, oIdx: number) => (
+                      <tr 
+                        key={oIdx} 
+                        className={`transition-colors ${
+                          occ.isCurrentCell 
+                            ? "bg-yellow-50 border-l-4 border-l-yellow-400" // 👉 Highlight Current Cell
+                            : "hover:bg-gray-50"
+                        }`}
+                      >
+                        <td className="px-4 py-3">
+                          <div className="font-medium text-gray-900">
+                            {new Date(occ.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                          </div>
+                          <div className="text-xs text-gray-500">{occ.day}</div>
+                          {occ.isCurrentCell && (
+                            <span className="text-[10px] font-bold text-yellow-700 mt-1 block">
+                              (Current Selection)
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="text-gray-900 font-medium">{occ.serviceName}</div>
+                          <div className="text-xs text-gray-500">{occ.subServiceName}</div>
+                        </td>
+                        <td className="px-4 py-3">
+                           <div className="text-gray-900">{occ.mealPlanName}</div>
+                           <div className="text-xs text-gray-500">{occ.subMealPlanName}</div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+})
+
 interface MenuEditModalProps {
   isOpen: boolean
   onClose: () => void
@@ -374,7 +483,10 @@ const MenuGridCell = memo(function MenuGridCell({
     companies,
     buildings,
     structureAssignments,
+    repetitionLog,
+    onShowConflicts,
   }: {
+    
     date: string
     day: string
     service: Service
@@ -400,15 +512,18 @@ const MenuGridCell = memo(function MenuGridCell({
     companies: any[]
     buildings: any[]
     structureAssignments: any[]
+    repetitionLog: any[] 
+    onShowConflicts: (logs: any[], context: any) => void
   }) {
     const [isOpen, setIsOpen] = useState(false)
     const [isCompanyOpen, setIsCompanyOpen] = useState(false)
+    const [isLogOpen, setIsLogOpen] = useState(false) 
     const [search, setSearch] = useState("")
     const [creating, setCreating] = useState(false)
     const [showDescModal, setShowDescModal] = useState(false)
     const dropdownRef = useRef<HTMLDivElement>(null)
 
-    // Calculate assigned companies for this specific cell logic
+    // Calculate assigned companies
     const assignedCompanies = useMemo(() => {
         if (!day || !companies || !structureAssignments) return []
         const result: any[] = []
@@ -440,20 +555,34 @@ const MenuGridCell = memo(function MenuGridCell({
         })
         return result
     }, [day, companies, structureAssignments, service.id, subServiceId, mealPlan.id, subMealPlan.id])
+
+    // NEW LOGIC: Filter logs specifically for this cell
+    const cellLogs = useMemo(() => {
+        if (!repetitionLog || repetitionLog.length === 0) return []
+        return repetitionLog.filter(log => 
+            log.attemptedDate === date &&
+            log.serviceId === service.id &&
+            log.subServiceId === subServiceId &&
+            log.mealPlanId === mealPlan.id &&
+            log.subMealPlanId === subMealPlan.id
+        )
+    }, [repetitionLog, date, service.id, subServiceId, mealPlan.id, subMealPlan.id])
   
     useEffect(() => {
-      if (!isOpen && !isCompanyOpen) return
+      if (!isOpen && !isCompanyOpen && !isLogOpen) return
       const handleClickOutside = (e: MouseEvent) => {
         if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
           setIsOpen(false)
           setIsCompanyOpen(false)
+          setIsLogOpen(false) // Close log dropdown
           setSearch("")
         }
       }
       document.addEventListener("mousedown", handleClickOutside)
       return () => document.removeEventListener("mousedown", handleClickOutside)
-    }, [isOpen, isCompanyOpen])
+    }, [isOpen, isCompanyOpen, isLogOpen])
   
+    // ... existing filtering logic ...
     const filtered = useMemo(() => {
       if (!search.trim()) return allMenuItems.slice(0, 50)
       const lower = search.toLowerCase()
@@ -495,8 +624,7 @@ const MenuGridCell = memo(function MenuGridCell({
     }
   
     return (
-      <>
-        <td
+      <td
           onClick={() => onActivate()}
           onMouseEnter={() => {
             onCellMouseEnter?.()
@@ -505,19 +633,33 @@ const MenuGridCell = memo(function MenuGridCell({
           className={`border border-gray-300 p-2 align-top min-w-[200px] transition-all duration-150 relative 
             ${isActive ? "ring-2 ring-blue-500 bg-white z-[60]" : "bg-white hover:bg-gray-50"} 
             ${isDragHover ? "ring-2 ring-blue-300 bg-blue-50" : ""}
+            ${cellLogs.length > 0 && !isActive ? "bg-red-50" : ""} 
           `}
         >
+          {/* Indicator Dot when not active but has errors */}
+          {cellLogs.length > 0 && !isActive && (
+             <div className="absolute top-1 right-1 h-2 w-2 rounded-full bg-red-500 z-10"></div>
+          )}
+
           <div className="flex flex-col h-full min-h-[60px]">
             <div className="flex-1 space-y-1">
               {selectedMenuItemIds.map((itemId) => {
                 const item = allMenuItems.find((i) => i.id === itemId)
+                // Check if this specific item has an error in this cell
+                const hasError = cellLogs.some(log => log.itemId === itemId)
+
                 if (!item) return null
                 return (
                   <div
                     key={itemId}
-                    className="group relative flex items-center justify-between bg-blue-50/50 hover:bg-blue-100 border border-transparent hover:border-blue-200 px-1.5 py-0.5 rounded text-xs transition-colors"
+                    className={`group relative flex items-center justify-between border px-1.5 py-0.5 rounded text-xs transition-colors
+                        ${hasError 
+                            ? "bg-red-100 border-red-200 text-red-800" 
+                            : "bg-blue-50/50 hover:bg-blue-100 border-transparent hover:border-blue-200 text-gray-700"
+                        }
+                    `}
                   >
-                    <span className="truncate font-medium text-gray-700 leading-tight">{item.name}</span>
+                    <span className="truncate font-medium leading-tight">{item.name}</span>
                     {isActive && (
                       <button
                         onClick={(e) => {
@@ -537,12 +679,41 @@ const MenuGridCell = memo(function MenuGridCell({
             {isActive && (
               <div className="mt-2 p-1 border-t bg-gray-50 flex items-center justify-between gap-1 animate-in fade-in zoom-in-95 duration-100">
                 <div className="flex items-center gap-1" ref={dropdownRef}>
+                  
+             {cellLogs.length > 0 && (
+                      <div className="relative">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setIsOpen(false)
+                            setIsCompanyOpen(false)
+                            setIsLogOpen(false) 
+                            
+                            // 👇 Updated: Passing Context (Date, Service, etc.)
+                            onShowConflicts(cellLogs, {
+                                date,
+                                serviceId: service.id,
+                                subServiceId,
+                                mealPlanId: mealPlan.id,
+                                subMealPlanId: subMealPlan.id
+                            })
+                          }}
+                          className={`p-1.5 rounded transition-colors bg-red-100 text-red-600 hover:bg-red-200 hover:scale-105 active:scale-95 duration-150`}
+                          title="Click to view conflict details"
+                        >
+                          <AlertCircle className="h-4 w-4" />
+                        </button>
+                      </div>
+                  )}
+                  {/* --- END NEW ALERT BUTTON --- */}
+
                   <div className="relative">
                     <button
                       onClick={(e) => {
                         e.stopPropagation()
                         setIsOpen(!isOpen)
                         setIsCompanyOpen(false)
+                        setIsLogOpen(false)
                       }}
                       className="p-1.5 rounded hover:bg-blue-100 text-blue-600 transition-colors"
                       title="Add Item"
@@ -592,6 +763,7 @@ const MenuGridCell = memo(function MenuGridCell({
                             e.stopPropagation()
                             setIsCompanyOpen(!isCompanyOpen)
                             setIsOpen(false)
+                            setIsLogOpen(false)
                         }}
                         className={`p-1.5 rounded transition-colors ${isCompanyOpen ? "bg-purple-100 text-purple-700" : "hover:bg-purple-100 text-purple-600"}`}
                         title="View Companies"
@@ -656,9 +828,9 @@ const MenuGridCell = memo(function MenuGridCell({
             }}
           />
         </td>
-      </>
     )
   })
+
 
 // --- Navigation Panel ---
 const ServiceNavigationPanel = memo(function ServiceNavigationPanel({
@@ -763,7 +935,11 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
   const dragItemsRef = useRef<string[]>([])
   const [hoveredDate, setHoveredDate] = useState<string | null>(null)
   const [showLogPanel, setShowLogPanel] = useState(false)
-
+  
+  // NEW STATE FOR DRAWER
+  const [conflictDrawerOpen, setConflictDrawerOpen] = useState(false)
+ 
+  const [conflictAnalysisData, setConflictAnalysisData] = useState<any[]>([])
   const [companies, setCompanies] = useState<any[]>([])
   const [buildings, setBuildings] = useState<any[]>([])
   const [mealPlanAssignments, setMealPlanAssignments] = useState<any[]>([])
@@ -893,8 +1069,8 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
           throw new Error("Menu not found")
         }
 
-        const menuDoc = { id: docSnap.id, ...docSnap.data() } as MenuData
-
+        
+const menuDoc = { id: docSnap.id, ...(docSnap.data() as any) } as MenuData
         setProgress(30)
         setMessage("Calculating dates...")
 
@@ -974,7 +1150,7 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
                filteredSubServices = filteredSubServices.filter(ss => allowedSubServiceIds.has(ss.id));
             }
         }
-
+        
         const subServicesMap = new Map<string, SubService[]>()
         filteredSubServices.forEach((ss) => {
           if (!subServicesMap.has(ss.serviceId)) {
@@ -1129,9 +1305,76 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
      } catch(e) { console.error(e) }
   }, [repetitionLog, menuType])
 
-  const handleAddItem = useCallback(
+
+const handleAnalyzeConflicts = useCallback((cellLogs: any[], currentContext: any) => {
+    // 1. Identify which Items are problematic in this cell
+    const conflictItemIds = Array.from(new Set(cellLogs.map(l => l.itemId)));
+    
+    // 2. For each problematic item, scan the WHOLE menu to find occurrences
+    const analysis = conflictItemIds.map(itemId => {
+        const item = menuItems.find(i => i.id === itemId);
+        const itemName = item?.name || "Unknown Item";
+        const occurrences: any[] = [];
+
+        // Scan logic
+        dateRange.forEach(({ date, day }) => {
+            const dayData = menuData[date];
+            if (!dayData) return;
+
+            Object.keys(dayData).forEach(sId => {
+                const sData = dayData[sId];
+                Object.keys(sData).forEach(ssId => {
+                    const ssData = sData[ssId];
+                    Object.keys(ssData).forEach(mpId => {
+                        const mpData = ssData[mpId];
+                        Object.keys(mpData).forEach(smpId => {
+                           const cell = mpData[smpId];
+                           if (cell?.menuItemIds?.includes(itemId)) {
+                               // Found an occurrence!
+                               const serviceName = services.find(s => s.id === sId)?.name;
+                               const subServiceName = subServices.get(sId)?.find(ss => ss.id === ssId)?.name;
+                               const mealPlanName = mealPlans.find(m => m.id === mpId)?.name;
+                               const subMealPlanName = subMealPlans.find(s => s.id === smpId)?.name;
+
+                               occurrences.push({
+                                   date,
+                                   day,
+                                   serviceName,
+                                   subServiceName,
+                                   mealPlanName,
+                                   subMealPlanName,
+                                   // Check if this is the cell user clicked
+                                   isCurrentCell: 
+                                      date === currentContext.date &&
+                                      sId === currentContext.serviceId &&
+                                      ssId === currentContext.subServiceId &&
+                                      mpId === currentContext.mealPlanId &&
+                                      smpId === currentContext.subMealPlanId
+                               });
+                           }
+                        });
+                    });
+                });
+            });
+        });
+
+        return {
+            itemId,
+            itemName,
+            totalCount: occurrences.length,
+            occurrences
+        };
+    });
+
+    setConflictAnalysisData(analysis);
+    setConflictDrawerOpen(true);
+  }, [menuData, dateRange, menuItems, services, subServices, mealPlans, subMealPlans]);
+  
+
+const handleAddItem = useCallback(
     (date: string, serviceId: string, mealPlanId: string, subMealPlanId: string, itemId: string) => {
       
+      // 1. Pehle subServiceId nikalo aur check karo
       const subServiceId = selectedSubService?.id
       if (!subServiceId) return
 
@@ -1140,7 +1383,9 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
       const currentSubMealPlan = subMealPlans.find(smp => smp.id === subMealPlanId)
       const isRepeatAllowed = currentSubMealPlan?.isRepeatPlan || false
 
+      // 2. Conflict Check Logic
       const inWeek = dateRange.some(d => {
+         if (d.date === date) return false; // Skip current date
          const cell = menuData[d.date]?.[serviceId]?.[subServiceId]?.[mealPlanId]?.[subMealPlanId]
          return cell?.menuItemIds?.includes(itemId)
       })
@@ -1151,9 +1396,9 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
              type: "In-week duplicate",
              itemId, itemName, serviceId, serviceName, subServiceId, subServiceName, mealPlanId, subMealPlanId, attemptedDate: date
          })
-         toast({ title: "Duplicate in week", description: `${itemName} exists in this week`, variant: "destructive" })
       }
 
+      // 3. Prev Week Check (Notice: prevWeekMap spelling correct)
       const prevHas = prevWeekMap[date]?.[serviceId]?.[subServiceId]?.[mealPlanId]?.[subMealPlanId]?.includes(itemId)
       if (prevHas && !inWeek && !isRepeatAllowed) {
          const itemName = menuItems.find(m => m.id === itemId)?.name || "Item"
@@ -1163,11 +1408,12 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
              type: "Prev-week repeat",
              itemId, itemName, serviceId, serviceName, subServiceId, subServiceName, mealPlanId, subMealPlanId, prevDate, attemptedDate: date
          })
-         toast({ title: "Prev-week repeat", description: `${itemName} used last week`, variant: "destructive" })
       }
 
+      // 4. Update State
       setMenuData((prev: any) => {
         const updated = JSON.parse(JSON.stringify(prev))
+        // Safe access ensure karo
         if (!updated[date]) updated[date] = {}
         if (!updated[date][serviceId]) updated[date][serviceId] = {}
         if (!updated[date][serviceId][subServiceId]) updated[date][serviceId][subServiceId] = {}
@@ -1183,14 +1429,17 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
         return updated
       })
     },
-    [selectedSubService?.id, menuData, dateRange, prevWeekMap, services, subServices, subMealPlans, menuItems, addRepetitionLog],
+    // 👇 DEPENDENCY ARRAY FIXED (prevWeekMap spelling corrected)
+    [selectedSubService, menuData, dateRange, prevWeekMap, services, subServices, subMealPlans, menuItems, addRepetitionLog],
   )
 
   const handleRemoveItem = useCallback(
     async (date: string, serviceId: string, mealPlanId: string, subMealPlanId: string, itemId: string) => {
+       if (!selectedSubService) return;
+         const currentSubServiceId = selectedSubService.id;
       setMenuData((prev: any) => {
         const updated = JSON.parse(JSON.stringify(prev))
-        const items = updated[date]?.[serviceId]?.[selectedSubService?.id]?.[mealPlanId]?.[subMealPlanId]?.menuItemIds
+        const items = updated[date]?.[serviceId]?.[currentSubServiceId]?.[mealPlanId]?.[subMealPlanId]?.menuItemIds
         if (items) {
           const idx = items.indexOf(itemId)
           if (idx > -1) items.splice(idx, 1)
@@ -1202,7 +1451,8 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
           log.itemId === itemId &&
           log.attemptedDate === date &&
           log.serviceId === serviceId &&
-          log.subServiceId === selectedSubService?.id &&
+        
+               log.subServiceId === currentSubServiceId &&
           log.mealPlanId === mealPlanId &&
           log.subMealPlanId === subMealPlanId
       );
@@ -1219,7 +1469,7 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
          }
       }
     },
-    [selectedSubService?.id, repetitionLog, menuType],
+    [selectedSubService, repetitionLog, menuType],
   )
 
   const handleCreateItem = useCallback(async (name: string, category: string) => {
@@ -1412,24 +1662,37 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
         toast({ title: "Syncing company menus...", description: "Updating existing menus and creating new ones." })
         
         // Filter empty structure before generating
-        const filtered: any = {}
+          const filtered: any = {}
         Object.entries(menuData).forEach(([date, dayMenu]: [string, any]) => {
             const filteredDay: any = {}
+            
+            // 1. Iterate over Services (sData)
             Object.entries(dayMenu).forEach(([sId, sData]: [string, any]) => {
                 const filteredS: any = {}
+
+                // 2. Iterate over sData to get SubServices (ssData)
                 Object.entries(sData).forEach(([ssId, ssData]: [string, any]) => {
                     const filteredSS: any = {}
+
+                    // 3. Iterate over ssData to get MealPlans (mpData) 
+                    // (Yahan galti thi: aap mpData likh rahe the Object.entries mein, jabki ssData hona chahiye)
                     Object.entries(ssData).forEach(([mpId, mpData]: [string, any]) => {
                         const filteredMP: any = {}
+
+                        // 4. Iterate over mpData to get SubMealPlans (cell)
                         Object.entries(mpData).forEach(([smpId, cell]: [string, any]) => {
                             if(cell.menuItemIds?.length > 0) filteredMP[smpId] = cell
                         })
+                        
                         if(Object.keys(filteredMP).length > 0) filteredSS[mpId] = filteredMP
                     })
+                    
                     if(Object.keys(filteredSS).length > 0) filteredS[ssId] = filteredSS
                 })
+                
                 if(Object.keys(filteredS).length > 0) filteredDay[sId] = filteredS
             })
+            
             if(Object.keys(filteredDay).length > 0) filtered[date] = filteredDay
         })
 
@@ -1604,6 +1867,7 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
                                       service={selectedService}
                                       subServiceId={selectedSubService.id}
                                       mealPlan={mealPlan}
+                                    
                                       subMealPlan={subMealPlan}
                                       selectedMenuItemIds={selectedItems}
                                       allMenuItems={menuItems}
@@ -1634,6 +1898,9 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
                                       companies={companies}
                                       buildings={buildings}
                                       structureAssignments={mealPlanAssignments}
+                                      repetitionLog={repetitionLog}
+                                    
+                                       onShowConflicts={handleAnalyzeConflicts}
                                     />
                                   )
                                 })}
@@ -1682,43 +1949,47 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
             </Button>
           </div>
 
-          {/* Logs FAB */}
-          <div className="absolute bottom-20 right-6 z-[60]">
+          {/* Logs FAB - Fixed: Z-Index 80 (Sabse upar) & Position */}
+          <div className="absolute bottom-20 right-6 z-[80]">
               <button
-                onClick={() => setShowLogPanel(!showLogPanel)}
-                className={`h-12 w-12 rounded-full shadow-lg flex items-center justify-center transition-all duration-200 border-2 border-white ${
-                  repetitionLog.length > 0 
-                    ? "bg-red-500 hover:bg-red-600 text-white animate-in zoom-in" 
-                    : "bg-gray-400 hover:bg-gray-500 text-white"
-                }`}
+                onClick={(e) => {
+                    e.stopPropagation(); // Safety: Click pass na ho
+                    setShowLogPanel(!showLogPanel);
+                }}
+                className="h-12 w-12 rounded-full shadow-lg flex items-center justify-center transition-all duration-200 border-2 border-white bg-gray-600 hover:bg-gray-700 text-white"
                 title="Toggle Repetition Logs"
               >
                  <div className="flex flex-col items-center">
                     {showLogPanel ? <ChevronDown className="h-5 w-5" /> : <AlertCircle className="h-5 w-5" />}
-                    {!showLogPanel && <span className="text-[10px] font-bold">{repetitionLog.length}</span>}
+                    {/* Count badge */}
+                    {repetitionLog.length > 0 && !showLogPanel && (
+                      <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold">
+                        {repetitionLog.length}
+                      </span>
+                    )}
                  </div>
               </button>
           </div>
 
-          {/* Log Panel */}
+          {/* Log Panel - Fixed: Bottom-36 (Button ke upar) & Z-Index 70 */}
           {showLogPanel && (
-              <div className="absolute bottom-16 right-4 w-[400px] max-h-[400px] bg-white border rounded-lg shadow-2xl p-4 animate-in slide-in-from-bottom-5 z-[70] flex flex-col">
+              <div className="absolute bottom-36 right-4 w-[400px] max-h-[400px] bg-white border border-gray-200 rounded-lg shadow-2xl p-4 animate-in slide-in-from-bottom-5 z-[70] flex flex-col">
                   <div className="flex items-center justify-between mb-3 border-b pb-2">
-                    <div className="font-semibold text-sm flex items-center gap-2">
-                        <AlertCircle className="h-4 w-4 text-red-500"/>
+                    <div className="font-semibold text-sm flex items-center gap-2 text-gray-800">
+                        <AlertCircle className="h-4 w-4 text-gray-500"/>
                         Repetition Log ({repetitionLog.length})
                     </div>
-                    <Button variant="ghost" size="sm" onClick={clearRepetitionLog} className="text-red-600 hover:bg-red-50 h-6 text-xs">Clear All</Button>
+                    <Button variant="ghost" size="sm" onClick={clearRepetitionLog} className="text-gray-500 hover:bg-gray-100 h-6 text-xs">Clear All</Button>
                   </div>
                   <div className="overflow-y-auto flex-1 space-y-2 pr-1">
                     {repetitionLog.length === 0 ? <span className="text-sm text-gray-500 italic">No issues detected.</span> : 
                         repetitionLog.map((entry, idx) => (
-                           <div key={idx} className="p-3 border rounded bg-red-50 border-red-100 text-xs relative group">
-                               <div className="flex justify-between font-bold text-red-700 mb-1">
+                           <div key={idx} className="p-3 border rounded bg-gray-50 border-gray-200 text-xs relative group hover:bg-white hover:shadow-sm transition-all">
+                               <div className="flex justify-between font-bold text-gray-700 mb-1">
                                    <span>{entry.type}</span>
-                                   <button onClick={() => removeRepetitionLog(entry.id)} className="text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity"><X className="h-3.5 w-3.5"/></button>
+                                   <button onClick={() => removeRepetitionLog(entry.id)} className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"><X className="h-3.5 w-3.5"/></button>
                                </div>
-                               <div className="mb-1">Item: <span className="font-semibold text-gray-800">{entry.itemName}</span></div>
+                               <div className="mb-1">Item: <span className="font-semibold text-gray-900">{entry.itemName}</span></div>
                                <div className="text-gray-500 flex justify-between">
                                   <span>{entry.attemptedDate}</span>
                                   <span>{entry.serviceName}</span>
@@ -1729,6 +2000,13 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
                   </div>
               </div>
           )}
+
+          {/* NEW DRAWER COMPONENT */}
+        <ConflictDetailsDrawer 
+  isOpen={conflictDrawerOpen}
+  onClose={() => setConflictDrawerOpen(false)}
+  analysisData={conflictAnalysisData} // Pass the processed data
+/>
       </div>
     </div>
   )
