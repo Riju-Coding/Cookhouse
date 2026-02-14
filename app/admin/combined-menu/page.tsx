@@ -59,6 +59,13 @@ import { MenuEditModal } from "@/components/menu-edit-modal"
 interface MenuCell {
   menuItemIds: string[]
   selectedDescriptions?: Record<string, string> // Maps itemId to selected description
+  /** 
+   * Custom structure assignments for items in this cell.
+   * Key: menuItemId
+   * Value: Array of { companyId, buildingId } pairs 
+   * If an item ID is missing, it defaults to the structureAssignment logic.
+   */
+  customAssignments?: Record<string, Array<{ companyId: string; buildingId: string }>> // NEW FIELD
 }
 
 interface DayMenu {
@@ -414,7 +421,489 @@ const ItemDescriptionModal = memo(function ItemDescriptionModal({
   )
 })
 
-// ---------------------- MenuGridCell (FINAL FIX) ----------------------
+
+// ---------------------- NEW: ItemCompanyAssignmentModal ----------------------
+
+interface ItemCompanyAssignmentModalProps {
+  isOpen: boolean
+  onClose: () => void
+  selectedMenuItemIds: string[]
+  itemToFocus: string | null; // NEW PROP for single item editing
+  allMenuItems: MenuItem[]
+  defaultAssignedStructures: Array<{ companyId: string; companyName: string; buildingId: string; buildingName: string }>
+  currentCustomAssignments: MenuCell['customAssignments']
+  onSave: (newAssignments: MenuCell['customAssignments']) => void
+}
+
+const ItemCompanyAssignmentModal = memo(function ItemCompanyAssignmentModal({
+  isOpen,
+  onClose,
+  selectedMenuItemIds,
+  itemToFocus, // <-- Destructure new prop
+  allMenuItems,
+  defaultAssignedStructures,
+  currentCustomAssignments,
+  onSave,
+}: ItemCompanyAssignmentModalProps) {
+  
+  // --- START: UNCONDITIONAL HOOKS ---
+  const [tempAssignments, setTempAssignments] = useState<Record<string, Set<string>>>({})
+  const [loading, setLoading] = useState(true)
+
+  const itemMap = useMemo(() => new Map(allMenuItems.map(item => [item.id, item])), [allMenuItems])
+
+  const allStructures = useMemo(() => {
+    const uniqueStructures = new Map<string, { companyName: string; buildingName: string }>()
+    defaultAssignedStructures.forEach(s => {
+      uniqueStructures.set(`${s.companyId}-${s.buildingId}`, { companyName: s.companyName, buildingName: s.buildingName })
+    })
+    return Array.from(uniqueStructures.entries())
+      .map(([key, names]) => ({ key, ...names }))
+      .sort((a, b) => a.companyName.localeCompare(b.companyName) || a.buildingName.localeCompare(b.buildingName))
+  }, [defaultAssignedStructures])
+  
+  // Determine which items to actually display/edit
+  const itemsForModal = useMemo(() => {
+    if (itemToFocus) {
+        // If an item is focused, only display that one.
+        return selectedMenuItemIds.filter(id => id === itemToFocus);
+    }
+    // Otherwise, display all items in the cell.
+    return selectedMenuItemIds;
+  }, [selectedMenuItemIds, itemToFocus]);
+
+  useEffect(() => {
+    if (isOpen) {
+      setLoading(true)
+      const initialAssignments: Record<string, Set<string>> = {}
+
+      // Get keys for all structurally assigned companies (the default state)
+      const defaultStructureKeys = new Set(defaultAssignedStructures.map(s => `${s.companyId}-${s.buildingId}`))
+
+      // Use itemsForModal here
+      itemsForModal.forEach(itemId => {
+        let assignedStructures: string[] = []
+
+        if (currentCustomAssignments && currentCustomAssignments[itemId] !== undefined) {
+          // If custom assignments exist (even if [])
+          assignedStructures = currentCustomAssignments[itemId].map(s => `${s.companyId}-${s.buildingId}`)
+        } else {
+          // Otherwise, default to all structures assigned to the cell structurally
+          assignedStructures = Array.from(defaultStructureKeys)
+        }
+        initialAssignments[itemId] = new Set(assignedStructures)
+      })
+      
+      setTempAssignments(initialAssignments)
+      setLoading(false)
+    }
+  }, [isOpen, itemsForModal, defaultAssignedStructures, currentCustomAssignments])
+  
+  // --- END: UNCONDITIONAL HOOKS ---
+
+  if (!isOpen) return null
+
+  
+  const handleToggleAssignment = (itemId: string, structureKey: string) => {
+    setTempAssignments(prev => {
+      const newAssignments = { ...prev }
+      const currentSet = new Set(newAssignments[itemId] || [])
+      
+      if (currentSet.has(structureKey)) {
+        currentSet.delete(structureKey)
+      } else {
+        currentSet.add(structureKey)
+      }
+      newAssignments[itemId] = currentSet
+      return newAssignments
+    })
+  }
+  
+  const handleSaveAssignments = () => {
+    
+    // Determine the default structure keys (used for comparison)
+    const defaultStructureKeys = new Set(defaultAssignedStructures.map(s => `${s.companyId}-${s.buildingId}`))
+    const defaultKeysArray = Array.from(defaultStructureKeys).sort()
+    const defaultKeysString = defaultKeysArray.join(',')
+
+    const finalAssignments: MenuCell['customAssignments'] = {}
+    
+    // Use itemsForModal here to ensure we only save rules for items currently shown
+    itemsForModal.forEach(itemId => {
+      const assigned = tempAssignments[itemId] || new Set()
+      const assignedKeysArray = Array.from(assigned).sort()
+      const assignedKeysString = assignedKeysArray.join(',')
+
+      // Case 1: If assigned set is exactly the same as the default set, skip saving custom rule (use structural default).
+      if (assignedKeysString === defaultKeysString) {
+          return 
+      }
+      
+      // Case 2: Custom assignment applies (subset, superset, or empty)
+      finalAssignments[itemId] = assignedKeysArray.map(key => {
+          const [companyId, buildingId] = key.split('-')
+          return { companyId, buildingId }
+      })
+    })
+    
+    onSave(finalAssignments) 
+    onClose() // FIX: Close modal on save
+  }
+
+  const items = itemsForModal.map(id => itemMap.get(id)).filter((i): i is MenuItem => !!i)
+  const modalTitle = itemToFocus 
+    ? `Customize Assignments: ${items[0]?.name || 'Item'}` 
+    : `Customize Item Assignments (${items.length} Items)`;
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-60 z-[200] flex items-center justify-center p-4">
+      <div className="bg-white rounded-lg max-w-6xl w-full max-h-[90vh] flex flex-col">
+        <div className="sticky top-0 bg-gradient-to-r from-blue-50 to-white border-b p-4 flex items-center justify-between">
+          <h3 className="font-semibold text-lg flex items-center gap-2">
+            <ClipboardCopy className="h-5 w-5 text-blue-600" />
+            {modalTitle}
+          </h3>
+          <button onClick={onClose} className="text-gray-500 hover:text-gray-700" type="button">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        {loading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="h-6 w-6 animate-spin text-blue-600" />
+          </div>
+        ) : (
+          <div className="p-4 overflow-y-auto flex-1">
+            <p className="text-sm text-gray-600 mb-4 italic">
+              Use this grid to override the default company assignments for items in this cell. Items MUST be checked for a structure to receive them. Assignments matching the structural default will not be saved explicitly.
+            </p>
+            
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200 border">
+                <thead>
+                  <tr className="bg-gray-100">
+                    <th className="sticky left-0 bg-gray-100 px-4 py-2 text-left text-xs font-medium text-gray-700 uppercase tracking-wider min-w-[180px] z-10 border-r">
+                      Company / Building (Structural Default)
+                    </th>
+                    {items.map((item) => (
+                      <th
+                        key={item.id}
+                        className="px-4 py-2 text-center text-xs font-medium text-gray-700 uppercase tracking-wider border-r min-w-[120px]"
+                      >
+                        {item.name}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200">
+                  {allStructures.length === 0 ? (
+                      <tr>
+                          <td colSpan={items.length + 1} className="py-4 text-center text-gray-500 text-sm italic">
+                              No companies are structurally assigned to this cell.
+                          </td>
+                      </tr>
+                  ) : (
+                    allStructures.map((struct) => (
+                      <tr key={struct.key} className="hover:bg-blue-50 transition-colors">
+                        <td className="sticky left-0 bg-white px-4 py-2 whitespace-nowrap text-sm font-medium text-gray-900 border-r z-10 hover:bg-blue-100">
+                          <div className="font-semibold text-xs">{struct.companyName}</div>
+                          <div className="text-[10px] text-gray-500">{struct.buildingName}</div>
+                        </td>
+                        {items.map((item) => {
+                          const isAssigned = tempAssignments[item.id]?.has(struct.key) || false;
+
+                          return (
+                            <td key={item.id} className="px-4 py-2 text-center">
+                              <input
+                                type="checkbox"
+                                checked={isAssigned}
+                                onChange={() => handleToggleAssignment(item.id, struct.key)}
+                                className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 cursor-pointer"
+                              />
+                            </td>
+                          )
+                        })}
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        <div className="border-t p-4 flex items-center justify-end gap-2 bg-gray-50">
+          <Button variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button onClick={handleSaveAssignments} disabled={loading} className="bg-blue-600 hover:bg-blue-700 text-white">
+            <Save className="h-4 w-4 mr-2" />
+            Set Custom Assignments
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
+})
+
+
+// ---------------------- ConflictDetailsDrawer ----------------------
+function ConflictDetailsDrawer({
+  isOpen,
+  onClose,
+  analysisData
+}: {
+  isOpen: boolean
+  onClose: () => void
+  analysisData: any[]
+}) {
+  const [currentSelectionDate, setCurrentSelectionDate] = useState<string | null>(() => {
+    // Find the current cell date on initial load
+    for (const itemAnalysis of analysisData) {
+      for (const occ of itemAnalysis.occurrences) {
+        if (occ.isCurrentCell) {
+          return occ.date
+        }
+      }
+    }
+    return null
+  })
+  
+  const [companyPopupOpen, setCompanyPopupOpen] = useState(false)
+  const [selectedCompanyData, setSelectedCompanyData] = useState<any>(null)
+  const [companyDetails, setCompanyDetails] = useState<any[]>([])
+
+  const handleSelectCurrent = (date: string) => {
+    setCurrentSelectionDate(date)
+  }
+
+  const calculateDaysDifference = (baseDate: string, compareDate: string): number => {
+    const base = new Date(baseDate)
+    const compare = new Date(compareDate)
+    const diffTime = compare.getTime() - base.getTime()
+    const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24))
+    return diffDays
+  }
+
+  const handleCompanyIconClick = (occurrence: any) => {
+    setSelectedCompanyData(occurrence)
+    
+    if (occurrence.companyData && occurrence.companyData.length > 0) {
+      // Use company data from occurrence (either custom or from meal plan structure)
+      const companies = occurrence.companyData.map((ca: any) => ({
+        companyId: ca.companyId,
+        buildingId: ca.buildingId,
+        companyName: ca.companyName || ca.companyId,
+        buildingName: ca.buildingName || ca.buildingId,
+        serviceName: occurrence.serviceName,
+        subServiceName: occurrence.subServiceName,
+        isCustom: ca.isCustom || false
+      }))
+      setCompanyDetails(companies)
+    } else {
+      // No company assignment available
+      const details = [{
+        serviceName: occurrence.serviceName,
+        subServiceName: occurrence.subServiceName,
+        companyName: "No Company Assignment",
+        buildingName: "N/A",
+        isCustom: false
+      }]
+      setCompanyDetails(details)
+    }
+    
+    setCompanyPopupOpen(true)
+  }
+
+  if (!isOpen) return null
+
+  return (
+    <div className="fixed inset-0 z-[200] flex justify-end">
+      <div 
+        className="absolute inset-0 bg-black/20 backdrop-blur-sm transition-opacity" 
+        onClick={onClose}
+      />
+      
+      <div className="relative w-full max-w-3xl bg-white shadow-2xl h-full flex flex-col animate-in slide-in-from-right duration-300">
+        
+        {/* Header */}
+        <div className="p-5 border-b bg-red-50 flex items-start justify-between">
+          <div>
+            <h3 className="text-xl font-bold text-red-900 flex items-center gap-2">
+              <AlertCircle className="h-6 w-6 text-red-600" />
+              Conflict Analysis
+            </h3>
+            <p className="text-sm text-red-700 mt-1">
+              Found {analysisData.length} item{analysisData.length !== 1 ? "s" : ""} with repetition issues.
+            </p>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-red-100 rounded-full text-red-700">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        {/* Scrollable Content */}
+        <div className="flex-1 overflow-y-auto p-6 space-y-8 bg-gray-50/50">
+          {analysisData.map((itemAnalysis, idx) => (
+            <div key={idx} className="bg-white rounded-xl shadow-sm border border-red-200 overflow-hidden">
+              
+              {/* Repetition Summary */}
+              <div className="p-5 border-b border-red-200 bg-gradient-to-r from-red-50 to-white">
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="text-lg font-bold text-red-900">{itemAnalysis.itemName}</h4>
+                  <span className="bg-red-100 text-red-700 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide border border-red-200">
+                     Repeated {itemAnalysis.totalCount} Times
+                  </span>
+                </div>
+                <p className="text-sm text-red-700">
+                  This item appears in <strong>{itemAnalysis.totalCount} places</strong> this week. 
+                  Below is the complete list of occurrences.
+                </p>
+              </div>
+
+              {/* Repetition Details Table */}
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm text-left">
+                  <thead className="text-xs text-red-700 uppercase bg-red-50 border-b border-red-200">
+                    <tr>
+                      <th className="px-4 py-3">Date & Day</th>
+                      <th className="px-4 py-3">Days</th>
+                      <th className="px-4 py-3">Service</th>
+                      <th className="px-4 py-3">Meal Plan</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {itemAnalysis.occurrences.map((occ: any, oIdx: number) => {
+                      const daysOffset = currentSelectionDate ? calculateDaysDifference(currentSelectionDate, occ.date) : null
+                      return (
+                        <tr 
+                          key={oIdx} 
+                          className={`transition-colors ${
+                            occ.isCurrentCell 
+                              ? "bg-yellow-50 border-l-4 border-l-yellow-400"
+                              : oIdx === 0 
+                                ? "bg-red-50 border-l-4 border-l-red-400"
+                                : "hover:bg-gray-50"
+                          }`}
+                        >
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => handleSelectCurrent(occ.date)}
+                                className={`cursor-pointer hover:underline flex-1 font-medium ${currentSelectionDate === occ.date ? "text-blue-700" : "text-gray-900"}`}
+                              >
+                                <div className="font-medium text-gray-900">
+                                  {new Date(occ.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                </div>
+                                <div className="text-xs text-gray-500">{occ.day}</div>
+                              </button>
+                    <button
+                      onClick={() => handleCompanyIconClick(occ)}
+                      className="p-1 hover:bg-gray-200 rounded text-gray-600 hover:text-gray-900"
+                      title="View companies"
+                    >
+                      <Building2 className="h-4 w-4" />
+                    </button>
+                            </div>
+                            {occ.isCurrentCell && (
+                              <span className="text-[10px] font-bold text-yellow-700 mt-1 block">
+                                (Current Cell)
+                              </span>
+                            )}
+                            {oIdx === 0 && !occ.isCurrentCell && (
+                              <span className="text-[10px] font-bold text-red-700 mt-1 block">
+                                (First Occurrence)
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3">
+                            {currentSelectionDate && daysOffset !== null ? (
+                              <div className={`font-bold text-center ${daysOffset === 0 ? "text-blue-700 bg-blue-100 rounded px-2 py-1" : daysOffset > 0 ? "text-green-700" : "text-orange-700"}`}>
+                                {daysOffset > 0 ? "+" : ""}{daysOffset}
+                              </div>
+                            ) : (
+                              <div className="text-xs text-gray-400 text-center">-</div>
+                            )}
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="text-gray-900 font-medium">{occ.serviceName}</div>
+                            <div className="text-xs text-gray-500">{occ.subServiceName}</div>
+                          </td>
+                          <td className="px-4 py-3">
+                             <div className="text-gray-900">{occ.mealPlanName}</div>
+                             <div className="text-xs text-gray-500">{occ.subMealPlanName}</div>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Company Popup */}
+      {companyPopupOpen && (
+        <div className="fixed inset-0 z-[300] flex items-center justify-center">
+          <div 
+            className="absolute inset-0 bg-black/30 backdrop-blur-sm" 
+            onClick={() => setCompanyPopupOpen(false)}
+          />
+          <div className="relative bg-white rounded-lg shadow-2xl p-6 max-w-md w-full mx-4 max-h-96 overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                <Building2 className="h-5 w-5 text-gray-700" />
+                Companies & Buildings
+              </h3>
+              <button
+                onClick={() => setCompanyPopupOpen(false)}
+                className="p-1 hover:bg-gray-100 rounded text-gray-500"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {selectedCompanyData && (
+              <div className="mb-4 p-3 bg-gray-50 rounded border border-gray-200">
+                <p className="text-sm font-medium text-gray-700">
+                  {new Date(selectedCompanyData.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - {selectedCompanyData.day}
+                </p>
+                <p className="text-xs text-gray-600 mt-1">{selectedCompanyData.serviceName}</p>
+              </div>
+            )}
+
+            {companyDetails && companyDetails.length > 0 ? (
+              <div className="space-y-2">
+                {companyDetails.map((cd: any, idx: number) => (
+                  <div key={idx} className={`p-3 rounded border ${cd.isCustom ? 'bg-blue-50 border-blue-200' : 'bg-gray-50 border-gray-200'}`}>
+                    <div className="text-xs font-medium text-gray-600 mb-2">
+                      {cd.isCustom ? 'CUSTOM ASSIGNMENT' : 'MEAL PLAN STRUCTURE'}
+                    </div>
+                    <div className="text-sm font-semibold text-gray-900">{cd.companyName}</div>
+                    <div className="text-sm text-gray-700">{cd.buildingName}</div>
+                    <div className="mt-3 pt-3 border-t border-gray-300">
+                      <div className="text-xs font-medium text-gray-600 mb-1">Service Details</div>
+                      <div className="text-sm text-gray-900">{cd.serviceName}</div>
+                      <div className="text-xs text-gray-600">{cd.subServiceName}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="p-4 text-center text-gray-500">
+                <p>No assignment details available</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ---------------------- MenuGridCell (Updated) ----------------------
 const MenuGridCell = function MenuGridCell({
   date,
   service,
@@ -440,6 +929,11 @@ const MenuGridCell = function MenuGridCell({
   companies,
   buildings,
   structureAssignments,
+  cellContext,
+  currentCustomAssignments,
+  onUpdateCustomAssignments,
+  repetitionLog,
+  onShowConflicts,
 }: {
   date: string
   service: Service
@@ -466,15 +960,48 @@ const MenuGridCell = function MenuGridCell({
   companies: any[]
   buildings: any[]
   structureAssignments: any[]
+  // NEW PROPS FOR ASSIGNMENT CUSTOMIZATION
+  cellContext: { serviceId: string; subServiceId: string; mealPlanId: string; subMealPlanId: string }
+  currentCustomAssignments: MenuCell['customAssignments']
+  onUpdateCustomAssignments: (assignments: MenuCell['customAssignments']) => void
+  repetitionLog?: any[]
+  onShowConflicts?: (logs: any[], context: any) => void
 }) {
   const [isOpen, setIsOpen] = useState(false)
   const [isCompanyOpen, setIsCompanyOpen] = useState(false) // State for Company Dropdown
   const [search, setSearch] = useState("")
   const [creating, setCreating] = useState(false)
   const [showDescModal, setShowDescModal] = useState(false)
+  const [showAssignmentModal, setShowAssignmentModal] = useState(false) // NEW STATE
+  const [itemToFocus, setItemToFocus] = useState<string | null>(null); // NEW STATE for single item editing
   const dropdownRef = useRef<HTMLDivElement>(null)
 
-  // Calculate assigned companies for this specific cell
+  // Filter repetition logs for this specific cell - check ALL logs where this cell's items are involved
+  const cellLogs = useMemo(() => {
+    if (!repetitionLog || repetitionLog.length === 0 || selectedMenuItemIds.length === 0) return []
+    // Show conflict on ANY cell that contains a conflicting item, not just the cell where it was added
+    return repetitionLog.filter(log => {
+      // This cell contains the conflicting item
+      if (!selectedMenuItemIds.includes(log.itemId)) return false
+      // Show if this is the cell where the conflict was logged (attemptedDate match)
+      const isAttemptedCell = log.attemptedDate === date &&
+        log.serviceId === service.id &&
+        log.subServiceId === subServiceId &&
+        log.mealPlanId === mealPlan.id &&
+        log.subMealPlanId === subMealPlan.id
+      if (isAttemptedCell) return true
+      // Also show on the FIRST occurrence cell (the original cell that caused the conflict)
+      // A cell is a "first occurrence" if it contains the item and is referenced by the log
+      if (log.originalDate === date &&
+          log.originalServiceId === service.id &&
+          log.originalSubServiceId === subServiceId &&
+          log.originalMealPlanId === mealPlan.id &&
+          log.originalSubMealPlanId === subMealPlan.id) return true
+      return false
+    })
+  }, [repetitionLog, date, service.id, subServiceId, mealPlan.id, subMealPlan.id, selectedMenuItemIds])
+
+  // Calculate assigned companies for this specific cell (Structural Default)
   const assignedCompanies = useMemo(() => {
     if (!day || !companies || !structureAssignments) return []
     const result: any[] = []
@@ -567,8 +1094,14 @@ const MenuGridCell = function MenuGridCell({
        className={`border border-gray-300 align-top min-w-[200px] transition-all duration-150 relative 
           ${isActive ? "ring-2 ring-blue-500 bg-white !z-[60]" : "bg-white hover:bg-gray-50 z-0"} 
           ${isDragHover ? "ring-2 ring-blue-300 bg-blue-50" : ""}
+          ${cellLogs.length > 0 && !isActive ? "bg-red-50" : ""}
         `}
     >
+        {/* Red indicator dot when cell has conflicts */}
+        {cellLogs.length > 0 && !isActive && (
+          <div className="absolute top-1 right-1 h-2 w-2 rounded-full bg-red-500 z-10"></div>
+        )}
+
         <div className="flex flex-col h-full min-h-[60px]">
 
           {/* Selected Items List */}
@@ -576,12 +1109,39 @@ const MenuGridCell = function MenuGridCell({
             {selectedMenuItemIds.map((itemId) => {
               const item = allMenuItems.find((i) => i.id === itemId)
               if (!item) return null
+              
+              const hasCustomAssignment = currentCustomAssignments?.[itemId] !== undefined;
+              const hasError = cellLogs.some(log => log.itemId === itemId)
+
               return (
                 <div
                   key={itemId}
-                  className="group relative flex items-center justify-between bg-blue-50/50 hover:bg-blue-100 border border-transparent hover:border-blue-200 px-1.5 py-0.5 rounded text-xs transition-colors"
+                  className={`group relative flex items-center justify-between px-1.5 py-0.5 rounded text-xs transition-colors
+                    ${hasError 
+                      ? "bg-red-100 border-red-200 border text-red-800" 
+                      : "bg-blue-50/50 hover:bg-blue-100 border border-transparent hover:border-blue-200"
+                    }
+                  `}
                 >
-                  <span className="truncate font-medium text-gray-700 leading-tight">{item.name}</span>
+                  <span className="truncate font-medium text-gray-700 leading-tight flex-1">{item.name}</span>
+                  
+                  {/* Custom Assignment Indicator - NOW CLICKABLE */}
+                  {hasCustomAssignment && (
+                      <button
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            setItemToFocus(itemId); // Set the specific item ID
+                            setShowAssignmentModal(true);
+                        }}
+                        className="p-0.5 rounded hover:bg-green-200 mr-1.5"
+                        title="Edit Custom Assignments for this item"
+                      >
+                          <Building2 
+                            className="h-3 w-3 text-green-600" 
+                          />
+                      </button>
+                  )}
+
                   {isActive && (
                     <button
                       onClick={(e) => {
@@ -603,13 +1163,37 @@ const MenuGridCell = function MenuGridCell({
             <div className="p-1 border-t bg-gray-50 flex items-center justify-between gap-1 animate-in fade-in zoom-in-95 duration-100">
               {/* Left Group: Add & Companies */}
               <div className="flex items-center gap-1" ref={dropdownRef}>
-                {/* ADD BUTTON WITH ENHANCED DROPDOWN */}
+                {/* Conflict Alert Button */}
+                {cellLogs.length > 0 && (
+                  <div className="relative">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setIsOpen(false)
+                        setIsCompanyOpen(false)
+                        onShowConflicts?.(cellLogs, {
+                          date,
+                          serviceId: service.id,
+                          subServiceId,
+                          mealPlanId: mealPlan.id,
+                          subMealPlanId: subMealPlan.id
+                        })
+                      }}
+                      className="p-1.5 rounded transition-colors bg-red-100 text-red-600 hover:bg-red-200 hover:scale-105 active:scale-95 duration-150"
+                      title="Click to view conflict details"
+                    >
+                      <AlertCircle className="h-4 w-4" />
+                    </button>
+                  </div>
+                )}
+
+                {/* ADD BUTTON WITH ENHANCED DROPDOWN (Existing) */}
                 <div className="relative">
                   <button
                     onClick={(e) => {
                       e.stopPropagation()
                       setIsOpen(!isOpen)
-                      setIsCompanyOpen(false) // Close other dropdown
+                      setIsCompanyOpen(false) 
                     }}
                     className="p-1.5 rounded hover:bg-blue-100 text-blue-600 transition-colors"
                     title="Add Item"
@@ -617,7 +1201,7 @@ const MenuGridCell = function MenuGridCell({
                     <Plus className="h-4 w-4" />
                   </button>
 
-                  {/* Dropdown with Search */}
+                  {/* Dropdown with Search (Existing) */}
                   {isOpen && (
                     <div className="absolute bottom-full left-0 mb-1 w-[270px] bg-white border rounded-lg shadow-xl z-[100] flex flex-col overflow-hidden">
                       {/* Search Header */}
@@ -636,7 +1220,7 @@ const MenuGridCell = function MenuGridCell({
                         </div>
                       </div>
 
-                      {/* Items List */}
+                      {/* Items List (Existing) */}
                       <div className="max-h-[240px] overflow-y-auto">
                         {available.length > 0 ? (
                           available.map((item) => (
@@ -680,23 +1264,23 @@ const MenuGridCell = function MenuGridCell({
                   )}
                 </div>
 
-                {/* COMPANIES BUTTON WITH DROPDOWN */}
+                {/* COMPANIES BUTTON (Existing: View structural assignments) */}
                 <div className="relative">
                   <button
                     onClick={(e) => {
                       e.stopPropagation()
                       setIsCompanyOpen(!isCompanyOpen)
-                      setIsOpen(false) // Close other dropdown
+                      setIsOpen(false) 
                     }}
                     className={`p-1.5 rounded transition-colors ${
                         isCompanyOpen ? "bg-purple-100 text-purple-700" : "hover:bg-purple-100 text-purple-600"
                     }`}
-                    title="View Assigned Companies"
+                    title="View Assigned Companies (Structural Default)"
                   >
                     <Building2 className="h-4 w-4" />
                   </button>
 
-                   {/* Companies Dropdown */}
+                   {/* Companies Dropdown (Existing) */}
                    {isCompanyOpen && (
                     <div className="absolute bottom-full left-0 mb-1 w-[250px] bg-white border rounded-lg shadow-xl z-[100] flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-150">
                         <div className="p-2 border-b bg-purple-50">
@@ -722,8 +1306,26 @@ const MenuGridCell = function MenuGridCell({
                     </div>
                    )}
                 </div>
+                
+                {/* NEW: CUSTOM ASSIGNMENT BUTTON (Multi-select opener) */}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setItemToFocus(null); // Clear focus for multi-select
+                    setShowAssignmentModal(true)
+                  }}
+                  disabled={selectedMenuItemIds.length === 0}
+                  className={`p-1.5 rounded transition-colors ${
+                    selectedMenuItemIds.length > 0
+                      ? "hover:bg-green-100 text-green-600"
+                      : "text-gray-300 cursor-not-allowed"
+                  }`}
+                  title={selectedMenuItemIds.length > 0 ? "Customize Company Assignments for Items" : "Select items first"}
+                >
+                  <ClipboardCopy className="h-4 w-4" />
+                </button>
 
-                {/* DOC BUTTON - Only active when items are selected */}
+                {/* DOC BUTTON (Existing) */}
                 <button
                   onClick={(e) => {
                     e.stopPropagation()
@@ -743,7 +1345,7 @@ const MenuGridCell = function MenuGridCell({
 
               <div className="w-px h-4 bg-gray-300 mx-0.5"></div>
 
-              {/* Right Group: Actions */}
+              {/* Right Group: Actions (Existing) */}
               <div className="flex items-center gap-0.5">
                 <button
                   onClick={(e) => {
@@ -779,7 +1381,7 @@ const MenuGridCell = function MenuGridCell({
         </div>
       </td>
 
-      {/* Description Modal */}
+      {/* Description Modal (Existing) */}
       <ItemDescriptionModal
         isOpen={showDescModal}
         onClose={() => setShowDescModal(false)}
@@ -790,11 +1392,28 @@ const MenuGridCell = function MenuGridCell({
           await menuItemsService.setSelectedDescription(itemId, selectedDescription)
         }}
       />
+      
+      {/* NEW: Custom Item Assignment Modal */}
+      <ItemCompanyAssignmentModal
+        isOpen={showAssignmentModal}
+        onClose={() => {
+            setShowAssignmentModal(false);
+            setItemToFocus(null); // Clear focus upon closing
+        }}
+        itemToFocus={itemToFocus} // Pass the focused item
+        selectedMenuItemIds={selectedMenuItemIds}
+        allMenuItems={allMenuItems}
+        defaultAssignedStructures={assignedCompanies}
+        currentCustomAssignments={currentCustomAssignments}
+        onSave={(assignments) =>
+            onUpdateCustomAssignments(assignments)
+        }
+      />
     </>
   )
 }
 
-// ---------------------- ServiceTable (No Major Changes needed, just keeping context) ----------------------
+// ---------------------- ServiceTable (Updated Props) ----------------------
 const ServiceTable = memo(function ServiceTable({
   service,
   subServices,
@@ -818,6 +1437,9 @@ const ServiceTable = memo(function ServiceTable({
   companies,
   buildings,
   structureAssignments,
+  onUpdateCustomAssignments,
+  repetitionLog,
+  onShowConflicts,
 }: {
   service: Service
   subServices: SubService[]
@@ -869,6 +1491,16 @@ const ServiceTable = memo(function ServiceTable({
   buildings?: any[]
   structureAssignments?: any[]
   mealPlanStructureAssignments?: any[]
+  onUpdateCustomAssignments: (
+    date: string,
+    serviceId: string,
+    subServiceId: string,
+    mealPlanId: string,
+    subMealPlanId: string,
+    newAssignments: MenuCell['customAssignments'],
+  ) => void
+  repetitionLog?: any[]
+  onShowConflicts?: (logs: any[], context: any) => void
 }) {
   const [isVisible, setIsVisible] = useState(false)
   const tableRef = useRef<HTMLDivElement>(null)
@@ -1020,6 +1652,8 @@ const ServiceTable = memo(function ServiceTable({
                       const cell =
                         combinedMenu[date]?.[service.id]?.[selectedSubServiceId]?.[mealPlan.id]?.[subMealPlan.id]
                       const selectedItems = cell?.menuItemIds || []
+                      const currentCustomAssignments = cell?.customAssignments || undefined 
+                      
                       const prevItems =
                         (prevWeekMap &&
                           prevWeekMap[date] &&
@@ -1106,6 +1740,15 @@ const ServiceTable = memo(function ServiceTable({
                           companies={companies || []}
                           buildings={buildings || []}
                           structureAssignments={structureAssignments || []}
+                          
+                          // NEW PROPS
+                          cellContext={{ serviceId: service.id, subServiceId: selectedSubServiceId!, mealPlanId: mealPlan.id, subMealPlanId: subMealPlan.id }}
+                          currentCustomAssignments={currentCustomAssignments}
+                          onUpdateCustomAssignments={(assignments) =>
+                            onUpdateCustomAssignments(date, service.id, selectedSubServiceId!, mealPlan.id, subMealPlan.id, assignments)
+                          }
+                          repetitionLog={repetitionLog}
+                          onShowConflicts={onShowConflicts}
                         />
                       )
                     })}
@@ -1125,7 +1768,7 @@ const ServiceTable = memo(function ServiceTable({
   )
 })
 
-// ---------------------- Parent Component ----------------------
+// ---------------------- Parent Component (CombinedMenuCreationPage Updated Logic) ----------------------
 export default function CombinedMenuCreationPage() {
   const [startDate, setStartDate] = useState("")
   const [endDate, setEndDate] = useState("")
@@ -1158,6 +1801,10 @@ export default function CombinedMenuCreationPage() {
   // New State for duplicate handling
   const [duplicateMenuId, setDuplicateMenuId] = useState<string | null>(null)
   const [showEditModal, setShowEditModal] = useState(false)
+
+  // Conflict Analysis State
+  const [conflictDrawerOpen, setConflictDrawerOpen] = useState(false)
+  const [conflictAnalysisData, setConflictAnalysisData] = useState<any[]>([])
 
   useEffect(() => {
     mountedRef.current = true
@@ -1351,15 +1998,98 @@ export default function CombinedMenuCreationPage() {
     }
   }, [])
 
+  // Helper function to keep both old and new structure without flattening
+  const prepareMenuDataForSave = (menuData: CombinedMenuData): any => {
+    const prepared: any = {}
+    
+    Object.entries(menuData).forEach(([date, dayMenu]) => {
+      const prepDay: any = {}
+      
+      Object.entries(dayMenu).forEach(([serviceId, svcData]) => {
+        if (!prepDay[serviceId]) prepDay[serviceId] = {}
+        
+        Object.entries(svcData).forEach(([subServiceId, subSvcData]) => {
+          if (!prepDay[serviceId][subServiceId]) prepDay[serviceId][subServiceId] = {}
+          
+          Object.entries(subSvcData).forEach(([mealPlanId, mpData]) => {
+            if (!prepDay[serviceId][subServiceId][mealPlanId]) prepDay[serviceId][subServiceId][mealPlanId] = {}
+            
+            Object.entries(mpData).forEach(([subMealPlanId, cell]) => {
+              if (cell.menuItemIds?.length > 0) {
+                const cellData: any = {
+                  menuItemIds: cell.menuItemIds,
+                }
+                
+                // Only include selectedDescriptions if it has data
+                if (cell.selectedDescriptions && Object.keys(cell.selectedDescriptions).length > 0) {
+                  cellData.selectedDescriptions = cell.selectedDescriptions
+                }
+                
+                // Only include customAssignments if it exists and is not undefined
+                if (cell.customAssignments && typeof cell.customAssignments === 'object' && Object.keys(cell.customAssignments).length > 0) {
+                  cellData.customAssignments = cell.customAssignments
+                }
+                
+                prepDay[serviceId][subServiceId][mealPlanId][subMealPlanId] = cellData
+              }
+            })
+          })
+        })
+      })
+      
+      if (Object.keys(prepDay).length > 0) {
+        prepared[date] = prepDay
+      }
+    })
+    
+    return prepared
+  }
+
+  // No need for unflatten - data structure is already in original nested format
+  // This is for backward compatibility if loading old flattened data
+  const unflattenMenuData = (flattenedData: any, services: Service[], subServices: SubService[], mealPlans: MealPlan[], subMealPlans: SubMealPlan[]): CombinedMenuData => {
+    const nested: CombinedMenuData = {}
+    
+    Object.entries(flattenedData).forEach(([date, dateData]: [string, any]) => {
+      nested[date] = {}
+      
+      // Check if this is already in nested format (not flattened)
+      const firstKey = Object.keys(dateData)[0] || ''
+      if (!firstKey.includes('|')) {
+        // Already nested, just copy it
+        nested[date] = dateData
+        return
+      }
+      
+      // Handle flattened format
+      Object.entries(dateData).forEach(([flatKey, cell]: [string, any]) => {
+        const parts = flatKey.split('|')
+        if (parts.length === 5) {
+          const [, serviceId, subServiceId, mealPlanId, subMealPlanId] = parts
+          
+          if (!nested[date][serviceId]) nested[date][serviceId] = {}
+          if (!nested[date][serviceId][subServiceId]) nested[date][serviceId][subServiceId] = {}
+          if (!nested[date][serviceId][subServiceId][mealPlanId]) nested[date][serviceId][subServiceId][mealPlanId] = {}
+          
+          nested[date][serviceId][subServiceId][mealPlanId][subMealPlanId] = cell
+        }
+      })
+    })
+    
+    return nested
+  }
+
   const handleSaveDraft = async () => {
     try {
       setSaving(true)
-      const filteredMenuData = combinedMenu
+      
+      // Prepare menu data for Firebase (keeps original nested structure + custom assignments if any)
+      const preparedMenuData = prepareMenuDataForSave(combinedMenu)
 
       const draftData = {
         startDate,
         endDate,
-        menuData: filteredMenuData,
+        menuData: preparedMenuData,
         status: "draft",
         companyId: userCompanyId,
       }
@@ -1459,7 +2189,11 @@ export default function CombinedMenuCreationPage() {
         if (draftData && draftData.menuData) {
           draftFound = true
           setHasDraft(true)
-          Object.entries(draftData.menuData).forEach(([dDate, dayData]: [string, any]) => {
+          
+          // Data is already in nested format, no need to unflatten
+          let draftMenuData = draftData.menuData
+          
+          Object.entries(draftMenuData).forEach(([dDate, dayData]: [string, any]) => {
             if (!initialMenu[dDate]) return
 
             Object.entries(dayData).forEach(([svcId, svcData]: [string, any]) => {
@@ -1473,7 +2207,12 @@ export default function CombinedMenuCreationPage() {
 
                   Object.entries(mpData).forEach(([smpId, cellData]: [string, any]) => {
                     if (initialMenu[dDate][svcId][subSvcId][mpId][smpId]) {
-                      initialMenu[dDate][svcId][subSvcId][mpId][smpId] = cellData
+                      // Merge draft data, including potential customAssignments
+                      initialMenu[dDate][svcId][subSvcId][mpId][smpId] = {
+                          menuItemIds: cellData.menuItemIds || [],
+                          selectedDescriptions: cellData.selectedDescriptions || {},
+                          customAssignments: cellData.customAssignments || undefined,
+                      }
                     }
                   })
                 })
@@ -1503,9 +2242,47 @@ export default function CombinedMenuCreationPage() {
             }
           })
 
-          setRepetitionLog(enrichedLogs)
+          // --- VALIDATE logs against actual cell data ---
+          // Remove stale logs where the item no longer exists in the cell
+          const staleLogIds: string[] = []
+          const validLogs = enrichedLogs.filter((log: any) => {
+            const itemId = log.itemId
+            if (!itemId) return false
 
-          enrichedLogs.forEach((entry: any) => {
+            // Check if the item exists in the ATTEMPTED cell
+            const attemptedCell = initialMenu[log.attemptedDate]
+              ?.[log.serviceId]?.[log.subServiceId]
+              ?.[log.mealPlanId]?.[log.subMealPlanId]
+            const inAttemptedCell = attemptedCell?.menuItemIds?.includes(itemId)
+
+            // For in-week duplicates, also check the ORIGINAL cell
+            let inOriginalCell = false
+            if (log.originalDate) {
+              const originalCell = initialMenu[log.originalDate]
+                ?.[log.originalServiceId]?.[log.originalSubServiceId]
+                ?.[log.originalMealPlanId]?.[log.originalSubMealPlanId]
+              inOriginalCell = originalCell?.menuItemIds?.includes(itemId) || false
+            }
+
+            // Log is valid only if the item still exists in at least the attempted cell
+            // (for in-week: both cells should ideally have it, but attempted cell is the one we added to)
+            const isValid = !!inAttemptedCell
+            if (!isValid && log.id) {
+              staleLogIds.push(log.id)
+            }
+            return isValid
+          })
+
+          // Clean up stale logs from Firestore in background
+          if (staleLogIds.length > 0) {
+            repetitionLogsService.deleteAll(staleLogIds).catch((e: any) =>
+              console.error("Error cleaning stale logs", e)
+            )
+          }
+
+          setRepetitionLog(validLogs)
+
+          validLogs.forEach((entry: any) => {
             const keyObj = {
               type: entry.type,
               itemId: entry.itemId ?? "",
@@ -1629,11 +2406,6 @@ export default function CombinedMenuCreationPage() {
       menuItemId: string,
     ) => {
       const dates = dateRange.map((d) => d.date)
-      const inWeek = dates.some((d) => {
-        if (d === date) return false
-        const cell = combinedMenu[d]?.[serviceId]?.[subServiceId]?.[mealPlanId]?.[subMealPlanId]
-        return cell?.menuItemIds?.includes(menuItemId)
-      })
 
       // Look up names for logging
       const serviceName = services.find((s) => s.id === serviceId)?.name || "Unknown Service"
@@ -1642,65 +2414,109 @@ export default function CombinedMenuCreationPage() {
       const currentSubMealPlan = subMealPlans.find((smp) => smp.id === subMealPlanId)
       const isRepeatAllowed = currentSubMealPlan?.isRepeatPlan || false
 
-      if (inWeek) {
-        if (!isRepeatAllowed) {
-          const entry = {
-            type: "In-week duplicate",
-            itemId: menuItemId,
-            itemName: menuItems.find((m) => m.id === menuItemId)?.name || menuItemId,
-            serviceId,
-            serviceName,
-            subServiceId,
-            subServiceName,
-            mealPlanId,
-            subMealPlanId,
-            attemptedDate: date,
-            time: new Date().toISOString(),
+      // --- GLOBAL CONFLICT CHECK: Scan ALL services, subServices, mealPlans, subMealPlans across the entire week ---
+      let foundInWeek = false
+      if (!isRepeatAllowed) {
+        for (const d of dates) {
+          if (d === date) continue // Skip current date
+          const dayData = combinedMenu[d]
+          if (!dayData) continue
+          for (const sId of Object.keys(dayData)) {
+            for (const ssId of Object.keys(dayData[sId] || {})) {
+              for (const mpId of Object.keys(dayData[sId][ssId] || {})) {
+                for (const smpId of Object.keys(dayData[sId][ssId][mpId] || {})) {
+                  const cell = dayData[sId][ssId][mpId][smpId]
+                  if (cell?.menuItemIds?.includes(menuItemId)) {
+                    foundInWeek = true
+                    const origServiceName = services.find((s) => s.id === sId)?.name || "Service"
+                    const origSubServiceName = subServices.find((s) => s.id === ssId)?.name || "Sub-Service"
+                    const entry = {
+                      type: "In-week duplicate",
+                      itemId: menuItemId,
+                      itemName: menuItems.find((m) => m.id === menuItemId)?.name || menuItemId,
+                      serviceId,
+                      serviceName,
+                      subServiceId,
+                      subServiceName,
+                      mealPlanId,
+                      subMealPlanId,
+                      attemptedDate: date,
+                      // Store original occurrence info so the first cell also shows red
+                      originalDate: d,
+                      originalServiceId: sId,
+                      originalSubServiceId: ssId,
+                      originalMealPlanId: mpId,
+                      originalSubMealPlanId: smpId,
+                      originalServiceName: origServiceName,
+                      originalSubServiceName: origSubServiceName,
+                      time: new Date().toISOString(),
+                    }
+                    addRepetitionLog(entry)
+                    toast({
+                      title: "Duplicate in week",
+                      description: `${entry.itemName} already exists on ${d} in ${origServiceName} / ${origSubServiceName}.`,
+                      variant: "destructive",
+                    })
+                    break // Found one occurrence, log it and break innermost
+                  }
+                }
+                if (foundInWeek) break
+              }
+              if (foundInWeek) break
+            }
+            if (foundInWeek) break
           }
-          addRepetitionLog(entry)
-          toast({
-            title: "Duplicate in week",
-            description: `${entry.itemName} already exists in the week for this row.`,
-            variant: "destructive",
-          })
+          if (foundInWeek) break
         }
       }
 
-      const prevHas =
-        prevWeekMap &&
-        prevWeekMap[date] &&
-        prevWeekMap[date][serviceId] &&
-        prevWeekMap[date][serviceId][subServiceId] &&
-        prevWeekMap[date][serviceId][subServiceId][mealPlanId] &&
-        prevWeekMap[date][serviceId][subServiceId][mealPlanId][subMealPlanId] &&
-        prevWeekMap[date][serviceId][subServiceId][mealPlanId][subMealPlanId].includes(menuItemId)
-
-      if (prevHas && !inWeek) {
-        if (!isRepeatAllowed) {
-          const entry = {
-            type: "Prev-week repeat",
-            itemId: menuItemId,
-            itemName: menuItems.find((m) => m.id === menuItemId)?.name || menuItemId,
-            serviceId,
-            serviceName,
-            subServiceId,
-            subServiceName,
-            mealPlanId,
-            subMealPlanId,
-            prevDate: (() => {
-              const d = new Date(date)
-              d.setDate(d.getDate() - 7)
-              return d.toISOString().split("T")[0]
-            })(),
-            attemptedDate: date,
-            time: new Date().toISOString(),
+      // --- GLOBAL PREV WEEK CHECK: Scan ALL services/subServices/mealPlans/subMealPlans in prev week ---
+      if (!foundInWeek && !isRepeatAllowed && prevWeekMap && prevWeekMap[date]) {
+        let prevFound = false
+        const prevDayData = prevWeekMap[date]
+        for (const sId of Object.keys(prevDayData)) {
+          for (const ssId of Object.keys(prevDayData[sId] || {})) {
+            for (const mpId of Object.keys(prevDayData[sId][ssId] || {})) {
+              for (const smpId of Object.keys(prevDayData[sId][ssId][mpId] || {})) {
+                const prevItems = prevDayData[sId][ssId][mpId][smpId]
+                if (Array.isArray(prevItems) && prevItems.includes(menuItemId)) {
+                  prevFound = true
+                  const d = new Date(date)
+                  d.setDate(d.getDate() - 7)
+                  const prevDate = d.toISOString().split("T")[0]
+                  const entry = {
+                    type: "Prev-week repeat",
+                    itemId: menuItemId,
+                    itemName: menuItems.find((m) => m.id === menuItemId)?.name || menuItemId,
+                    serviceId,
+                    serviceName,
+                    subServiceId,
+                    subServiceName,
+                    mealPlanId,
+                    subMealPlanId,
+                    prevDate,
+                    attemptedDate: date,
+                    originalDate: date,
+                    originalServiceId: sId,
+                    originalSubServiceId: ssId,
+                    originalMealPlanId: mpId,
+                    originalSubMealPlanId: smpId,
+                    time: new Date().toISOString(),
+                  }
+                  addRepetitionLog(entry)
+                  toast({
+                    title: "Repeat from previous week",
+                    description: `${entry.itemName} was used on ${prevDate}.`,
+                    variant: "destructive",
+                  })
+                  break
+                }
+              }
+              if (prevFound) break
+            }
+            if (prevFound) break
           }
-          addRepetitionLog(entry)
-          toast({
-            title: "Repeat from previous week",
-            description: `${entry.itemName} was used on ${entry.prevDate}.`,
-            variant: "destructive",
-          })
+          if (prevFound) break
         }
       }
 
@@ -1728,6 +2544,7 @@ export default function CombinedMenuCreationPage() {
         }
         
         newMenu[date][serviceId][subServiceId][mealPlanId][subMealPlanId] = {
+          ...currentCell,
           menuItemIds: [...existingIds, menuItemId],
         }
         return newMenu
@@ -1747,26 +2564,38 @@ export default function CombinedMenuCreationPage() {
     ) => {
       setCombinedMenu((prev) => {
         const newMenu = { ...prev }
-        if (newMenu[date]?.[serviceId]?.[subServiceId]?.[mealPlanId]?.[subMealPlanId]) {
-          newMenu[date][serviceId][subServiceId][mealPlanId][subMealPlanId] = {
-            menuItemIds: newMenu[date][serviceId][subServiceId][mealPlanId][subMealPlanId].menuItemIds.filter(
-              (id) => id !== menuItemId,
-            ),
+        const cell = newMenu[date]?.[serviceId]?.[subServiceId]?.[mealPlanId]?.[subMealPlanId]
+        if (cell) {
+            
+          // Remove item from menuItemIds
+          cell.menuItemIds = cell.menuItemIds.filter((id) => id !== menuItemId)
+          
+          // Remove item from customAssignments if present
+          if (cell.customAssignments && cell.customAssignments[menuItemId] !== undefined) {
+              const newCustom = { ...cell.customAssignments }
+              delete newCustom[menuItemId]
+              cell.customAssignments = Object.keys(newCustom).length > 0 ? newCustom : undefined
           }
+
         }
         return newMenu
       })
 
-      // 2. Remove associated repetition logs
-      const logsToRemove = repetitionLog.filter(
-        (log) =>
-          log.itemId === menuItemId &&
-          log.attemptedDate === date &&
+      // 2. Remove associated repetition logs (both attempted cell and original first-occurrence cell)
+      const logsToRemove = repetitionLog.filter((log) => {
+        if (log.itemId !== menuItemId) return false
+        const isAttempted = log.attemptedDate === date &&
           log.serviceId === serviceId &&
           log.subServiceId === subServiceId &&
           log.mealPlanId === mealPlanId &&
-          log.subMealPlanId === subMealPlanId,
-      )
+          log.subMealPlanId === subMealPlanId
+        const isOriginal = log.originalDate === date &&
+          log.originalServiceId === serviceId &&
+          log.originalSubServiceId === subServiceId &&
+          log.originalMealPlanId === mealPlanId &&
+          log.originalSubMealPlanId === subMealPlanId
+        return isAttempted || isOriginal
+      })
 
       if (logsToRemove.length > 0) {
         const ids = logsToRemove.map((l) => l.id).filter((id) => id)
@@ -1798,6 +2627,157 @@ export default function CombinedMenuCreationPage() {
     },
     [repetitionLog],
   )
+  
+  // NEW: Function to update custom assignments for a cell
+  const updateCustomAssignments = useCallback(
+    (
+      date: string,
+      serviceId: string,
+      subServiceId: string,
+      mealPlanId: string,
+      subMealPlanId: string,
+      newAssignments: MenuCell['customAssignments']
+    ) => {
+      setCombinedMenu(prev => {
+        // Deep clone path for safety
+        const newMenu = { ...prev }
+        if (!newMenu[date]) return prev
+        newMenu[date] = { ...newMenu[date] }
+        if (!newMenu[date][serviceId]) return prev
+        newMenu[date][serviceId] = { ...newMenu[date][serviceId] }
+        if (!newMenu[date][serviceId][subServiceId]) return prev
+        newMenu[date][serviceId][subServiceId] = { ...newMenu[date][serviceId][subServiceId] }
+        if (!newMenu[date][serviceId][subServiceId][mealPlanId]) return prev
+        newMenu[date][serviceId][subServiceId][mealPlanId] = { ...newMenu[date][serviceId][subServiceId][mealPlanId] }
+
+        const currentCell = newMenu[date][serviceId][subServiceId][mealPlanId][subMealPlanId] || { menuItemIds: [] }
+        
+        // If the new assignments object is empty or all items match default structure, save undefined.
+        const filteredAssignments = 
+            (newAssignments && Object.keys(newAssignments).length > 0) ? newAssignments : undefined
+
+        newMenu[date][serviceId][subServiceId][mealPlanId][subMealPlanId] = {
+          ...currentCell,
+          customAssignments: filteredAssignments
+        }
+        return newMenu
+      })
+      toast({title: "Assignments Updated", description: "Custom item assignments set for the cell."})
+    },
+    [] 
+  );
+
+  // --- Conflict Analysis Handler ---
+  const handleAnalyzeConflicts = useCallback((cellLogs: any[], currentContext: any) => {
+    const conflictItemIds = Array.from(new Set(cellLogs.map((l: any) => l.itemId)));
+    
+    const analysis = conflictItemIds.map(itemId => {
+      const item = menuItems.find(i => i.id === itemId);
+      const itemName = item?.name || "Unknown Item";
+      const occurrences: any[] = [];
+
+      dateRange.forEach(({ date, day }) => {
+        const dayData = combinedMenu[date];
+        if (!dayData) return;
+
+        Object.keys(dayData).forEach(sId => {
+          const sData = dayData[sId];
+          Object.keys(sData).forEach(ssId => {
+            const ssData = sData[ssId];
+            Object.keys(ssData).forEach(mpId => {
+              const mpData = ssData[mpId];
+              Object.keys(mpData).forEach(smpId => {
+                const cell = mpData[smpId];
+                if (cell?.menuItemIds?.includes(itemId)) {
+                  const serviceName = services.find(s => s.id === sId)?.name;
+                  const subServiceName = subServices.find(ss => ss.id === ssId)?.name;
+
+                  // Get custom assignments for this item
+                  const customAssignments = cell.customAssignments?.[itemId];
+                  
+                  // Map custom assignments to include company and building names
+                  let companyData: any[] = [];
+                  if (customAssignments) {
+                    companyData = customAssignments.map(ca => {
+                      // Find company and building names from the loaded data
+                      const company = companies?.find((c: any) => c.id === ca.companyId);
+                      const building = buildings?.find((b: any) => b.id === ca.buildingId);
+                      return {
+                        companyId: ca.companyId,
+                        buildingId: ca.buildingId,
+                        companyName: company?.name || ca.companyId,
+                        buildingName: building?.name || ca.buildingId,
+                        isCustom: true
+                      };
+                    });
+                  } else {
+                    // No custom assignment - get from meal plan structure
+                    const dayKey = day.toLowerCase();
+                    mealPlanStructureAssignments?.forEach((assignment: any) => {
+                      const company = companies?.find((c: any) => c.id === assignment.companyId);
+                      const building = buildings?.find((b: any) => b.id === assignment.buildingId);
+                      if (!company || !building) return;
+                      
+                      const dayStructure = assignment.weekStructure?.[dayKey] || [];
+                      const serviceInDay = dayStructure.find((s: any) => s.serviceId === sId);
+                      if (!serviceInDay) return;
+                      
+                      const subServiceInDay = serviceInDay.subServices?.find((ss: any) => ss.subServiceId === ssId);
+                      if (!subServiceInDay) return;
+                      
+                      const mealPlanInDay = subServiceInDay.mealPlans?.find((mp: any) => mp.mealPlanId === mpId);
+                      if (!mealPlanInDay) return;
+                      
+                      const subMealPlanInDay = mealPlanInDay.subMealPlans?.find((smp: any) => smp.subMealPlanId === smpId);
+                      if (!subMealPlanInDay) return;
+                      
+                      // Only add if not already in list
+                      const exists = companyData.find(cd => cd.companyId === company.id && cd.buildingId === building.id);
+                      if (!exists) {
+                        companyData.push({
+                          companyId: company.id,
+                          buildingId: building.id,
+                          companyName: company.name,
+                          buildingName: building.name,
+                          isCustom: false
+                        });
+                      }
+                    });
+                  }
+
+                  occurrences.push({
+                    date,
+                    day,
+                    serviceName,
+                    subServiceName,
+                    isCurrentCell: 
+                      date === currentContext.date &&
+                      sId === currentContext.serviceId &&
+                      ssId === currentContext.subServiceId &&
+                      mpId === currentContext.mealPlanId &&
+                      smpId === currentContext.subMealPlanId,
+                    hasCustomAssignment: !!customAssignments,
+                    companyData,
+                    mealPlanId: mpId
+                  });
+                }
+              });
+            });
+          });
+        });
+      });
+
+      return {
+        itemId,
+        itemName,
+        totalCount: occurrences.length,
+        occurrences
+      };
+    });
+
+    setConflictAnalysisData(analysis);
+    setConflictDrawerOpen(true);
+  }, [combinedMenu, dateRange, menuItems, services, subServices, mealPlans, subMealPlans, companies, buildings, mealPlanStructureAssignments]);
 
   const handleCreateItem = useCallback(async (name: string, category: string) => {
     try {
@@ -1833,7 +2813,15 @@ export default function CombinedMenuCreationPage() {
                  Object.entries(ssData).forEach(([mpId, mpData]) => {
                      const filteredMP: any = {}
                      Object.entries(mpData).forEach(([smpId, cell]) => {
-                         if(cell.menuItemIds?.length > 0) filteredMP[smpId] = cell
+                         if(cell.menuItemIds?.length > 0) {
+                            // Ensure only necessary fields are saved
+                            const savedCell: MenuCell = { 
+                                menuItemIds: cell.menuItemIds,
+                                selectedDescriptions: cell.selectedDescriptions,
+                                customAssignments: cell.customAssignments, // Include custom assignments
+                            }
+                            filteredMP[smpId] = savedCell
+                         }
                      })
                      if(Object.keys(filteredMP).length > 0) filteredSS[mpId] = filteredMP
                  })
@@ -1850,7 +2838,9 @@ export default function CombinedMenuCreationPage() {
         return
       }
 
-      const combinedMenuData = { startDate, endDate, menuData: filtered, status: "active" }
+      // Prepare menu data for Firebase (keeps original nested structure + custom assignments if any)
+      const preparedMenuData = prepareMenuDataForSave(filtered)
+      const combinedMenuData = { startDate, endDate, menuData: preparedMenuData, status: "active" }
       const savedMenu = await combinedMenusService.add(combinedMenuData)
       await generateCompanyMenus(savedMenu.id, filtered)
       toast({ title: "Success", description: "Combined menu saved and company menus generated successfully" })
@@ -1875,6 +2865,7 @@ export default function CombinedMenuCreationPage() {
 
   const generateCompanyMenus = async (combinedMenuId: string, filteredMenuData: CombinedMenuData) => {
     try {
+      // Re-fetch necessary data to ensure freshness during generation
       const [companies, buildings, structureAssignments, mealPlanStructureAssignments] = await Promise.all([
         companiesService.getAll(),
         buildingsService.getAll(),
@@ -1888,9 +2879,11 @@ export default function CombinedMenuCreationPage() {
         const companyBuildings = buildings.filter((b: any) => b.companyId === company.id && b.status === "active")
 
         for (const building of companyBuildings) {
+          // Check for structural assignment linking company/building to weekly structure
           const structureAssignment = structureAssignments.find(
             (sa: any) => sa.companyId === company.id && sa.buildingId === building.id && sa.status === "active",
           )
+          // Check for meal plan structure assignment linking company/building to meal plan types
           const mealPlanStructureData = mealPlanStructureAssignments.find(
             (mpsa: any) => mpsa.companyId === company.id && mpsa.buildingId === building.id && mpsa.status === "active",
           )
@@ -1904,7 +2897,10 @@ export default function CombinedMenuCreationPage() {
               filteredMenuData,
               dateRange,
             )
-            await companyMenusService.add({ ...companyMenu, combinedMenuId, status: "active" })
+            // Only save if the companyMenu actually contains items (i.e., menuData is not empty)
+            if (Object.keys(companyMenu.menuData).length > 0) {
+                await companyMenusService.add({ ...companyMenu, combinedMenuId, status: "active" })
+            }
           }
         }
       }
@@ -1913,7 +2909,8 @@ export default function CombinedMenuCreationPage() {
       throw error
     }
   }
-
+  
+  // UPDATED: Logic to respect customAssignments
   const buildCompanyMenu = (
     company: any,
     building: any,
@@ -1939,24 +2936,57 @@ export default function CombinedMenuCreationPage() {
           companyMenuData[date][serviceId] = {}
 
           serviceMealPlanStructure.subServices.forEach((subService: any) => {
-            if (!companyMenuData[date][serviceId][subService.subServiceId]) {
-              companyMenuData[date][serviceId][subService.subServiceId] = {}
+            const subServiceId = subService.subServiceId
+            if (!companyMenuData[date][serviceId][subServiceId]) {
+              companyMenuData[date][serviceId][subServiceId] = {}
             }
 
             subService.mealPlans.forEach((mealPlan: any) => {
               const mealPlanId = mealPlan.mealPlanId
 
-              if (combinedMenu[date][serviceId][subService.subServiceId]?.[mealPlanId]) {
-                if (!companyMenuData[date][serviceId][subService.subServiceId][mealPlanId]) {
-                  companyMenuData[date][serviceId][subService.subServiceId][mealPlanId] = {}
+              if (combinedMenu[date][serviceId][subServiceId]?.[mealPlanId]) {
+                if (!companyMenuData[date][serviceId][subServiceId][mealPlanId]) {
+                  companyMenuData[date][serviceId][subServiceId][mealPlanId] = {}
                 }
 
                 mealPlan.subMealPlans.forEach((subMealPlan: any) => {
                   const subMealPlanId = subMealPlan.subMealPlanId
+                  
+                  const combinedCell: MenuCell | undefined = combinedMenu[date][serviceId][subServiceId][mealPlanId]?.[subMealPlanId]
 
-                  if (combinedMenu[date][serviceId][subService.subServiceId][mealPlanId]?.[subMealPlanId]) {
-                    companyMenuData[date][serviceId][subService.subServiceId][mealPlanId][subMealPlanId] = {
-                      ...combinedMenu[date][serviceId][subService.subServiceId][mealPlanId][subMealPlanId],
+                  if (combinedCell && combinedCell.menuItemIds.length > 0) {
+                    
+                    const finalItems: string[] = [];
+                    const customAssignments = combinedCell.customAssignments || {};
+                    const selectedDescriptions = combinedCell.selectedDescriptions || {};
+                    
+                    // --- APPLY CUSTOM ASSIGNMENT LOGIC ---
+                    combinedCell.menuItemIds.forEach(itemId => {
+                        const itemCustomAssignments = customAssignments[itemId];
+                        
+                        if (itemCustomAssignments !== undefined) {
+                            // Custom rule exists: Check if this company/building is explicitly included.
+                            const isAssignedCustom = itemCustomAssignments.some(a => 
+                                a.companyId === company.id && a.buildingId === building.id
+                            );
+                            
+                            if (isAssignedCustom) {
+                                finalItems.push(itemId);
+                            }
+                        } else {
+                            // No custom rule: Item is included by default because the outer loops guarantee 
+                            // this company/building is structurally assigned to this cell path.
+                            finalItems.push(itemId); 
+                        }
+                    });
+
+                    if (finalItems.length > 0) {
+                        companyMenuData[date][serviceId][subServiceId][mealPlanId][subMealPlanId] = {
+                            menuItemIds: finalItems,
+                            selectedDescriptions: Object.fromEntries(
+                                finalItems.map(itemId => [itemId, selectedDescriptions[itemId] || ''])
+                            )
+                        }
                     }
                   }
                 })
@@ -1965,6 +2995,11 @@ export default function CombinedMenuCreationPage() {
           })
         }
       })
+      
+      // Cleanup: Remove date entry if it has no menu data after filtering
+      if (Object.keys(companyMenuData[date]).length === 0) {
+          delete companyMenuData[date];
+      }
     })
 
     return {
@@ -2005,72 +3040,110 @@ export default function CombinedMenuCreationPage() {
       const isRepeatAllowed = currentSubMealPlan?.isRepeatPlan || false
 
       items.forEach((menuItemId) => {
-        const inWeek = dates.some((d) => {
-          if (d === date) return false
-          const cell = combinedMenu[d]?.[serviceId]?.[subServiceId]?.[mealPlanId]?.[subMealPlanId]
-          return cell?.menuItemIds?.includes(menuItemId)
-        })
+        if (isRepeatAllowed) return
 
-        if (inWeek) {
-          if (!isRepeatAllowed) {
-            const entry = {
-              type: "In-week duplicate",
-              itemId: menuItemId,
-              itemName: menuItems.find((m) => m.id === menuItemId)?.name || menuItemId,
-              serviceId,
-              serviceName,
-              subServiceId,
-              subServiceName,
-              mealPlanId,
-              subMealPlanId,
-              attemptedDate: date,
-              time: new Date().toISOString(),
+        // --- GLOBAL CONFLICT CHECK across ALL services/subServices/mealPlans/subMealPlans ---
+        let foundInWeek = false
+        for (const d of dates) {
+          if (d === date) continue
+          const dayData = combinedMenu[d]
+          if (!dayData) continue
+          for (const sId of Object.keys(dayData)) {
+            for (const ssId of Object.keys(dayData[sId] || {})) {
+              for (const mpId of Object.keys(dayData[sId][ssId] || {})) {
+                for (const smpId of Object.keys(dayData[sId][ssId][mpId] || {})) {
+                  const cell = dayData[sId][ssId][mpId][smpId]
+                  if (cell?.menuItemIds?.includes(menuItemId)) {
+                    foundInWeek = true
+                    const origServiceName = services.find((s) => s.id === sId)?.name || "Service"
+                    const origSubServiceName = subServices.find((s) => s.id === ssId)?.name || "Sub-Service"
+                    addRepetitionLog({
+                      type: "In-week duplicate",
+                      itemId: menuItemId,
+                      itemName: menuItems.find((m) => m.id === menuItemId)?.name || menuItemId,
+                      serviceId, serviceName, subServiceId, subServiceName, mealPlanId, subMealPlanId,
+                      attemptedDate: date,
+                      originalDate: d, originalServiceId: sId, originalSubServiceId: ssId,
+                      originalMealPlanId: mpId, originalSubMealPlanId: smpId,
+                      originalServiceName: origServiceName, originalSubServiceName: origSubServiceName,
+                      time: new Date().toISOString(),
+                    })
+                    break
+                  }
+                }
+                if (foundInWeek) break
+              }
+              if (foundInWeek) break
             }
-            addRepetitionLog(entry)
+            if (foundInWeek) break
           }
+          if (foundInWeek) break
         }
 
-        const prevHas =
-          prevWeekMap &&
-          prevWeekMap[date] &&
-          prevWeekMap[date][serviceId] &&
-          prevWeekMap[date][serviceId][subServiceId] &&
-          prevWeekMap[date][serviceId][subServiceId][mealPlanId] &&
-          prevWeekMap[date][serviceId][subServiceId][mealPlanId][subMealPlanId] &&
-          prevWeekMap[date][serviceId][subServiceId][mealPlanId][subMealPlanId].includes(menuItemId)
-
-        if (prevHas) {
-          if (!isRepeatAllowed) {
-            const entry = {
-              type: "Prev-week repeat",
-              itemId: menuItemId,
-              itemName: menuItems.find((m) => m.id === menuItemId)?.name || menuItemId,
-              serviceId,
-              serviceName,
-              subServiceId,
-              subServiceName,
-              mealPlanId,
-              subMealPlanId,
-              prevDate: (() => {
-                const d = new Date(date)
-                d.setDate(d.getDate() - 7)
-                return d.toISOString().split("T")[0]
-              })(),
-              attemptedDate: date,
-              time: new Date().toISOString(),
+        // --- GLOBAL PREV WEEK CHECK ---
+        if (!foundInWeek && prevWeekMap && prevWeekMap[date]) {
+          let prevFound = false
+          const prevDayData = prevWeekMap[date]
+          for (const sId of Object.keys(prevDayData)) {
+            for (const ssId of Object.keys(prevDayData[sId] || {})) {
+              for (const mpId of Object.keys(prevDayData[sId][ssId] || {})) {
+                for (const smpId of Object.keys(prevDayData[sId][ssId][mpId] || {})) {
+                  const prevItems = prevDayData[sId][ssId][mpId][smpId]
+                  if (Array.isArray(prevItems) && prevItems.includes(menuItemId)) {
+                    prevFound = true
+                    const dd = new Date(date); dd.setDate(dd.getDate() - 7)
+                    addRepetitionLog({
+                      type: "Prev-week repeat",
+                      itemId: menuItemId,
+                      itemName: menuItems.find((m) => m.id === menuItemId)?.name || menuItemId,
+                      serviceId, serviceName, subServiceId, subServiceName, mealPlanId, subMealPlanId,
+                      prevDate: dd.toISOString().split("T")[0],
+                      attemptedDate: date,
+                      originalDate: date, originalServiceId: sId, originalSubServiceId: ssId,
+                      originalMealPlanId: mpId, originalSubMealPlanId: smpId,
+                      time: new Date().toISOString(),
+                    })
+                    break
+                  }
+                }
+                if (prevFound) break
+              }
+              if (prevFound) break
             }
-            addRepetitionLog(entry)
+            if (prevFound) break
           }
         }
       })
 
       setCombinedMenu((prev) => {
         const newMenu = { ...prev }
+        // Ensure path exists safely
         if (!newMenu[date]) newMenu[date] = {}
         if (!newMenu[date][serviceId]) newMenu[date][serviceId] = {}
         if (!newMenu[date][serviceId][subServiceId]) newMenu[date][serviceId][subServiceId] = {}
         if (!newMenu[date][serviceId][subServiceId][mealPlanId]) newMenu[date][serviceId][subServiceId][mealPlanId] = {}
-        newMenu[date][serviceId][subServiceId][mealPlanId][subMealPlanId] = { menuItemIds: items.slice() }
+        
+        const currentCell = newMenu[date][serviceId][subServiceId][mealPlanId][subMealPlanId] || { menuItemIds: [] }
+
+        // Preserve custom assignments when applying items via drag/paste
+        // Only keep assignments for items that are being applied
+        let preservedAssignments = currentCell.customAssignments
+        if (preservedAssignments) {
+          // Filter to keep only assignments for items that remain
+          const filteredAssignments: any = {}
+          items.forEach(itemId => {
+            if (preservedAssignments[itemId]) {
+              filteredAssignments[itemId] = preservedAssignments[itemId]
+            }
+          })
+          preservedAssignments = Object.keys(filteredAssignments).length > 0 ? filteredAssignments : undefined
+        }
+        
+        newMenu[date][serviceId][subServiceId][mealPlanId][subMealPlanId] = { 
+            ...currentCell, 
+            menuItemIds: items.slice(),
+            customAssignments: preservedAssignments // Preserve and filter assignments
+        }
         return newMenu
       })
     },
@@ -2206,7 +3279,7 @@ export default function CombinedMenuCreationPage() {
 
       {showModal && (
         <>
-          <div className="fixed inset-0  bg-opacity-50 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0  bg-opacity-50 z-50 flex flex-col">
             <div className="bg-white rounded-lg w-full h-full flex flex-col  absolute">
               <div className="flex items-center justify-between p-4 border-b bg-gradient-to-r from-white to-blue-50">
                 <div>
@@ -2307,6 +3380,9 @@ export default function CombinedMenuCreationPage() {
                       companies={companies}
                       buildings={buildings}
                       structureAssignments={mealPlanStructureAssignments}
+                      onUpdateCustomAssignments={updateCustomAssignments}
+                      repetitionLog={repetitionLog}
+                      onShowConflicts={handleAnalyzeConflicts}
                     />
                   )
                 })}
@@ -2419,6 +3495,13 @@ export default function CombinedMenuCreationPage() {
               )}
             </div>
           </div>
+
+          {/* Conflict Analysis Drawer */}
+          <ConflictDetailsDrawer 
+            isOpen={conflictDrawerOpen}
+            onClose={() => setConflictDrawerOpen(false)}
+            analysisData={conflictAnalysisData}
+          />
         </>
       )}
 

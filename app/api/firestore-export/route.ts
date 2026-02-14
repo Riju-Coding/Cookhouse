@@ -1,3 +1,5 @@
+export const runtime = "nodejs";
+
 import { NextResponse } from "next/server"
 import { adminDb } from "@/lib/firebaseAdmin"
 
@@ -9,7 +11,6 @@ export async function GET() {
     for (const col of collections) {
       let snap
 
-      // Try common timestamp fields
       try {
         snap = await col.orderBy("createdAt", "desc").limit(1).get()
       } catch {
@@ -19,7 +20,6 @@ export async function GET() {
           try {
             snap = await col.orderBy("updatedAt", "desc").limit(1).get()
           } catch {
-            // Fallback if no ordering possible
             snap = await col.limit(1).get()
           }
         }
