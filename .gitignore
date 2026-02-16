@@ -9,7 +9,7 @@
 
 # production
 /build
-lib/serviceAccountKey.json
+
 
 # debug
 npm-debug.log*
