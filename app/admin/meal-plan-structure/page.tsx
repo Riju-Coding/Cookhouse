@@ -29,6 +29,9 @@ import {
   ClipboardPaste,
   Search,
   Download,
+  Eye,
+  Plus,
+  Trash2,
 } from "lucide-react"
 import { toast } from "@/hooks/use-toast"
 import {
@@ -119,6 +122,14 @@ export default function MealPlanStructurePage() {
   const [isDataLoading, setIsDataLoading] = useState(true)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isExporting, setIsExporting] = useState(false)
+  
+  // New states for View All Companies - Full Screen Editor
+  const [isViewAllModalOpen, setIsViewAllModalOpen] = useState(false)
+  const [isLoadingAllData, setIsLoadingAllData] = useState(false)
+  const [allCompaniesWithBuildings, setAllCompaniesWithBuildings] = useState<Array<{ company: Company; buildings: Building[] }>>([])
+  const [allBuildingsWeeklyStructure, setAllBuildingsWeeklyStructure] = useState<Record<string, WeeklyStructure>>({})
+  const [editingBuildingId, setEditingBuildingId] = useState<string | null>(null)
+  const [editingBuildingStructure, setEditingBuildingStructure] = useState<WeeklyStructure>({})
 
   useEffect(() => {
     const fetchData = async () => {
@@ -416,6 +427,104 @@ export default function MealPlanStructurePage() {
     )
   }
 
+  const handleViewAllCompaniesAndBuildings = async () => {
+    setIsLoadingAllData(true)
+    try {
+      const allBuildings = await buildingsService.getAll()
+      const mealPlanAssignments = await mealPlanStructureAssignmentsService.getAll()
+      const structureAssignments = await structureAssignmentsService.getAll()
+      
+      const data: Array<{ company: Company; buildings: Building[] }> = []
+      const weeklyData: Record<string, WeeklyStructure> = {}
+      
+      for (const company of companies) {
+        const companyBuildings = allBuildings
+          .filter((b) => b.companyId === company.id && (!b.status || b.status === "active"))
+          .sort((a, b) => (a.name || "").localeCompare(b.name || ""))
+        
+        data.push({ company, buildings: companyBuildings })
+
+        // Load structure for each building
+        for (const building of companyBuildings) {
+          const buildingId = building.id
+          weeklyData[buildingId] = {}
+
+          // Initialize daily structures
+          DAYS.forEach((day) => {
+            weeklyData[buildingId][day] = []
+          })
+
+          // Find meal plan assignments for this building
+          const buildingMealPlanAssignment = mealPlanAssignments.find(
+            (s) => s.companyId === company.id && s.buildingId === buildingId
+          )
+
+          if (buildingMealPlanAssignment && buildingMealPlanAssignment.weekStructure) {
+            weeklyData[buildingId] = buildingMealPlanAssignment.weekStructure
+          }
+        }
+      }
+      
+      setAllCompaniesWithBuildings(data)
+      setAllBuildingsWeeklyStructure(weeklyData)
+      setIsViewAllModalOpen(true)
+    } catch (error) {
+      console.error("Error loading companies and buildings:", error)
+      toast({ title: "Error", description: "Failed to load companies and buildings", variant: "destructive" })
+    } finally {
+      setIsLoadingAllData(false)
+    }
+  }
+
+  const handleRemoveSubService = (day: string, serviceId: string, subServiceId: string) => {
+    setWeeklyStructure((prev) => {
+      const dayServices = prev[day] ? [...prev[day]] : []
+      const serviceIndex = dayServices.findIndex((s) => s.serviceId === serviceId)
+      
+      if (serviceIndex !== -1) {
+        const service = { ...dayServices[serviceIndex] }
+        service.subServices = service.subServices.filter((s) => s.subServiceId !== subServiceId)
+        
+        if (service.subServices.length === 0) {
+          dayServices.splice(serviceIndex, 1)
+        } else {
+          dayServices[serviceIndex] = service
+        }
+        
+        return { ...prev, [day]: dayServices }
+      }
+      return prev
+    })
+  }
+
+  const handleAddSubService = (day: string, serviceId: string, subServiceId: string) => {
+    const subServiceName = getSubServiceName(subServiceId)
+    setWeeklyStructure((prev) => {
+      const dayServices = prev[day] ? [...prev[day]] : []
+      let serviceIndex = dayServices.findIndex((s) => s.serviceId === serviceId)
+
+      if (serviceIndex === -1) {
+        dayServices.push({ serviceId, serviceName: getServiceName(serviceId), subServices: [] })
+        serviceIndex = dayServices.length - 1
+      }
+
+      const service = { ...dayServices[serviceIndex] }
+      const subServicesList = [...service.subServices]
+      
+      if (!subServicesList.some((s) => s.subServiceId === subServiceId)) {
+        subServicesList.push({
+          subServiceId,
+          subServiceName,
+          mealPlans: [],
+        })
+      }
+
+      service.subServices = subServicesList
+      dayServices[serviceIndex] = service
+      return { ...prev, [day]: dayServices }
+    })
+  }
+
   const handleExportAllStructures = async () => {
     setIsExporting(true)
     try {
@@ -540,20 +649,31 @@ export default function MealPlanStructurePage() {
 
   return (
     <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold">Meal Plan Structure</h1>
           <p className="text-gray-500">Configure meal plans for building services</p>
         </div>
-        <Button
-          onClick={handleExportAllStructures}
-          disabled={isExporting || companies.length === 0}
-          variant="secondary"
-          className="gap-2"
-        >
-          {isExporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-          {isExporting ? "Exporting..." : "Export All"}
-        </Button>
+        <div className="flex gap-2 flex-wrap">
+          <Button
+            onClick={handleViewAllCompaniesAndBuildings}
+            disabled={isLoadingAllData || companies.length === 0}
+            variant="outline"
+            className="gap-2"
+          >
+            {isLoadingAllData ? <Loader2 className="h-4 w-4 animate-spin" /> : <Eye className="h-4 w-4" />}
+            {isLoadingAllData ? "Loading..." : "View All Companies & Buildings"}
+          </Button>
+          <Button
+            onClick={handleExportAllStructures}
+            disabled={isExporting || companies.length === 0}
+            variant="secondary"
+            className="gap-2"
+          >
+            {isExporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+            {isExporting ? "Exporting..." : "Export All"}
+          </Button>
+        </div>
       </div>
 
       <Card>
@@ -790,18 +910,93 @@ export default function MealPlanStructurePage() {
                   <TableBody className="bg-white">
                     {matrixRows.map((svc) => (
                       <Fragment key={`svc-group-${svc.serviceId}`}>
-                        <TableRow className="bg-blue-50 hover:bg-blue-50/80">
+                        <TableRow className="bg-blue-50 hover:bg-blue-50/80 group">
                           <TableCell className="font-bold text-blue-900 py-3 border-b border-r sticky left-0 bg-blue-50 z-20">
-                            {svc.serviceName}
+                            <div className="flex items-center justify-between gap-2">
+                              <span>{svc.serviceName}</span>
+                              <Dialog>
+                                <DialogTrigger asChild>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="opacity-0 group-hover:opacity-100 transition-opacity h-6 w-6 p-0"
+                                  >
+                                    <Plus className="h-3 w-3 text-green-600" />
+                                  </Button>
+                                </DialogTrigger>
+                                <DialogContent className="sm:max-w-md">
+                                  <DialogHeader>
+                                    <DialogTitle>Add Sub-Service to {svc.serviceName}</DialogTitle>
+                                    <DialogDescription>
+                                      Select a sub-service to add to this service
+                                    </DialogDescription>
+                                  </DialogHeader>
+                                  <div className="space-y-4 max-h-[300px] overflow-y-auto">
+                                    {subServices
+                                      .filter((ss) => !svc.subServices.some((s) => s.subServiceId === ss.id))
+                                      .map((subService) => (
+                                        <Button
+                                          key={subService.id}
+                                          variant="outline"
+                                          className="w-full justify-start"
+                                          onClick={() => {
+                                            DAYS.forEach((day) => {
+                                              handleAddSubService(day, svc.serviceId, subService.id)
+                                            })
+                                          }}
+                                        >
+                                          <Plus className="h-4 w-4 mr-2" />
+                                          {subService.name}
+                                        </Button>
+                                      ))}
+                                  </div>
+                                </DialogContent>
+                              </Dialog>
+                            </div>
                           </TableCell>
                           {/* ColSpan must be 8 (1 for label + 7 for days) */}
                           <TableCell colSpan={7} className="border-b bg-blue-50/30"></TableCell>
                         </TableRow>
 
                         {svc.subServices.map((subSvc) => (
-                          <TableRow key={`${svc.serviceId}-${subSvc.subServiceId}`} className="hover:bg-gray-50">
+                          <TableRow key={`${svc.serviceId}-${subSvc.subServiceId}`} className="hover:bg-gray-50 group">
                             <TableCell className="font-medium text-gray-600 border-r border-b pl-8 sticky left-0 bg-white z-20 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
-                              {subSvc.subServiceName}
+                              <div className="flex items-center justify-between gap-2">
+                                <span>{subSvc.subServiceName}</span>
+                                <Dialog>
+                                  <DialogTrigger asChild>
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      className="opacity-0 group-hover:opacity-100 transition-opacity h-6 w-6 p-0"
+                                    >
+                                      <Trash2 className="h-3 w-3 text-red-500" />
+                                    </Button>
+                                  </DialogTrigger>
+                                  <DialogContent className="sm:max-w-md">
+                                    <DialogHeader>
+                                      <DialogTitle>Remove Sub-Service</DialogTitle>
+                                      <DialogDescription>
+                                        Are you sure you want to remove <strong>{subSvc.subServiceName}</strong> from <strong>{svc.serviceName}</strong>? This will remove it from all days.
+                                      </DialogDescription>
+                                    </DialogHeader>
+                                    <div className="flex gap-2">
+                                      <Button variant="outline" className="flex-1">Cancel</Button>
+                                      <Button 
+                                        variant="destructive" 
+                                        className="flex-1"
+                                        onClick={() => {
+                                          DAYS.forEach((day) => {
+                                            handleRemoveSubService(day, svc.serviceId, subSvc.subServiceId)
+                                          })
+                                        }}
+                                      >
+                                        Remove
+                                      </Button>
+                                    </div>
+                                  </DialogContent>
+                                </Dialog>
+                              </div>
                             </TableCell>
 
                             {DAYS.map((day) => {
@@ -886,6 +1081,327 @@ export default function MealPlanStructurePage() {
               <Button onClick={handleSaveStructure} disabled={loading} className="min-w-[120px]">
                 {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
                 Save Changes
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* --- FULL SCREEN VIEW ALL COMPANIES & BUILDINGS EDITOR --- */}
+      <Dialog open={isViewAllModalOpen} onOpenChange={setIsViewAllModalOpen}>
+        <DialogContent className="!max-w-none !w-[100vw] !h-[100vh] !max-h-[100vh] !rounded-none !border-none !m-0 !p-0 flex flex-col bg-white shadow-none focus-visible:outline-none gap-0 !top-0 !left-0 !translate-x-0 !translate-y-0">
+          <DialogHeader className="p-4 border-b shrink-0 flex flex-row items-center justify-between space-y-0 bg-white">
+            <div>
+              <DialogTitle className="text-xl">All Companies & Buildings - Meal Plan Structure Editor</DialogTitle>
+              <DialogDescription className="mt-1">
+                View and edit meal plan structures for all companies and their buildings
+              </DialogDescription>
+            </div>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setIsViewAllModalOpen(false)}
+              className="h-8 w-8"
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          </DialogHeader>
+
+          <div className="flex-1 overflow-hidden relative bg-gray-50/50">
+            <ScrollArea className="h-full w-full">
+              <div className="p-6 pb-20">
+                {isLoadingAllData ? (
+                  <div className="flex items-center justify-center py-24">
+                    <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+                  </div>
+                ) : allCompaniesWithBuildings.length === 0 ? (
+                  <div className="text-center py-12 text-gray-500">No companies or buildings found</div>
+                ) : (
+                  <div className="space-y-8">
+                    {allCompaniesWithBuildings.map(({ company, buildings }) => (
+                      <div key={company.id} className="border-2 rounded-lg p-6 bg-white shadow-sm">
+                        <div className="flex items-center gap-3 mb-6 pb-4 border-b">
+                          <Building2 className="h-6 w-6 text-blue-600" />
+                          <h2 className="text-2xl font-bold text-gray-900">{company.name}</h2>
+                          <span className="text-sm bg-blue-100 text-blue-700 px-3 py-1 rounded-full font-medium">
+                            {buildings.length} {buildings.length === 1 ? "Building" : "Buildings"}
+                          </span>
+                        </div>
+
+                        {buildings.length === 0 ? (
+                          <div className="text-center py-8 text-gray-500 italic">No buildings assigned</div>
+                        ) : (
+                          <div className="space-y-6">
+                            {buildings.map((building) => {
+                              const buildingWeeklyStructure = allBuildingsWeeklyStructure[building.id] || {}
+                              const hasAssignments = Object.values(buildingWeeklyStructure).some(
+                                (dayServices) => dayServices && dayServices.length > 0
+                              )
+
+                              return (
+                                <div
+                                  key={building.id}
+                                  className="border rounded-lg p-4 bg-gradient-to-br from-gray-50 to-white hover:shadow-md transition-shadow"
+                                >
+                                  <div className="mb-4">
+                                    <h3 className="text-lg font-semibold text-gray-800">{building.name}</h3>
+                                    {building.address && (
+                                      <p className="text-sm text-gray-600">{building.address}</p>
+                                    )}
+                                  </div>
+
+                                  {!hasAssignments ? (
+                                    <div className="flex items-center justify-center py-12 border-2 border-dashed border-gray-300 rounded-lg bg-gray-50/50">
+                                      <div className="text-center">
+                                        <AlertCircle className="h-8 w-8 text-gray-400 mx-auto mb-2" />
+                                        <p className="text-gray-500">Nothing assigned</p>
+                                        <p className="text-xs text-gray-400 mt-1">Configure services and meal plans to get started</p>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <div className="flex flex-col gap-3">
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => {
+                                          setEditingBuildingId(building.id)
+                                          setEditingBuildingStructure(JSON.parse(JSON.stringify(buildingWeeklyStructure)))
+                                        }}
+                                        className="self-start"
+                                      >
+                                        Edit Structure
+                                      </Button>
+                                      <div className="overflow-x-auto">
+                                        <Table className="border-collapse text-sm">
+                                          <TableHeader className="sticky top-0 z-20 bg-blue-50">
+                                            <TableRow>
+                                              <TableHead className="w-[200px] font-bold bg-blue-50 border-r border-b text-gray-900 text-left">
+                                                Service / Sub-Service
+                                              </TableHead>
+                                              {DAYS.map((day) => (
+                                                <TableHead
+                                                  key={day}
+                                                  className="min-w-[180px] text-center capitalize font-semibold bg-blue-50 border-r border-b text-gray-900 text-xs"
+                                                >
+                                                  {day}
+                                                </TableHead>
+                                              ))}
+                                            </TableRow>
+                                          </TableHeader>
+                                          <TableBody>
+                                            {Object.entries(buildingWeeklyStructure)
+                                              .find(([_, dayServices]) => dayServices && dayServices.length > 0)?.[1]
+                                              ?.map((svc) => (
+                                                <Fragment key={`${building.id}-svc-${svc.serviceId}`}>
+                                                  <TableRow className="bg-blue-50/50 hover:bg-blue-50/80">
+                                                    <TableCell className="font-semibold text-blue-900 py-2 border-r border-b text-left">
+                                                      {svc.serviceName || "Unknown Service"}
+                                                    </TableCell>
+                                                    {DAYS.map((day) => (
+                                                      <TableCell key={day} className="border-r border-b text-center p-1">
+                                                        <div className="text-xs text-gray-600">—</div>
+                                                      </TableCell>
+                                                    ))}
+                                                  </TableRow>
+                                                  {svc.subServices.map((subSvc) => (
+                                                    <TableRow key={`${building.id}-subsvc-${subSvc.subServiceId}`} className="hover:bg-gray-50">
+                                                      <TableCell className="text-gray-700 py-2 border-r border-b pl-8 text-left text-sm">
+                                                        {subSvc.subServiceName || "Unknown Sub-Service"}
+                                                      </TableCell>
+                                                      {DAYS.map((day) => (
+                                                        <TableCell key={day} className="border-r border-b text-left p-2 text-xs">
+                                                          <div className="space-y-1">
+                                                            {subSvc.mealPlans && subSvc.mealPlans.length > 0 ? (
+                                                              subSvc.mealPlans.map((plan: any) => (
+                                                                <div key={plan.mealPlanId} className="flex flex-col bg-blue-50 p-1 rounded border border-blue-200">
+                                                                  <span className="font-medium text-gray-800">
+                                                                    {plan.mealPlanName || "Unknown Meal Plan"}
+                                                                  </span>
+                                                                  {plan.subMealPlans && plan.subMealPlans.length > 0 && (
+                                                                    <div className="ml-2 mt-1 space-y-0.5 border-l border-blue-300 pl-2">
+                                                                      {plan.subMealPlans.map((subPlan: any) => (
+                                                                        <div
+                                                                          key={subPlan.subMealPlanId}
+                                                                          className="text-gray-700 text-xs"
+                                                                        >
+                                                                          • {subPlan.subMealPlanName || "Unknown Sub-Meal Plan"}
+                                                                        </div>
+                                                                      ))}
+                                                                    </div>
+                                                                  )}
+                                                                </div>
+                                                              ))
+                                                            ) : (
+                                                              <span className="text-gray-400 italic">—</span>
+                                                            )}
+                                                          </div>
+                                                        </TableCell>
+                                                      ))}
+                                                    </TableRow>
+                                                  ))}
+                                                </Fragment>
+                                              )) || (
+                                              <TableRow>
+                                                <TableCell colSpan={8} className="text-center py-8 text-gray-500">
+                                                  No services configured
+                                                </TableCell>
+                                              </TableRow>
+                                            )}
+                                          </TableBody>
+                                        </Table>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              )
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </ScrollArea>
+          </div>
+
+          <DialogFooter className="p-4 border-t shrink-0 bg-white flex items-center justify-between">
+            <p className="text-sm text-gray-600">Full overview of all company and building meal plan structures</p>
+            <Button variant="outline" onClick={() => setIsViewAllModalOpen(false)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* --- EDIT BUILDING STRUCTURE MODAL (from View All) --- */}
+      <Dialog 
+        open={editingBuildingId !== null} 
+        onOpenChange={(open) => {
+          if (!open) {
+            setEditingBuildingId(null)
+            setEditingBuildingStructure({})
+          }
+        }}
+      >
+        <DialogContent className="!max-w-none !w-[100vw] !h-[100vh] !max-h-[100vh] !rounded-none !border-none !m-0 !p-0 flex flex-col bg-white shadow-none focus-visible:outline-none gap-0 !top-0 !left-0 !translate-x-0 !translate-y-0">
+          <DialogHeader className="p-4 border-b shrink-0 flex flex-row items-center justify-between space-y-0 bg-white">
+            <div>
+              <DialogTitle className="text-xl">
+                Edit Meal Plan Structure - {
+                  allCompaniesWithBuildings.flatMap(c => c.buildings).find(b => b.id === editingBuildingId)?.name || "Building"
+                }
+              </DialogTitle>
+              <DialogDescription className="mt-1">
+                Assign Meal Plans to Services/Sub-Services for each day. Changes will be saved to this building only.
+              </DialogDescription>
+            </div>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => {
+                setEditingBuildingId(null)
+                setEditingBuildingStructure({})
+              }}
+              className="h-8 w-8"
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          </DialogHeader>
+
+          <div className="flex-1 overflow-hidden relative bg-gray-50/50">
+            <ScrollArea className="h-full w-full">
+              <div className="min-w-[1400px] pb-20">
+                <Table className="border-collapse">
+                  <TableHeader className="sticky top-0 z-30 shadow-sm bg-white">
+                    <TableRow>
+                      <TableHead className="w-[300px] font-bold bg-white border-r border-b text-gray-900 sticky left-0 z-30 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
+                        Service / Sub-Service
+                      </TableHead>
+                      {DAYS.map((day) => (
+                        <TableHead
+                          key={day}
+                          className="min-w-[240px] text-center capitalize font-semibold bg-white border-r border-b text-gray-900"
+                        >
+                          {day}
+                        </TableHead>
+                      ))}
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody className="bg-white">
+                    {Object.values(editingBuildingStructure).flatMap((d) => d || []).length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={8} className="text-center py-12 text-gray-500">
+                          No services configured for this building
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      Object.values(editingBuildingStructure).find((d) => d && d.length > 0)?.map((svc: any) => (
+                        <Fragment key={`edit-svc-${svc.serviceId}`}>
+                          <TableRow className="bg-blue-50 hover:bg-blue-50/80">
+                            <TableCell className="font-bold text-blue-900 py-3 border-b border-r sticky left-0 bg-blue-50 z-20">
+                              {svc.serviceName}
+                            </TableCell>
+                            {DAYS.map((day) => (
+                              <TableCell key={day} className="border-r border-b bg-blue-50/30"></TableCell>
+                            ))}
+                          </TableRow>
+
+                          {svc.subServices?.map((subSvc: any) => (
+                            <TableRow key={`edit-subsvc-${subSvc.subServiceId}`} className="hover:bg-gray-50">
+                              <TableCell className="font-medium text-gray-600 border-r border-b pl-8 sticky left-0 bg-white z-20 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
+                                {subSvc.subServiceName}
+                              </TableCell>
+                              {DAYS.map((day) => (
+                                <TableCell key={day} className="border-r border-b p-2 align-top bg-white">
+                                  <div className="space-y-1 text-xs">
+                                    {subSvc.mealPlans && subSvc.mealPlans.length > 0 ? (
+                                      subSvc.mealPlans.map((plan: any) => (
+                                        <div key={plan.mealPlanId} className="flex flex-col bg-blue-50 p-2 rounded border border-blue-200">
+                                          <span className="font-medium text-gray-800">
+                                            {plan.mealPlanName}
+                                          </span>
+                                          {plan.subMealPlans && plan.subMealPlans.length > 0 && (
+                                            <div className="ml-2 mt-1 space-y-0.5 border-l border-blue-300 pl-2">
+                                              {plan.subMealPlans.map((subPlan: any) => (
+                                                <div key={subPlan.subMealPlanId} className="text-gray-700">
+                                                  • {subPlan.subMealPlanName}
+                                                </div>
+                                              ))}
+                                            </div>
+                                          )}
+                                        </div>
+                                      ))
+                                    ) : (
+                                      <span className="text-gray-400 italic">—</span>
+                                    )}
+                                  </div>
+                                </TableCell>
+                              ))}
+                            </TableRow>
+                          ))}
+                        </Fragment>
+                      )) || null
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+              <ScrollBar orientation="horizontal" />
+              <ScrollBar orientation="vertical" />
+            </ScrollArea>
+          </div>
+
+          <DialogFooter className="p-4 border-t bg-white shrink-0 sm:justify-between">
+            <div className="hidden sm:block text-sm text-gray-500 self-center">Changes will be saved to this building structure.</div>
+            <div className="flex gap-2">
+              <Button 
+                variant="outline" 
+                onClick={() => {
+                  setEditingBuildingId(null)
+                  setEditingBuildingStructure({})
+                }}
+              >
+                Close
               </Button>
             </div>
           </DialogFooter>

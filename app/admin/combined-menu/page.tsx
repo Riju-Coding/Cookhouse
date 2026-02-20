@@ -28,6 +28,7 @@ import {
 import Link from "next/link"
 import { toast } from "@/components/ui/use-toast"
 import type { Service, MealPlan, SubMealPlan, MenuItem, SubService } from "@/lib/types"
+
 import {
   getDocs,
   collection,
@@ -657,30 +658,47 @@ function ConflictDetailsDrawer({
   onClose: () => void
   analysisData: any[]
 }) {
-  const [currentSelectionDate, setCurrentSelectionDate] = useState<string | null>(() => {
-    // Find the current cell date on initial load
-    for (const itemAnalysis of analysisData) {
-      for (const occ of itemAnalysis.occurrences) {
-        if (occ.isCurrentCell) {
-          return occ.date
-        }
-      }
-    }
-    return null
-  })
-  
+  const [currentSelectionDate, setCurrentSelectionDate] = useState<string | null>(null)
   const [companyPopupOpen, setCompanyPopupOpen] = useState(false)
   const [selectedCompanyData, setSelectedCompanyData] = useState<any>(null)
   const [companyDetails, setCompanyDetails] = useState<any[]>([])
+
+  // Initialize current selection date when conflict drawer opens or data changes
+  useEffect(() => {
+    if (isOpen && analysisData && analysisData.length > 0) {
+      // Find the current cell date first
+      for (const itemAnalysis of analysisData) {
+        for (const occ of itemAnalysis.occurrences) {
+          if (occ.isCurrentCell) {
+            setCurrentSelectionDate(occ.date)
+            return
+          }
+        }
+      }
+      // Fallback to first occurrence date if no current cell found
+      if (analysisData[0].occurrences && analysisData[0].occurrences.length > 0) {
+        setCurrentSelectionDate(analysisData[0].occurrences[0].date)
+      }
+    }
+  }, [isOpen, analysisData])
 
   const handleSelectCurrent = (date: string) => {
     setCurrentSelectionDate(date)
   }
 
-  const calculateDaysDifference = (baseDate: string, compareDate: string): number => {
-    const base = new Date(baseDate)
-    const compare = new Date(compareDate)
-    const diffTime = compare.getTime() - base.getTime()
+  const calculateDaysDifference = (baseDate: string | null, compareDate: string): number => {
+    if (!baseDate) return 0
+    
+    // Parse dates in YYYY-MM-DD format safely to avoid timezone issues
+    const parseDate = (dateStr: string): Date => {
+      const [year, month, day] = dateStr.split('-').map(Number)
+      return new Date(year, month - 1, day)
+    }
+    
+    const baseDateObj = parseDate(baseDate)
+    const compareDateObj = parseDate(compareDate)
+    
+    const diffTime = compareDateObj.getTime() - baseDateObj.getTime()
     const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24))
     return diffDays
   }
@@ -774,16 +792,16 @@ function ConflictDetailsDrawer({
                   </thead>
                   <tbody className="divide-y divide-gray-100">
                     {itemAnalysis.occurrences.map((occ: any, oIdx: number) => {
-                      const daysOffset = currentSelectionDate ? calculateDaysDifference(currentSelectionDate, occ.date) : null
+                      // Ensure we always have a reference date for calculation
+                      const referenceDate = currentSelectionDate || (itemAnalysis.occurrences[0]?.date ?? null)
+                      const daysOffset = calculateDaysDifference(referenceDate, occ.date)
                       return (
                         <tr 
                           key={oIdx} 
                           className={`transition-colors ${
                             occ.isCurrentCell 
                               ? "bg-yellow-50 border-l-4 border-l-yellow-400"
-                              : oIdx === 0 
-                                ? "bg-red-50 border-l-4 border-l-red-400"
-                                : "hover:bg-gray-50"
+                              : "hover:bg-gray-50"
                           }`}
                         >
                           <td className="px-4 py-3">
@@ -797,33 +815,24 @@ function ConflictDetailsDrawer({
                                 </div>
                                 <div className="text-xs text-gray-500">{occ.day}</div>
                               </button>
-                    <button
-                      onClick={() => handleCompanyIconClick(occ)}
-                      className="p-1 hover:bg-gray-200 rounded text-gray-600 hover:text-gray-900"
-                      title="View companies"
-                    >
-                      <Building2 className="h-4 w-4" />
-                    </button>
+                              <button
+                                onClick={() => handleCompanyIconClick(occ)}
+                                className="p-1 hover:bg-gray-200 rounded text-gray-600 hover:text-gray-900"
+                                title="View companies"
+                              >
+                                <Building2 className="h-4 w-4" />
+                              </button>
                             </div>
                             {occ.isCurrentCell && (
                               <span className="text-[10px] font-bold text-yellow-700 mt-1 block">
                                 (Current Cell)
                               </span>
                             )}
-                            {oIdx === 0 && !occ.isCurrentCell && (
-                              <span className="text-[10px] font-bold text-red-700 mt-1 block">
-                                (First Occurrence)
-                              </span>
-                            )}
                           </td>
                           <td className="px-4 py-3">
-                            {currentSelectionDate && daysOffset !== null ? (
-                              <div className={`font-bold text-center ${daysOffset === 0 ? "text-blue-700 bg-blue-100 rounded px-2 py-1" : daysOffset > 0 ? "text-green-700" : "text-orange-700"}`}>
-                                {daysOffset > 0 ? "+" : ""}{daysOffset}
-                              </div>
-                            ) : (
-                              <div className="text-xs text-gray-400 text-center">-</div>
-                            )}
+                            <div className={`font-bold text-center ${daysOffset === 0 ? "text-blue-700 bg-blue-100 rounded px-2 py-1" : daysOffset > 0 ? "text-green-700" : "text-orange-700"}`}>
+                              {daysOffset > 0 ? "+" : ""}{daysOffset}
+                            </div>
                           </td>
                           <td className="px-4 py-3">
                             <div className="text-gray-900 font-medium">{occ.serviceName}</div>
@@ -883,11 +892,6 @@ function ConflictDetailsDrawer({
                     </div>
                     <div className="text-sm font-semibold text-gray-900">{cd.companyName}</div>
                     <div className="text-sm text-gray-700">{cd.buildingName}</div>
-                    <div className="mt-3 pt-3 border-t border-gray-300">
-                      <div className="text-xs font-medium text-gray-600 mb-1">Service Details</div>
-                      <div className="text-sm text-gray-900">{cd.serviceName}</div>
-                      <div className="text-xs text-gray-600">{cd.subServiceName}</div>
-                    </div>
                   </div>
                 ))}
               </div>
@@ -2691,6 +2695,8 @@ export default function CombinedMenuCreationPage() {
                 if (cell?.menuItemIds?.includes(itemId)) {
                   const serviceName = services.find(s => s.id === sId)?.name;
                   const subServiceName = subServices.find(ss => ss.id === ssId)?.name;
+                  const mealPlanName = mealPlans.find(mp => mp.id === mpId)?.name;
+                  const subMealPlanName = subMealPlans.find(smp => smp.id === smpId)?.name;
 
                   // Get custom assignments for this item
                   const customAssignments = cell.customAssignments?.[itemId];
@@ -2750,6 +2756,8 @@ export default function CombinedMenuCreationPage() {
                     day,
                     serviceName,
                     subServiceName,
+                    mealPlanName,
+                    subMealPlanName,
                     isCurrentCell: 
                       date === currentContext.date &&
                       sId === currentContext.serviceId &&
@@ -3504,6 +3512,13 @@ export default function CombinedMenuCreationPage() {
           />
         </>
       )}
+
+      {/* Conflict Details Drawer */}
+      <ConflictDetailsDrawer 
+        isOpen={conflictDrawerOpen}
+        onClose={() => setConflictDrawerOpen(false)}
+        analysisData={conflictAnalysisData}
+      />
 
       {/* Edit Modal (Triggered on Duplicate when changes ) */}
       <MenuEditModal

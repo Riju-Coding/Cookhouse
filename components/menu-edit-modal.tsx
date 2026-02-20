@@ -1,5 +1,3 @@
-// hii
-
 "use client"
 
 import { useState, useEffect, useCallback, useMemo, memo, useRef } from "react"
@@ -148,9 +146,18 @@ const ItemDescriptionModal = memo(function ItemDescriptionModal({
   const [selectedDescriptions, setSelectedDescriptions] = useState<Record<string, string>>({})
   const [newDescriptionInputs, setNewDescriptionInputs] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(false)
+  
+  console.log("[v0] ItemDescriptionModal rendered with:", {
+    isOpen,
+    selectedItemsLength: selectedItems.length,
+    selectedItems: selectedItems,
+    allMenuItemsCount: allMenuItems.length,
+    allMenuItems: allMenuItems.map(i => ({ id: i.id, name: i.name }))
+  })
 
   useEffect(() => {
     if (isOpen && selectedItems.length > 0) {
+      console.log("[v0] ItemDescriptionModal - loadDescriptions triggered with items:", selectedItems)
       loadDescriptions()
     }
   }, [isOpen, selectedItems])
@@ -250,13 +257,16 @@ const ItemDescriptionModal = memo(function ItemDescriptionModal({
           ) : (
             selectedItems.map((itemId) => {
               const item = allMenuItems.find((i) => i.id === itemId)
-              if (!item) return null
+              if (!item) {
+                console.log("[v0] ItemDescriptionModal - Item not found:", itemId, "Available items:", allMenuItems.map(i => ({ id: i.id, name: i.name })))
+                return null
+              }
               const descriptions = itemDescriptions[itemId] || []
               const selectedDesc = selectedDescriptions[itemId] || ""
 
               return (
                 <div key={itemId} className="border rounded-lg p-4 bg-gradient-to-r from-amber-50 to-white">
-                  <Label className="text-sm font-semibold text-gray-800 mb-3 block">{item.name}</Label>
+                  <Label className="text-sm font-semibold text-gray-800 mb-3 block">{item?.name || `Item ${itemId}`}</Label>
                   {descriptions.length > 0 && (
                     <div className="mb-4">
                       <p className="text-xs font-medium text-gray-600 mb-2">Select Description:</p>
@@ -555,39 +565,449 @@ const ItemCompanyAssignmentModal = memo(function ItemCompanyAssignmentModal({
   )
 })
 
+// --- Confirmation Modal Component (For showing subservice menus company-wise) ---
+// --- Confirmation Modal Component (For showing subservice menus company-wise) ---
+// --- Confirmation Modal Component (For showing subservice menus company-wise) ---
+const SubServiceConfirmationModal = memo(function SubServiceConfirmationModal({
+  isOpen,
+  onClose,
+  onConfirm,
+  subService,
+  menuData,
+  dateRange,
+  companies,
+  buildings,
+  allStructureAssignments,
+  mealPlanAssignments,
+  menuItems,
+}: {
+  isOpen: boolean
+  onClose: () => void
+  onConfirm: () => void
+  subService: SubService | null
+  menuData: any
+  dateRange: Array<{ date: string; day: string }>
+  companies: any[]
+  buildings: any[]
+  allStructureAssignments: any[]
+  mealPlanAssignments: any[]
+  menuItems: MenuItem[]
+}) {
+  const [confirmLoading, setConfirmLoading] = useState(false)
+  const [activeTabKey, setActiveTabKey] = useState<string | null>(null)
+
+  const companyWiseMenus = useMemo(() => {
+    if (!subService || !menuData || !allStructureAssignments || !mealPlanAssignments) {
+      return []
+    }
+
+    const result: Array<{
+      companyId: string
+      companyName: string
+      buildingId: string
+      buildingName: string
+      menuData: any
+      itemCount: number
+      menus: Array<{
+        date: string
+        day: string
+        serviceId: string
+        mealPlanItems: Array<{
+          mealPlanName: string
+          subMealPlanName: string
+          items: Array<{ id: string; isCustom: boolean }>
+        }>
+      }>
+    }> = []
+
+    const processedKeys = new Set<string>()
+
+    allStructureAssignments.forEach((assignment: any) => {
+      const company = companies.find((c: any) => c.id === assignment.companyId)
+      const building = buildings.find((b: any) => b.id === assignment.buildingId)
+      
+      const mpAssignment = mealPlanAssignments.find(
+        (mpa: any) => mpa.companyId === assignment.companyId && mpa.buildingId === assignment.buildingId
+      )
+
+      if (!company || !building || !mpAssignment) {
+        return
+      }
+
+      const key = `${assignment.companyId}-${assignment.buildingId}`
+      if (processedKeys.has(key)) return
+      processedKeys.add(key)
+
+      const menus: typeof result[0]['menus'] = []
+      let itemCount = 0
+      let hasSubServiceAssignment = false
+
+      dateRange.forEach(({ date, day }) => {
+        const dayKey = day.toLowerCase()
+        const dayStructure = assignment.weekStructure?.[dayKey] || []
+        const dayMpStructure = mpAssignment.weekStructure?.[dayKey] || []
+
+        const dayMenus: typeof menus[0]['mealPlanItems'] = []
+
+        dayStructure.forEach((service: any) => {
+          const serviceId = service.serviceId
+          const subServices = service.subServices || []
+
+          const matchingSubService = subServices.find((ss: any) => ss.subServiceId === subService.id)
+          if (!matchingSubService) return
+
+          const mpService = dayMpStructure.find((s: any) => s.serviceId === serviceId)
+          if (!mpService) return
+
+          const mpSubService = mpService.subServices?.find((ss: any) => ss.subServiceId === subService.id)
+          if (!mpSubService) return
+
+          hasSubServiceAssignment = true
+
+          const mealPlans = mpSubService.mealPlans || []
+
+          mealPlans.forEach((mealPlan: any) => {
+            const mealPlanId = mealPlan.mealPlanId
+            const mealPlanData = menuData[date]?.[serviceId]?.[subService.id]?.[mealPlanId]
+            if (!mealPlanData) return
+
+            const subMealPlans = mealPlan.subMealPlans || []
+            subMealPlans.forEach((subMealPlan: any) => {
+              const subMealPlanId = subMealPlan.subMealPlanId
+              const cellData = mealPlanData[subMealPlanId]
+
+              let itemsToAdd: Array<{ id: string; isCustom: boolean }> = []
+
+              if (cellData && cellData.menuItemIds) {
+                const cellItems = cellData.menuItemIds
+                const customAssignments = cellData.customAssignments || {}
+
+                cellItems.forEach((itemId: string) => {
+                  const itemAssignments = customAssignments[itemId]
+                  
+                  if (itemAssignments && Array.isArray(itemAssignments) && itemAssignments.length > 0) {
+                    const isAssigned = itemAssignments.some((a: any) => 
+                      a.companyId === assignment.companyId && a.buildingId === assignment.buildingId
+                    )
+                    if (isAssigned) itemsToAdd.push({ id: itemId, isCustom: true })
+                  } else {
+                    itemsToAdd.push({ id: itemId, isCustom: false })
+                  }
+                })
+              }
+              
+              itemCount += itemsToAdd.length
+                
+              dayMenus.push({
+                mealPlanName: mealPlan.mealPlanName || 'Meal Plan',
+                subMealPlanName: subMealPlan.subMealPlanName || 'Sub Meal Plan',
+                items: itemsToAdd
+              })
+            })
+          })
+        })
+
+        if (dayMenus.length > 0) {
+          menus.push({ date, day, serviceId: dayStructure[0]?.serviceId || '', mealPlanItems: dayMenus })
+        }
+      })
+
+      if (hasSubServiceAssignment) {
+        result.push({
+          companyId: assignment.companyId,
+          companyName: company.name,
+          buildingId: assignment.buildingId,
+          buildingName: building.name,
+          menuData: {},
+          itemCount,
+          menus,
+        })
+      }
+    })
+
+    return result
+  }, [subService, menuData, dateRange, companies, buildings, allStructureAssignments, mealPlanAssignments])
+
+  // Set the first company as active initially
+  useEffect(() => {
+    if (companyWiseMenus.length > 0 && !activeTabKey) {
+      setActiveTabKey(`${companyWiseMenus[0].companyId}-${companyWiseMenus[0].buildingId}`)
+    } else if (companyWiseMenus.length === 0) {
+      setActiveTabKey(null)
+    }
+  }, [companyWiseMenus, activeTabKey])
+
+  const activeCompanyData = useMemo(() => {
+    if (!activeTabKey) return null
+    return companyWiseMenus.find(c => `${c.companyId}-${c.buildingId}` === activeTabKey) || companyWiseMenus[0]
+  }, [companyWiseMenus, activeTabKey])
+
+  // Extract unique meal plans & sub meal plans for the grid's Y-axis
+  const gridRows = useMemo(() => {
+    if (!activeCompanyData) return []
+    const rowsMap = new Map<string, { mealPlanName: string; subMealPlanName: string }>()
+    
+    activeCompanyData.menus.forEach(menu => {
+      menu.mealPlanItems.forEach(mpi => {
+        const key = `${mpi.mealPlanName}|${mpi.subMealPlanName}`
+        if (!rowsMap.has(key)) {
+          rowsMap.set(key, { mealPlanName: mpi.mealPlanName, subMealPlanName: mpi.subMealPlanName })
+        }
+      })
+    })
+    
+    // Convert to array and sort arbitrarily by meal plan name to keep order consistent
+    return Array.from(rowsMap.values()).sort((a, b) => 
+      a.mealPlanName.localeCompare(b.mealPlanName) || a.subMealPlanName.localeCompare(b.subMealPlanName)
+    )
+  }, [activeCompanyData])
+
+  const handleConfirm = async () => {
+    setConfirmLoading(true)
+    try {
+      await new Promise(resolve => setTimeout(resolve, 500))
+      onConfirm()
+      onClose()
+    } catch (error) {
+      console.error("Error confirming:", error)
+    } finally {
+      setConfirmLoading(false)
+    }
+  }
+
+  if (!isOpen || !subService) return null
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-70 z-[250] flex items-center justify-center p-4">
+      <div className="bg-white rounded-lg max-w-[95vw] w-full h-[90vh] flex flex-col overflow-hidden shadow-2xl">
+        
+        {/* Header */}
+        <div className="bg-gradient-to-r from-blue-50 to-white border-b p-4 flex-none flex items-center justify-between">
+          <div>
+            <h3 className="font-bold text-xl flex items-center gap-2 text-gray-900">
+              <CheckCircle className="h-6 w-6 text-blue-600" />
+              Confirm Company Distribution: {subService.name}
+            </h3>
+            <p className="text-sm text-gray-600 mt-1">
+              Review exactly which menu items are assigned to which company. (Purple items override default structure).
+            </p>
+          </div>
+          <button onClick={onClose} className="p-2 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-full transition-colors" type="button">
+            <X className="h-6 w-6" />
+          </button>
+        </div>
+
+        {/* Content Area */}
+        {companyWiseMenus.length === 0 ? (
+          <div className="flex-1 flex flex-col items-center justify-center py-12 bg-gray-50">
+            <Building2 className="h-16 w-16 text-gray-300 mb-4" />
+            <h4 className="text-lg font-medium text-gray-700">No Companies Found</h4>
+            <p className="text-sm text-gray-500">No companies are currently assigned to this sub-service.</p>
+          </div>
+        ) : (
+          <div className="flex-1 flex flex-col min-h-0 bg-gray-100">
+            
+            {/* Excel-like Grid Area */}
+            <div className="flex-1 overflow-auto bg-white m-4 mb-0 rounded-t-lg border border-gray-200 shadow-sm relative">
+              {gridRows.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-full text-gray-400">
+                  <FileText className="h-12 w-12 mb-2 opacity-50" />
+                  <p>No menu items configured for this company yet.</p>
+                </div>
+              ) : (
+                <table className="w-full border-collapse">
+                  <thead className="sticky top-0 z-20 shadow-sm">
+                    <tr>
+                      <th className="border border-gray-200 bg-gray-50 p-3 text-left sticky left-0 z-30 min-w-[200px] shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
+                        <div className="font-semibold text-gray-700 text-sm">Meal Plan Structure</div>
+                      </th>
+                      {dateRange.map(({ date, day }) => (
+                        <th key={date} className="border border-gray-200 bg-white p-3 min-w-[250px] text-left">
+                          <div className="font-semibold text-gray-900">
+                            {new Date(date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                          </div>
+                          <div className="text-xs text-gray-500 font-medium">{day}</div>
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {gridRows.map((row, idx) => (
+                      <tr key={idx} className="hover:bg-gray-50/50 transition-colors">
+                        <td className="border border-gray-200 bg-gray-50 p-3 sticky left-0 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] align-top">
+                          <div className="font-bold text-sm text-blue-800 mb-1">{row.mealPlanName}</div>
+                          <div className="text-xs text-gray-600 font-medium ml-2">↳ {row.subMealPlanName}</div>
+                        </td>
+                        {dateRange.map(({ date }) => {
+                          const dailyMenu = activeCompanyData?.menus.find(m => m.date === date)
+                          const cellData = dailyMenu?.mealPlanItems.find(
+                            mpi => mpi.mealPlanName === row.mealPlanName && mpi.subMealPlanName === row.subMealPlanName
+                          )
+                          
+                          return (
+                            <td key={date} className="border border-gray-200 p-2 align-top bg-white min-h-[60px]">
+                              {!cellData || cellData.items.length === 0 ? (
+                                <div className="text-gray-300 text-xs italic text-center py-2">-</div>
+                              ) : (
+                                <div className="flex flex-col gap-1.5">
+                                  {cellData.items.map((item, itemIdx) => {
+                                    const menuItem = menuItems.find(mi => mi.id === item.id)
+                                    return (
+                                      <div 
+                                        key={itemIdx} 
+                                        className={`flex items-center justify-between px-2 py-1.5 rounded border text-xs font-medium ${
+                                          item.isCustom 
+                                            ? 'bg-purple-50 text-purple-800 border-purple-200 shadow-sm' 
+                                            : 'bg-blue-50 text-blue-800 border-blue-100'
+                                        }`}
+                                        title={menuItem?.name}
+                                      >
+                                        <span className="truncate mr-2">{menuItem?.name || 'Unknown Item'}</span>
+                                        {item.isCustom && <Building2 className="h-3 w-3 text-purple-500 flex-shrink-0" title="Custom Company Assignment" />}
+                                      </div>
+                                    )
+                                  })}
+                                </div>
+                              )}
+                            </td>
+                          )
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+
+            {/* Excel-style Tabs */}
+            <div className="flex bg-gray-200 border-b border-gray-300 overflow-x-auto no-scrollbar mx-4 pt-1">
+              {companyWiseMenus.map((companyMenu) => {
+                const key = `${companyMenu.companyId}-${companyMenu.buildingId}`
+                const isActive = activeTabKey === key
+                return (
+                  <button
+                    key={key}
+                    onClick={() => setActiveTabKey(key)}
+                    className={`flex items-center gap-2 px-4 py-2 border-t border-r border-l rounded-t-lg text-sm font-medium transition-colors whitespace-nowrap min-w-max relative z-10 ${
+                      isActive 
+                        ? 'bg-white text-blue-700 border-gray-300 shadow-[0_-2px_4px_rgba(0,0,0,0.05)] border-b-white' 
+                        : 'bg-gray-100 text-gray-600 border-transparent border-b-gray-300 hover:bg-gray-50 hover:text-gray-800'
+                    }`}
+                    style={{ marginBottom: isActive ? '-1px' : '0' }}
+                  >
+                    <Building2 className={`h-4 w-4 ${isActive ? 'text-blue-600' : 'text-gray-400'}`} />
+                    <span>{companyMenu.companyName}</span>
+                    <span className="text-xs font-normal text-gray-500 hidden sm:inline-block">- {companyMenu.buildingName}</span>
+                    
+                    {companyMenu.itemCount > 0 && (
+                      <span className={`ml-2 px-1.5 py-0.5 rounded-full text-[10px] ${
+                        isActive ? 'bg-blue-100 text-blue-800' : 'bg-gray-200 text-gray-600'
+                      }`}>
+                        {companyMenu.itemCount} items
+                      </span>
+                    )}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Footer */}
+        <div className="border-t p-4 flex-none flex items-center justify-between bg-white">
+          <div className="text-sm text-gray-500">
+            {activeCompanyData && (
+              <span>Currently viewing: <strong className="text-gray-700">{activeCompanyData.companyName}</strong> ({activeCompanyData.buildingName})</span>
+            )}
+          </div>
+          <div className="flex items-center gap-3">
+            <Button variant="outline" onClick={onClose} disabled={confirmLoading}>
+              Go Back & Edit
+            </Button>
+            <Button 
+              onClick={handleConfirm} 
+              disabled={confirmLoading || companyWiseMenus.length === 0}
+              className="bg-blue-600 hover:bg-blue-700 text-white min-w-[140px]"
+            >
+              {confirmLoading ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <CheckCircle className="h-4 w-4 mr-2" />
+                  Confirm & Save
+                </>
+              )}
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+})
+
 function ConflictDetailsDrawer({
   isOpen,
   onClose,
-  analysisData
+  analysisData,
+  companies = [],
+  buildings = [],
+  structureAssignments = [],
+  menuData = {},
+  dateRange = []
 }: {
   isOpen: boolean
   onClose: () => void
   analysisData: any[] // Contains full summary and occurrences
+  companies?: any[]
+  buildings?: any[]
+  structureAssignments?: any[]
+  menuData?: any
+  dateRange?: Array<{ date: string; day: string }>
 }) {
-  const [currentSelectionDate, setCurrentSelectionDate] = useState<string | null>(() => {
-    // Find the current cell date on initial load
-    for (const itemAnalysis of analysisData) {
-      for (const occ of itemAnalysis.occurrences) {
-        if (occ.isCurrentCell) {
-          return occ.date
-        }
-      }
-    }
-    return null
-  })
-
+  const [currentSelectionDate, setCurrentSelectionDate] = useState<string | null>(null)
   const [companyPopupOpen, setCompanyPopupOpen] = useState(false)
   const [selectedCompanyData, setSelectedCompanyData] = useState<any>(null)
   const [companyDetails, setCompanyDetails] = useState<any[]>([])
+
+  // Initialize current selection date when conflict drawer opens or data changes
+  useEffect(() => {
+    if (isOpen && analysisData && analysisData.length > 0) {
+      // Find the current cell date first
+      for (const itemAnalysis of analysisData) {
+        for (const occ of itemAnalysis.occurrences) {
+          if (occ.isCurrentCell) {
+            setCurrentSelectionDate(occ.date)
+            return
+          }
+        }
+      }
+      // Fallback to first occurrence date if no current cell found
+      if (analysisData[0].occurrences && analysisData[0].occurrences.length > 0) {
+        setCurrentSelectionDate(analysisData[0].occurrences[0].date)
+      }
+    }
+  }, [isOpen, analysisData])
 
   const handleSelectCurrent = (date: string) => {
     setCurrentSelectionDate(date)
   }
 
-  const calculateDaysDifference = (baseDate: string, compareDate: string): number => {
-    const base = new Date(baseDate)
-    const compare = new Date(compareDate)
-    const diffTime = compare.getTime() - base.getTime()
+  const calculateDaysDifference = (baseDate: string | null, compareDate: string): number => {
+    if (!baseDate) return 0
+    
+    // Parse dates in YYYY-MM-DD format safely to avoid timezone issues
+    const parseDate = (dateStr: string): Date => {
+      const [year, month, day] = dateStr.split('-').map(Number)
+      return new Date(year, month - 1, day)
+    }
+    
+    const baseDateObj = parseDate(baseDate)
+    const compareDateObj = parseDate(compareDate)
+    
+    const diffTime = compareDateObj.getTime() - baseDateObj.getTime()
     const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24))
     return diffDays
   }
@@ -595,30 +1015,106 @@ function ConflictDetailsDrawer({
   const handleCompanyIconClick = (occurrence: any) => {
     setSelectedCompanyData(occurrence)
     
-    if (occurrence.companyData && occurrence.companyData.length > 0) {
-      // Use company data from occurrence (either custom or from meal plan structure)
-      const companies = occurrence.companyData.map((ca: any) => ({
-        companyId: ca.companyId,
-        buildingId: ca.buildingId,
-        companyName: ca.companyName || ca.companyId,
-        buildingName: ca.buildingName || ca.buildingId,
-        serviceName: occurrence.serviceName,
-        subServiceName: occurrence.subServiceName,
-        isCustom: ca.isCustom || false
-      }))
-      setCompanyDetails(companies)
-    } else {
-      // No company assignment available
-      const details = [{
+    const companyDetailsArray: any[] = []
+    const processedCompanies = new Set<string>()
+
+    // Get the day key from occurrence.day directly
+    const dayKey = occurrence.day.toLowerCase()
+
+    // First, check for CUSTOM ASSIGNMENTS in the menu data (takes priority)
+    const cellData = menuData?.[occurrence.date]?.[occurrence.serviceId]?.[occurrence.subServiceId]?.[occurrence.mealPlanId]?.[occurrence.subMealPlanId]
+    const customAssignments = cellData?.customAssignments || {}
+    
+    console.log("[v0] Building button clicked:", { 
+      date: occurrence.date, 
+      dayKey,
+      day: occurrence.day,
+      customAssignmentsExists: Object.keys(customAssignments).length > 0,
+      cellDataExists: !!cellData,
+      structureAssignmentsLength: structureAssignments?.length
+    })
+
+    if (Object.keys(customAssignments).length > 0) {
+      // Process custom assignments first
+      Object.entries(customAssignments).forEach(([itemId, assignments]: [string, any]) => {
+        if (Array.isArray(assignments)) {
+          assignments.forEach((assignment: any) => {
+            const key = `${assignment.companyId}-${assignment.buildingId}`
+            if (!processedCompanies.has(key)) {
+              const company = companies.find(c => c.id === assignment.companyId)
+              const building = buildings.find(b => b.id === assignment.buildingId)
+              
+              if (company && building) {
+                companyDetailsArray.push({
+                  companyId: assignment.companyId,
+                  buildingId: assignment.buildingId,
+                  companyName: company.name,
+                  buildingName: building.name,
+                  serviceName: occurrence.serviceName,
+                  subServiceName: occurrence.subServiceName,
+                  isCustom: true
+                })
+                processedCompanies.add(key)
+              }
+            }
+          })
+        }
+      })
+    }
+
+    // FALLBACK: If no custom assignments, get MEAL PLAN STRUCTURE assignments
+    if (companyDetailsArray.length === 0) {
+      console.log("[v0] Fallback to structure assignments, found:", structureAssignments?.length)
+      structureAssignments.forEach((assignment: any) => {
+        const company = companies.find(c => c.id === assignment.companyId)
+        const building = buildings.find(b => b.id === assignment.buildingId)
+        
+        console.log("[v0] Checking assignment:", { companyId: assignment.companyId, buildingId: assignment.buildingId, hasCompany: !!company, hasBuilding: !!building })
+        
+        if (!company || !building) return
+        
+        // Check if this structure applies to the current day/service/subservice
+        // Structure assignments are at the service/subservice level, not at meal plan level
+        const dayStructure = assignment.weekStructure?.[dayKey] || []
+        
+        const serviceInDay = dayStructure.find((s: any) => s.serviceId === occurrence.serviceId)
+        if (!serviceInDay) return
+        
+        const subServiceInDay = serviceInDay.subServices?.find((ss: any) => ss.subServiceId === occurrence.subServiceId)
+        if (!subServiceInDay) return
+        
+        // If we found the service and subservice for this day, this structure applies
+        // We don't need to match mealPlan/subMealPlan as structure is at service level
+        
+        const key = `${assignment.companyId}-${assignment.buildingId}`
+        if (!processedCompanies.has(key)) {
+          console.log("[v0] Found matching structure assignment:", { company: company.name, building: building.name })
+          companyDetailsArray.push({
+            companyId: assignment.companyId,
+            buildingId: assignment.buildingId,
+            companyName: company.name,
+            buildingName: building.name,
+            serviceName: occurrence.serviceName,
+            subServiceName: occurrence.subServiceName,
+            isCustom: false
+          })
+          processedCompanies.add(key)
+        }
+      })
+    }
+
+    // If still no assignments found, show empty state
+    if (companyDetailsArray.length === 0) {
+      companyDetailsArray.push({
         serviceName: occurrence.serviceName,
         subServiceName: occurrence.subServiceName,
         companyName: "No Company Assignment",
         buildingName: "N/A",
         isCustom: false
-      }]
-      setCompanyDetails(details)
+      })
     }
-    
+
+    setCompanyDetails(companyDetailsArray)
     setCompanyPopupOpen(true)
   }
 
@@ -679,69 +1175,58 @@ function ConflictDetailsDrawer({
                       <th className="px-4 py-3">Meal Plan</th>
                     </tr>
                   </thead>
+                  {/* Note: Company Assignment column removed */}
                   <tbody className="divide-y divide-gray-100">
                     {itemAnalysis.occurrences.map((occ: any, oIdx: number) => {
-                      const daysOffset = currentSelectionDate ? calculateDaysDifference(currentSelectionDate, occ.date) : null
+                      // Ensure we always have a reference date for calculation
+                      const referenceDate = currentSelectionDate || (itemAnalysis.occurrences[0]?.date ?? null)
+                      const daysOffset = calculateDaysDifference(referenceDate, occ.date)
                       return (
                         <tr 
                           key={oIdx} 
                           className={`transition-colors ${
                             occ.isCurrentCell 
-                              ? "bg-yellow-50 border-l-4 border-l-yellow-400" // 👉 Highlight Current Cell
+                              ? "bg-yellow-50 border-l-4 border-l-yellow-400"
                               : "hover:bg-gray-50"
                           }`}
                         >
                   <td className="px-4 py-3">
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => handleSelectCurrent(occ.date)}
-                      className={`cursor-pointer hover:underline flex-1 font-medium ${currentSelectionDate === occ.date ? "text-blue-700" : "text-gray-900"}`}
-                    >
-                      <div className="font-medium text-gray-900">
-                        {new Date(occ.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                      </div>
-                      <div className="text-xs text-gray-500">{occ.day}</div>
-                    </button>
-                    <button
-                      onClick={() => handleCompanyIconClick(occ)}
-                      className="p-1 hover:bg-gray-200 rounded text-gray-600 hover:text-gray-900"
-                      title="View companies"
-                    >
-                      <Building2 className="h-4 w-4" />
-                    </button>
-                  </div>
-                  {occ.isCurrentCell && (
-                    <span className="text-[10px] font-bold text-yellow-700 mt-1 block">
-                      (Current Cell)
-                    </span>
-                  )}
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => handleSelectCurrent(occ.date)}
+                        className={`cursor-pointer hover:underline font-medium flex-1 ${currentSelectionDate === occ.date ? "text-blue-700" : "text-gray-900"}`}
+                      >
+                        <div className="font-medium text-gray-900">
+                          {new Date(occ.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                        </div>
+                        <div className="text-xs text-gray-500">{occ.day}</div>
+                      </button>
+                      <button
+                        onClick={() => handleCompanyIconClick(occ)}
+                        className="p-1 hover:bg-gray-200 rounded text-gray-600 hover:text-gray-900"
+                        title="View companies"
+                      >
+                        <Building2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                    {occ.isCurrentCell && (
+                      <span className="text-[10px] font-bold text-yellow-700 mt-1 block">
+                        (Current Cell)
+                      </span>
+                    )}
                   </td>
                           <td className="px-4 py-3">
-                            {currentSelectionDate && daysOffset !== null ? (
-                              <div className={`font-bold text-center ${daysOffset === 0 ? "text-blue-700 bg-blue-100 rounded px-2 py-1" : daysOffset > 0 ? "text-green-700" : "text-orange-700"}`}>
-                                {daysOffset > 0 ? "+" : ""}{daysOffset}
-                              </div>
-                            ) : (
-                              <div className="text-xs text-gray-400 text-center">-</div>
-                            )}
+                            <div className={`font-bold text-center ${daysOffset === 0 ? "text-blue-700 bg-blue-100 rounded px-2 py-1" : daysOffset > 0 ? "text-green-700" : "text-orange-700"}`}>
+                              {daysOffset > 0 ? "+" : ""}{daysOffset}
+                            </div>
                           </td>
                           <td className="px-4 py-3">
                             <div className="text-gray-900 font-medium">{occ.serviceName}</div>
                             <div className="text-xs text-gray-500">{occ.subServiceName}</div>
                           </td>
                           <td className="px-4 py-3">
-                             {occ.companyAssignments && occ.companyAssignments.length > 0 ? (
-                               <div>
-                                 {occ.companyAssignments.map((comp: any, cidx: number) => (
-                                   <div key={cidx}>
-                                     <div className="text-gray-900 font-medium">{comp.companyName}</div>
-                                     <div className="text-xs text-gray-500">{comp.buildingName}</div>
-                                   </div>
-                                 ))}
-                               </div>
-                             ) : (
-                               <div className="text-gray-600 italic">No company assignment</div>
-                             )}
+                            <div className="text-gray-900 font-medium">{occ.mealPlanName || 'N/A'}</div>
+                            <div className="text-xs text-gray-500">{occ.subMealPlanName || 'N/A'}</div>
                           </td>
                         </tr>
                       )
@@ -793,11 +1278,6 @@ function ConflictDetailsDrawer({
                     </div>
                     <div className="text-sm font-semibold text-gray-900">{cd.companyName}</div>
                     <div className="text-sm text-gray-700">{cd.buildingName}</div>
-                    <div className="mt-3 pt-3 border-t border-gray-300">
-                      <div className="text-xs font-medium text-gray-600 mb-1">Service Details</div>
-                      <div className="text-sm text-gray-900">{cd.serviceName}</div>
-                      <div className="text-xs text-gray-600">{cd.subServiceName}</div>
-                    </div>
                   </div>
                 ))}
               </div>
@@ -1043,7 +1523,11 @@ const MenuGridCell = memo(function MenuGridCell({
                 // Check if this item has custom company assignments
                 const hasCustomAssignment = menuCell?.customAssignments && menuCell.customAssignments[itemId]
 
-                if (!item) return null
+                // Debug: Log when item is not found
+                if (!item) {
+                  console.log("[v0] Item not found - itemId:", itemId, "allMenuItems count:", allMenuItems.length, "allMenuItems:", allMenuItems.map(i => ({ id: i.id, name: i.name })))
+                  return null
+                }
                 return (
                   <div
                     key={itemId}
@@ -1054,7 +1538,7 @@ const MenuGridCell = memo(function MenuGridCell({
                         }
                     `}
                   >
-                    <span className="truncate font-medium leading-tight">{item.name}</span>
+                    <span className="truncate font-medium leading-tight" title={item?.name || `Item: ${itemId}`}>{item?.name || `Item (${itemId.slice(0, 8)})`}</span>
                     <div className="flex items-center gap-0.5 ml-1">
                       {hasCustomAssignment && (
                         <button
@@ -1224,6 +1708,7 @@ const MenuGridCell = memo(function MenuGridCell({
                   <button
                     onClick={(e) => {
                       e.stopPropagation()
+                      console.log("[v0] Description button clicked! selectedMenuItemIds:", selectedMenuItemIds, "cell date:", date)
                       setShowDescModal(true)
                     }}
                     disabled={selectedMenuItemIds.length === 0}
@@ -1251,10 +1736,12 @@ const MenuGridCell = memo(function MenuGridCell({
             selectedItems={selectedMenuItemIds}
             allMenuItems={allMenuItems}
             onSaveDescription={async (itemId, descriptions, selectedDescription) => {
+              console.log("[v0] ItemDescriptionModal - onSaveDescription called with itemId:", itemId, "selectedMenuItemIds:", selectedMenuItemIds)
               await menuItemsService.addDescriptions(itemId, descriptions)
               await menuItemsService.setSelectedDescription(itemId, selectedDescription)
             }}
           />
+          {showDescModal && console.log("[v0] ItemDescriptionModal opened with selectedMenuItemIds:", selectedMenuItemIds, "allMenuItems:", allMenuItems.length)}
 
           <ItemCompanyAssignmentModal
             isOpen={showAssignmentModal}
@@ -1407,6 +1894,10 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
 
   const [selectedService, setSelectedService] = useState<Service | null>(null)
   const [selectedSubService, setSelectedSubService] = useState<SubService | null>(null)
+
+  // CONFIRMATION MODAL STATE
+  const [showConfirmationModal, setShowConfirmationModal] = useState(false)
+  const [pendingSaveAction, setPendingSaveAction] = useState<{ isDraft: boolean } | null>(null)
 
   const mountedRef = useRef(true)
   const abortControllerRef = useRef<AbortController | null>(null)
@@ -1616,13 +2107,40 @@ const menuDoc = { id: docSnap.id, ...(docSnap.data() as any) } as MenuData
 
         let filteredMealPlans = mealPlansData.filter((mp) => mp.status === "active").sort((a, b) => (a.order || 999) - (b.order || 999))
         let filteredSubMealPlans = subMealPlansData.filter((smp) => smp.status === "active").sort((a, b) => (a.order || 999) - (b.order || 999))
-        const filteredMenuItems = menuItemsData.filter((mi) => mi.status === "active").sort((a, b) => (a.order || 999) - (b.order || 999))
+        // Don't filter menu items by status - use all items so confirmation modal can display items in cells
+        const filteredMenuItems = menuItemsData.sort((a, b) => (a.order || 999) - (b.order || 999))
 
         setProgress(90)
         setMessage("Finalizing...")
 
         const originalData = menuDoc.menuData || {}
         setOriginalMenuData(JSON.parse(JSON.stringify(originalData)))
+
+        // Debug: Log menuData structure with sample cells
+        console.log("[v0] Original Menu Data Structure:", {
+          totalDates: Object.keys(originalData).length,
+          sampleDate: Object.keys(originalData)[0],
+          sampleContent: originalData[Object.keys(originalData)[0]] ? 
+            (() => {
+              const firstDate = Object.keys(originalData)[0];
+              const firstService = Object.keys(originalData[firstDate])[0];
+              const firstSubService = firstService ? Object.keys(originalData[firstDate][firstService])[0] : null;
+              const firstMealPlan = firstSubService ? Object.keys(originalData[firstDate][firstService][firstSubService])[0] : null;
+              const firstSubMealPlan = firstMealPlan ? Object.keys(originalData[firstDate][firstService][firstSubService][firstMealPlan])[0] : null;
+              const cell = firstSubMealPlan ? originalData[firstDate][firstService][firstSubService][firstMealPlan][firstSubMealPlan] : null;
+              return {
+                date: firstDate,
+                serviceId: firstService,
+                subServiceId: firstSubService,
+                mealPlanId: firstMealPlan,
+                subMealPlanId: firstSubMealPlan,
+                cell: cell,
+                itemCount: cell?.menuItemIds?.length || 0,
+                itemIds: cell?.menuItemIds || []
+              };
+            })()
+            : "No data"
+        })
 
         setMenu(menuDoc)
         setMenuData(originalData)
@@ -1632,6 +2150,13 @@ const menuDoc = { id: docSnap.id, ...(docSnap.data() as any) } as MenuData
         setMealPlans(filteredMealPlans)
         setSubMealPlans(filteredSubMealPlans)
         setMenuItems(filteredMenuItems)
+        
+        // Debug: Log loaded menu items
+        console.log("[v0] Loaded Menu Items:", {
+          count: filteredMenuItems.length,
+          items: filteredMenuItems.slice(0, 10).map(i => ({ id: i.id, name: i.name })),
+          preloadedCount: preloadedMenuItems?.length || 0
+        })
 
         if (menuDoc.companyId) {
             try {
@@ -1818,6 +2343,8 @@ const handleAnalyzeConflicts = useCallback((cellLogs: any[], currentContext: any
                                // Found an occurrence!
                                const serviceName = services.find(s => s.id === sId)?.name;
                                const subServiceName = subServices.get(sId)?.find(ss => ss.id === ssId)?.name;
+                               const mealPlanName = mealPlans.find(mp => mp.id === mpId)?.name;
+                               const subMealPlanName = subMealPlans.find(smp => smp.id === smpId)?.name;
                                
                                // Get company assignments from meal plan structure
                                const dayKey = day.toLowerCase();
@@ -1854,6 +2381,12 @@ const handleAnalyzeConflicts = useCallback((cellLogs: any[], currentContext: any
                                    day,
                                    serviceName,
                                    subServiceName,
+                                   mealPlanName,
+                                   subMealPlanName,
+                                   serviceId: sId,
+                                   subServiceId: ssId,
+                                   mealPlanId: mpId,
+                                   subMealPlanId: smpId,
                                    companyAssignments,
                                    hasCustomAssignment: !!cell?.customAssignments?.[itemId],
                                    // Check if this is the cell user clicked
@@ -2207,7 +2740,63 @@ const handleAddItem = useCallback(
   }
 
 
+  const checkForConfirmationNeeded = (): boolean => {
+    // Check if selected subservice has showConfirmation = true and has at least one menu item
+    if (!selectedSubService) {
+      return false
+    }
+    
+    const showConfirmation = (selectedSubService as any).showConfirmation === true
+    
+    if (!showConfirmation) {
+      return false
+    }
+    
+    // Check if any items exist for this subservice
+    let hasItems = false
+    
+    for (const [date, dayData] of Object.entries(menuData)) {
+      for (const [sId, sData] of Object.entries(dayData as any)) {
+        if (sData && typeof sData === 'object') {
+          for (const [ssId, ssData] of Object.entries(sData)) {
+            if (ssId === selectedSubService.id && ssData && typeof ssData === 'object') {
+              for (const [mpId, mpData] of Object.entries(ssData)) {
+                if (mpData && typeof mpData === 'object') {
+                  for (const [smpId, cell] of Object.entries(mpData)) {
+                    if (cell && typeof cell === 'object' && (cell as any).menuItemIds?.length > 0) {
+                      hasItems = true
+                      break
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+      if (hasItems) break
+    }
+    
+    return showConfirmation && hasItems
+  }
+
   const handleSave = async (isDraft = false) => {
+    if (!menu) return
+    
+    // Check if confirmation is needed before proceeding
+    const needsConfirmation = checkForConfirmationNeeded()
+    
+    if (needsConfirmation) {
+      setPendingSaveAction({ isDraft: isDraft })
+      setShowConfirmationModal(true)
+      return
+    }
+
+    // Proceed with actual save
+    await executeSave(isDraft)
+  }
+
+  const executeSave = async (isDraft = false) => {
     if (!menu) return
 
     try {
@@ -2304,6 +2893,7 @@ const handleAddItem = useCallback(
         description: isDraft ? "Saved as Draft" : "Menu updated successfully.",
       })
 
+      setPendingSaveAction(null)
       onSave?.()
       onClose()
     } catch (error) {
@@ -2427,6 +3017,17 @@ const handleAddItem = useCallback(
                                   const cellKey = `${date}-${selectedService.id}-${selectedSubService.id}-${mealPlan.id}-${subMealPlan.id}`
                                   const menuCell = menuData[date]?.[selectedService.id]?.[selectedSubService.id]?.[mealPlan.id]?.[subMealPlan.id]
                                   const selectedItems: string[] = menuCell?.menuItemIds || []
+                                  
+                                  // Debug: Log cell content
+                                  console.log("[v0] MenuGridCell render - selectedItems:", {
+                                    date,
+                                    mealPlan: mealPlan.name, 
+                                    subMealPlan: subMealPlan.name,
+                                    selectedItemsLength: selectedItems.length,
+                                    selectedItemIds: selectedItems,
+                                    menuCell: menuCell,
+                                    itemNames: selectedItems.map(id => menuItems.find(i => i.id === id)?.name || `Unknown-${id}`)
+                                  })
                                   
                                   const prevItems = prevWeekMap[date]?.[selectedService.id]?.[selectedSubService.id]?.[mealPlan.id]?.[subMealPlan.id] || []
 
@@ -2576,8 +3177,36 @@ const handleAddItem = useCallback(
         <ConflictDetailsDrawer 
   isOpen={conflictDrawerOpen}
   onClose={() => setConflictDrawerOpen(false)}
-  analysisData={conflictAnalysisData} // Pass the processed data
+  analysisData={conflictAnalysisData}
+  companies={companies}
+  buildings={buildings}
+  structureAssignments={allStructureAssignments}
+  menuData={menuData}
+  dateRange={dateRange}
 />
+
+        {/* CONFIRMATION MODAL COMPONENT */}
+        <SubServiceConfirmationModal
+          isOpen={showConfirmationModal}
+          onClose={() => {
+            setShowConfirmationModal(false)
+            setPendingSaveAction(null)
+          }}
+          onConfirm={() => {
+            if (pendingSaveAction) {
+              executeSave(pendingSaveAction.isDraft)
+            }
+          }}
+          subService={selectedSubService}
+          menuData={menuData}
+          dateRange={dateRange}
+          companies={companies}
+          buildings={buildings}
+          allStructureAssignments={allStructureAssignments}
+          mealPlanAssignments={mealPlanAssignments}  
+          menuItems={menuItems}
+         
+        />
       </div>
     </div>
   )
