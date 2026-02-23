@@ -2096,10 +2096,23 @@ export default function CombinedMenuCreationPage() {
         menuData: preparedMenuData,
         status: "draft",
         companyId: userCompanyId,
+        updatedAt: serverTimestamp(),
       }
 
-      await combinedMenusService.add(draftData)
-      toast({ title: "Success", description: "Menu saved as draft successfully" })
+      // Check if a draft already exists for this date range
+      const existingDraft = await combinedMenusService.getDraftByDateRange(startDate, endDate, userCompanyId)
+
+      if (existingDraft && existingDraft.id) {
+        // Update existing draft
+        const draftRef = doc(db, "combinedMenus", existingDraft.id)
+        await updateDoc(draftRef, draftData)
+        toast({ title: "Success", description: "Draft updated successfully" })
+      } else {
+        // Create new draft
+        await combinedMenusService.add(draftData)
+        toast({ title: "Success", description: "Menu saved as draft successfully" })
+      }
+
       setHasDraft(true)
     } catch (error) {
       console.error("Error saving draft:", error)

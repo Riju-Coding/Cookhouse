@@ -43,6 +43,19 @@ interface MenuCell {
   menuItemIds: string[]
   selectedDescriptions?: Record<string, string>
   customAssignments?: Record<string, Array<{ companyId: string; buildingId: string }>>
+  excludedFromUpdate?: Set<string> // Exclude specific items from update tracking
+  excludeDateFromUpdate?: Set<string> // Exclude entire date from update tracking
+  excludeMealPlanFromUpdate?: Set<string> // Exclude meal plan row from update tracking
+}
+
+interface UpdateHistory {
+  itemId: string
+  changes: Array<{
+    timestamp: string
+    oldValue: string | null
+    newValue: string
+    changedBy?: string
+  }>
 }
 
 // --- Local Services Definition (To prevent import errors) ---
@@ -865,10 +878,11 @@ const SubServiceConfirmationModal = memo(function SubServiceConfirmationModal({
                                         <span className="truncate mr-2">{menuItem?.name || 'Unknown Item'}</span>
                                         {item.isCustom && <Building2 className="h-3 w-3 text-purple-500 flex-shrink-0" title="Custom Company Assignment" />}
                                       </div>
-                                    )
-                                  })}
-                                </div>
-                              )}
+                          )
+                        })}
+                      </div>
+                    )}
+                    {/* End Update Timeline */}
                             </td>
                           )
                         })}
@@ -1342,6 +1356,10 @@ const MenuGridCell = memo(function MenuGridCell({
     structureAssignments,
     repetitionLog,
     onShowConflicts,
+    cellUpdations,
+    onExcludeItem,
+    onExcludeDate,
+    onExcludeMealPlan,
   }: {
     
     date: string
@@ -1370,8 +1388,12 @@ const MenuGridCell = memo(function MenuGridCell({
     companies: any[]
     buildings: any[]
     structureAssignments: any[]
-    repetitionLog: any[] 
+    repetitionLog: any[]
     onShowConflicts: (logs: any[], context: any) => void
+    cellUpdations?: any[]
+    onExcludeItem?: (itemId: string, exclude: boolean) => void
+    onExcludeDate?: (date: string, exclude: boolean) => void
+    onExcludeMealPlan?: (mealPlanKey: string, exclude: boolean) => void
   }) {
     const [isOpen, setIsOpen] = useState(false)
     const [isCompanyOpen, setIsCompanyOpen] = useState(false)
@@ -1381,6 +1403,9 @@ const MenuGridCell = memo(function MenuGridCell({
     const [showDescModal, setShowDescModal] = useState(false)
     const [showAssignmentModal, setShowAssignmentModal] = useState(false)
     const [itemToFocus, setItemToFocus] = useState<string | null>(null)
+    const [excludedItems, setExcludedItems] = useState<Set<string>>(new Set())
+    const [excludedMealPlans, setExcludedMealPlans] = useState<Set<string>>(new Set())
+    const [liveChanges, setLiveChanges] = useState<Record<string, any[]>>({})
     const dropdownRef = useRef<HTMLDivElement>(null)
 
     // Calculate assigned companies
@@ -1486,8 +1511,39 @@ const MenuGridCell = memo(function MenuGridCell({
   
     const handleAdd = (itemId: string) => {
       onAddItem(itemId)
+      
+      // Track live change
+      const cellKey = `${date}|${service.id}|${mealPlan.id}|${subMealPlan.id}`
+      const itemName = allMenuItems.find(m => m.id === itemId)?.name || itemId
+      setLiveChanges(prev => ({
+        ...prev,
+        [cellKey]: [...(prev[cellKey] || []), { action: "added", itemName, itemId }]
+      }))
+      
       setSearch("")
       setIsOpen(false)
+    }
+
+    const handleExcludeItem = (itemId: string) => {
+      const newExcluded = new Set(excludedItems)
+      if (newExcluded.has(itemId)) {
+        newExcluded.delete(itemId)
+      } else {
+        newExcluded.add(itemId)
+      }
+      setExcludedItems(newExcluded)
+      onExcludeItem?.(itemId, newExcluded.has(itemId))
+    }
+
+    const handleExcludeMealPlan = (mealPlanKey: string, isExcluded: boolean) => {
+      const newExcluded = new Set(excludedMealPlans)
+      if (isExcluded) {
+        newExcluded.add(mealPlanKey)
+      } else {
+        newExcluded.delete(mealPlanKey)
+      }
+      setExcludedMealPlans(newExcluded)
+      onExcludeMealPlan?.(mealPlanKey, isExcluded)
     }
 
     const onDragHandleMouseDown = (e: React.MouseEvent) => {
@@ -1522,6 +1578,7 @@ const MenuGridCell = memo(function MenuGridCell({
                 const hasError = cellLogs.some(log => log.itemId === itemId)
                 // Check if this item has custom company assignments
                 const hasCustomAssignment = menuCell?.customAssignments && menuCell.customAssignments[itemId]
+                const isItemExcluded = excludedItems.has(itemId)
 
                 // Debug: Log when item is not found
                 if (!item) {
@@ -1529,46 +1586,146 @@ const MenuGridCell = memo(function MenuGridCell({
                   return null
                 }
                 return (
-                  <div
-                    key={itemId}
-                    className={`group relative flex items-center justify-between border px-1.5 py-0.5 rounded text-xs transition-colors
-                        ${hasError 
-                            ? "bg-red-100 border-red-200 text-red-800" 
-                            : "bg-blue-50/50 hover:bg-blue-100 border-transparent hover:border-blue-200 text-gray-700"
-                        }
-                    `}
-                  >
-                    <span className="truncate font-medium leading-tight" title={item?.name || `Item: ${itemId}`}>{item?.name || `Item (${itemId.slice(0, 8)})`}</span>
-                    <div className="flex items-center gap-0.5 ml-1">
-                      {hasCustomAssignment && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            setItemToFocus(itemId)
-                            setShowAssignmentModal(true)
-                          }}
-                          className="p-0.5 rounded hover:bg-purple-100 transition-colors flex-shrink-0"
-                          title="View custom company assignment"
-                        >
-                          <Building2 className="h-3 w-3 text-purple-600" />
-                        </button>
-                      )}
-                      {isActive && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            onRemoveItem(itemId)
-                          }}
-                          className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 flex-shrink-0"
-                        >
-                          <X className="h-3 w-3" />
-                        </button>
-                      )}
+                  <div key={itemId} className="space-y-1">
+                    <div
+                      className={`group relative flex items-center justify-between border px-1.5 py-0.5 rounded text-xs transition-colors
+                          ${isItemExcluded
+                              ? "bg-yellow-50 border-yellow-200 text-yellow-800 opacity-75"
+                              : hasError 
+                              ? "bg-red-100 border-red-200 text-red-800" 
+                              : "bg-blue-50/50 hover:bg-blue-100 border-transparent hover:border-blue-200 text-gray-700"
+                          }
+                      `}
+                    >
+                      <span className="truncate font-medium leading-tight" title={item?.name || `Item: ${itemId}`}>{item?.name || `Item (${itemId.slice(0, 8)})`}</span>
+                      <div className="flex items-center gap-0.5 ml-1">
+                        {hasCustomAssignment && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setItemToFocus(itemId)
+                              setShowAssignmentModal(true)
+                            }}
+                            className="p-0.5 rounded hover:bg-purple-100 transition-colors flex-shrink-0"
+                            title="View custom company assignment"
+                          >
+                            <Building2 className="h-3 w-3 text-purple-600" />
+                          </button>
+                        )}
+                        {isActive && (
+                          <>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleExcludeItem(itemId)
+                              }}
+                              className={`p-0.5 rounded transition-colors flex-shrink-0 ${
+                                isItemExcluded 
+                                  ? "bg-yellow-200 text-yellow-700" 
+                                  : "opacity-0 group-hover:opacity-100 hover:bg-yellow-100 text-yellow-600"
+                              }`}
+                              title="Exclude from update tracking"
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                onRemoveItem(itemId)
+                                
+                                // Don't track removals in live changes - only additions are tracked
+                              }}
+                              className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 flex-shrink-0"
+                              title="Remove item"
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </>
+                        )}
+                      </div>
                     </div>
                   </div>
                 )
               })}
             </div>
+
+            {/* Update Timeline - Sticky outside items, shows all changes except current items */}
+            {(liveChanges[`${date}|${service.id}|${mealPlan.id}|${subMealPlan.id}`]?.filter(change => !selectedMenuItemIds.includes(change.itemId) && change.action === "added").length > 0 || (cellUpdations && cellUpdations.length > 0)) && (
+              <div className="mt-2 ml-2 border-l-2 border-yellow-300 pl-3 py-1">
+                {/* Live Changes - Only show added items, exclude current items in the cell */}
+                {liveChanges[`${date}|${service.id}|${mealPlan.id}|${subMealPlan.id}`]?.filter(change => !selectedMenuItemIds.includes(change.itemId) && change.action === "added").length > 0 && (
+                  <div className="mb-1.5 relative">
+                    <div className="absolute left-[-11px] top-1 w-1.5 h-1.5 bg-yellow-400 rounded-full border border-yellow-300"></div>
+                    <span className="inline-block bg-yellow-500 text-white px-1 py-0 rounded text-[8px] font-black mr-1">LIVE</span>
+                    <div className="space-y-0.5">
+                      {liveChanges[`${date}|${service.id}|${mealPlan.id}|${subMealPlan.id}`].filter(change => !selectedMenuItemIds.includes(change.itemId) && change.action === "added").map((change, idx) => (
+                        <div key={idx} className="text-xs font-semibold text-gray-800">
+                          <span>{change.itemName}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* All Updates - Latest First */}
+                {cellUpdations && [...cellUpdations].reverse().map((upd, revIdx) => {
+                  const totalUpdations = cellUpdations.length
+                  const updIdx = totalUpdations - revIdx - 1
+                  
+                  const relevantChanges = upd.changedCells
+                    ?.find(cell => cell.date === date && cell.serviceId === service.id && cell.mealPlanId === mealPlan.id && cell.subMealPlanId === subMealPlan.id)
+                    ?.changes || []
+                  
+                  if (relevantChanges.length === 0) return null
+                  
+                  // Get the item name(s) for this update - Exclude current items
+                  const replacedItems = relevantChanges
+                    .filter(ch => (ch.action === "replaced" || ch.action === "added") && !selectedMenuItemIds.includes(ch.replacedWith || ch.itemId))
+                    .map(ch => allMenuItems.find(m => m.id === (ch.replacedWith || ch.itemId))?.name || (ch.replacedWith || ch.itemId))
+                  
+                  if (replacedItems.length === 0) return null
+                  
+                  const itemName = replacedItems[0] || "Item"
+                  const updDate = new Date(upd.createdAt)
+                  const dateStr = updDate.toLocaleDateString('en-US', { day: 'numeric', month: 'short' })
+                  
+                  return (
+                    <div key={upd.id} className="mb-1.5 relative">
+                      <div className="absolute left-[-11px] top-1 w-1.5 h-1.5 bg-yellow-400 rounded-full border border-yellow-300"></div>
+                      <span className="inline-block bg-yellow-500 text-white px-1 py-0 rounded text-[8px] font-black mr-1">U{updIdx + 1}</span>
+                      <span className="text-xs font-semibold text-gray-800 line-through">{itemName}</span>
+                      <div className="text-xs text-gray-500 mt-0.5">{dateStr}</div>
+                    </div>
+                  )
+                })}
+
+                {/* Original Item - Show from first updation - Exclude current items */}
+                {cellUpdations.length > 0 && (() => {
+                  const firstUpd = cellUpdations[0]
+                  const firstChanges = firstUpd.changedCells
+                    ?.find(cell => cell.date === date && cell.serviceId === service.id && cell.mealPlanId === mealPlan.id && cell.subMealPlanId === subMealPlan.id)
+                    ?.changes || []
+                  
+                  const ogItems = firstChanges
+                    .filter(ch => (ch.action === "replaced" || ch.action === "removed") && !selectedMenuItemIds.includes(ch.itemId))
+                    .map(ch => allMenuItems.find(m => m.id === ch.itemId)?.name || ch.itemId)
+                  
+                  if (ogItems.length === 0) return null
+                  
+                  const ogDate = new Date(firstUpd.createdAt)
+                  const ogDateStr = ogDate.toLocaleDateString('en-US', { day: 'numeric', month: 'short' })
+                  
+                  return (
+                    <div className="mb-1.5 relative">
+                      <div className="absolute left-[-11px] top-1 w-1.5 h-1.5 bg-yellow-300 rounded-full border border-yellow-200"></div>
+                      <span className="inline-block bg-yellow-300 text-yellow-900 px-1 py-0 rounded text-[8px] font-black mr-1">OG</span>
+                      <span className="text-xs font-semibold text-gray-700 line-through">{ogItems[0]}</span>
+                      <div className="text-xs text-gray-500 mt-0.5">{ogDateStr}</div>
+                    </div>
+                  )
+                })()}
+              </div>
+            )}
   
             {isActive && (
               <div className="mt-2 p-1 border-t bg-gray-50 flex items-center justify-between gap-1 animate-in fade-in zoom-in-95 duration-100">
@@ -1769,6 +1926,8 @@ const MenuGridCell = memo(function MenuGridCell({
               setShowAssignmentModal(false)
             }}
           />
+
+
         </td>
     )
   })
@@ -1886,6 +2045,7 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
   const [buildings, setBuildings] = useState<any[]>([])
   const [mealPlanAssignments, setMealPlanAssignments] = useState<any[]>([])
   const [allStructureAssignments, setAllStructureAssignments] = useState<any[]>([])
+  const [updations, setUpdations] = useState<any[]>([])
   
   const [activeCell, setActiveCell] = useState<string | null>(null)
 
@@ -1894,6 +2054,7 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
 
   const [selectedService, setSelectedService] = useState<Service | null>(null)
   const [selectedSubService, setSelectedSubService] = useState<SubService | null>(null)
+  const [excludedMealPlans, setExcludedMealPlans] = useState<Set<string>>(new Set())
 
   // CONFIRMATION MODAL STATE
   const [showConfirmationModal, setShowConfirmationModal] = useState(false)
@@ -2218,6 +2379,26 @@ const menuDoc = { id: docSnap.id, ...(docSnap.data() as any) } as MenuData
           if (firstSubServices && firstSubServices.length > 0) {
             setSelectedSubService(firstSubServices[0])
           }
+        }
+
+        // Load updations for showing history
+        try {
+          const q = query(collection(db, "updations"), where("menuId", "in", [menuId, menuDoc.combinedMenuId || ""].filter(Boolean)))
+          const snapshot = await getDocs(q)
+          const updationsData = snapshot.docs
+            .map(doc => ({
+              id: doc.id,
+              ...doc.data(),
+              createdAt: doc.data().createdAt?.toDate?.() || new Date(doc.data().createdAt),
+            }))
+            .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+            .map((upd, idx) => ({
+              ...upd,
+              updationNumber: idx + 1,
+            }))
+          setUpdations(updationsData)
+        } catch (e) {
+          console.error("Error loading updations:", e)
         }
 
         setProgress(100)
@@ -2739,6 +2920,15 @@ const handleAddItem = useCallback(
     }
   }
 
+  const handleExcludeMealPlan = (mealPlanKey: string, isExcluded: boolean) => {
+    const newExcluded = new Set(excludedMealPlans)
+    if (isExcluded) {
+      newExcluded.add(mealPlanKey)
+    } else {
+      newExcluded.delete(mealPlanKey)
+    }
+    setExcludedMealPlans(newExcluded)
+  }
 
   const checkForConfirmationNeeded = (): boolean => {
     // Check if selected subservice has showConfirmation = true and has at least one menu item
@@ -2994,13 +3184,28 @@ const handleAddItem = useCallback(
                             </th>
                             {dateRange.slice(0, visibleDates).map(({ date, day }) => (
                               <th key={date} className="border border-gray-300 p-2 min-w-[250px] text-left">
-                                <div className="font-semibold">
-                                  {new Date(date).toLocaleDateString("en-US", {
-                                    month: "short",
-                                    day: "numeric",
-                                  })}
+                                <div className="flex items-start justify-between gap-2">
+                                  <div>
+                                    <div className="font-semibold">
+                                      {new Date(date).toLocaleDateString("en-US", {
+                                        month: "short",
+                                        day: "numeric",
+                                      })}
+                                    </div>
+                                    <div className="text-sm text-gray-600 font-normal">{day}</div>
+                                  </div>
+                                  <label className="flex items-center gap-1 cursor-pointer hover:bg-blue-100 p-1 rounded transition-colors whitespace-nowrap flex-shrink-0" title="Exclude this date from update tracking">
+                                    <input
+                                      type="checkbox"
+                                      onChange={(e) => {
+                                        const mealPlanKey = `${date}`
+                                        onExcludeDate?.(mealPlanKey, e.target.checked)
+                                      }}
+                                      className="h-3.5 w-3.5 text-blue-600 rounded cursor-pointer"
+                                    />
+                                    <span className="text-xs font-medium text-gray-600">Skip</span>
+                                  </label>
                                 </div>
-                                <div className="text-sm text-gray-600 font-normal">{day}</div>
                               </th>
                             ))}
                           </tr>
@@ -3011,7 +3216,20 @@ const handleAddItem = useCallback(
                               <tr key={`${mealPlan.id}-${subMealPlan.id}`} className="hover:bg-gray-50/50">
                                 <td className="border border-gray-300 bg-gray-200 p-2 sticky left-0 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] align-top">
                                   {idx === 0 && <div className="font-bold text-blue-700 mb-1">{mealPlan.name}</div>}
-                                  <div className="text-sm text-gray-700 ml-3">↳ {subMealPlan.name}</div>
+                                  <div className="flex items-center justify-between gap-2">
+                                    <div className="text-sm text-gray-700 ml-3">↳ {subMealPlan.name}</div>
+                                    <label className="flex items-center gap-1 cursor-pointer hover:bg-blue-200 p-1 rounded transition-colors whitespace-nowrap flex-shrink-0" title="Exclude this meal plan row from update tracking">
+                                      <input
+                                        type="checkbox"
+                                        onChange={(e) => {
+                                          const mealPlanKey = `${mealPlan.id}|${subMealPlan.id}`
+                                          handleExcludeMealPlan(mealPlanKey, e.target.checked)
+                                        }}
+                                        className="h-3.5 w-3.5 text-blue-600 rounded cursor-pointer"
+                                      />
+                                      <span className="text-xs font-medium text-gray-600">Skip</span>
+                                    </label>
+                                  </div>
                                 </td>
                                 {dateRange.slice(0, visibleDates).map(({ date, day }) => {
                                   const cellKey = `${date}-${selectedService.id}-${selectedSubService.id}-${mealPlan.id}-${subMealPlan.id}`
@@ -3030,6 +3248,16 @@ const handleAddItem = useCallback(
                                   })
                                   
                                   const prevItems = prevWeekMap[date]?.[selectedService.id]?.[selectedSubService.id]?.[mealPlan.id]?.[subMealPlan.id] || []
+
+                                  // Get updations relevant to this cell
+                                  const cellUpdations = updations?.filter(upd => 
+                                    upd.changedCells?.some(cell => 
+                                      cell.date === date && 
+                                      cell.serviceId === selectedService.id && 
+                                      cell.mealPlanId === mealPlan.id && 
+                                      cell.subMealPlanId === subMealPlan.id
+                                    )
+                                  ) || []
 
                                   return (
                                     <MenuGridCell
@@ -3071,8 +3299,8 @@ const handleAddItem = useCallback(
                                       buildings={buildings}
                                       structureAssignments={mealPlanAssignments}
                                       repetitionLog={repetitionLog}
-                                    
-                                       onShowConflicts={handleAnalyzeConflicts}
+                                      cellUpdations={cellUpdations}
+                                      onShowConflicts={handleAnalyzeConflicts}
                                     />
                                   )
                                 })}
@@ -3208,6 +3436,6 @@ const handleAddItem = useCallback(
          
         />
       </div>
-    </div>
+    </div>  
   )
 }
