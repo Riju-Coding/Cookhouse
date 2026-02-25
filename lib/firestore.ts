@@ -216,6 +216,7 @@ export interface SubService extends BaseEntity {
   serviceName?: string
   description?: string
   status: string
+  showConfirmation?: boolean
 }
 
 export const servicesService = new FirestoreService<Service>("services")
@@ -250,6 +251,7 @@ export interface MealPlanStructureAssignment extends BaseEntity {
   companyName?: string
   buildingName?: string
   weekStructure: {
+      
     [dayKey: string]: {
       serviceId: string
       serviceName?: string
