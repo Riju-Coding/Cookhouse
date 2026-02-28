@@ -14,7 +14,7 @@ import {
   Edit, 
   Trash2, 
   ChevronRight,
-  MoreHorizontal
+  X 
 } from 'lucide-react'
 import {
   Dialog,
@@ -34,7 +34,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { toast } from "@/hooks/use-toast"
-import { collection, getDocs, query, where, writeBatch, doc, deleteDoc } from "firebase/firestore"
+import { collection, getDocs, query, where, writeBatch, doc } from "firebase/firestore"
 import { db } from "@/lib/firebase"
 import Link from "next/link"
 import { useSearchParams } from 'next/navigation'
@@ -42,6 +42,7 @@ import { MenuViewModal } from "@/components/menu-view-modal"
 import { MenuEditModal } from "@/components/menu-edit-modal"
 import type { MenuItem } from "@/lib/types"
 import { menuItemsService } from "@/lib/services"
+import React from "react" 
 
 // --- Types ---
 interface CompanyMenu {
@@ -57,7 +58,7 @@ interface CompanyMenu {
 }
 
 interface MenuGroup {
-  id: string // usually combinedMenuId
+  id: string 
   startDate: string
   endDate: string
   menus: CompanyMenu[]
@@ -72,6 +73,9 @@ export default function CompanyMenusPage() {
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState("")
   
+  // Modal Search State
+  const [modalSearchTerm, setModalSearchTerm] = useState("")
+
   // Modals state
   const [viewModalOpen, setViewModalOpen] = useState(false)
   const [editModalOpen, setEditModalOpen] = useState(false)
@@ -129,7 +133,6 @@ export default function CompanyMenusPage() {
       const snapshot = await getDocs(q)
       const menusData = snapshot.docs
         .map((doc) => ({ id: doc.id, ...doc.data() }) as CompanyMenu)
-        // Sort by date descending (newest first)
         .sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime())
 
       setMenus(menusData)
@@ -145,12 +148,11 @@ export default function CompanyMenusPage() {
     }
   }
 
-  // --- Grouping Logic ---
+  // --- Main Page Grouping Logic ---
   const groupedMenus = useMemo(() => {
     const groups: { [key: string]: MenuGroup } = {}
 
     menus.forEach(menu => {
-      // Group by combinedMenuId if available, otherwise fallback to date range string
       const key = menu.combinedMenuId || `${menu.startDate}_${menu.endDate}`
       
       if (!groups[key]) {
@@ -164,12 +166,10 @@ export default function CompanyMenusPage() {
       groups[key].menus.push(menu)
     })
 
-    // Convert to array and sort by date descending
     let groupArray = Object.values(groups).sort((a, b) => 
       new Date(b.startDate).getTime() - new Date(a.startDate).getTime()
     )
 
-    // Filter based on search term (searches within companies inside the group)
     if (searchTerm) {
       const lowerSearch = searchTerm.toLowerCase()
       groupArray = groupArray.filter(group => 
@@ -195,11 +195,58 @@ export default function CompanyMenusPage() {
     }).sort((a, b) => a.name.localeCompare(b.name))
   }, [menus])
 
+  // --- Modal Grouping & Sorting Logic ---
+  // 1. First, create the grouped structure from selected group
+  const groupedModalData = useMemo(() => {
+    if (!selectedGroup) return []
+
+    const groups: { [key: string]: CompanyMenu[] } = {}
+
+    // Group by companyName
+    selectedGroup.menus.forEach(menu => {
+        if (!groups[menu.companyName]) {
+            groups[menu.companyName] = []
+        }
+        groups[menu.companyName].push(menu)
+    })
+
+    // Create array, sort companies alphabetically
+    const sortedCompanies = Object.keys(groups).sort()
+
+    // Map to final structure, sorting buildings alphabetically within each company
+    return sortedCompanies.map(companyName => ({
+        companyName,
+        menus: groups[companyName].sort((a, b) => a.buildingName.localeCompare(b.buildingName))
+    }))
+  }, [selectedGroup])
+
+  // 2. Then, filter that structure based on the search term
+  // This MUST come after groupedModalData is defined
+  const filteredModalData = useMemo(() => {
+    if (!modalSearchTerm) return groupedModalData
+
+    const lowerSearch = modalSearchTerm.toLowerCase()
+    
+    return groupedModalData.map(group => {
+      // If company name matches, return the whole group
+      if (group.companyName.toLowerCase().includes(lowerSearch)) {
+        return group
+      }
+      // Otherwise, filter the buildings inside
+      const matchingMenus = group.menus.filter(menu => 
+        menu.buildingName.toLowerCase().includes(lowerSearch)
+      )
+      // Return group only if it has matching buildings
+      return { ...group, menus: matchingMenus }
+    }).filter(group => group.menus.length > 0)
+  }, [groupedModalData, modalSearchTerm])
+
 
   // --- Actions ---
 
-  const handleOpenGroupDetails = (group: MenuGroup) => {
+   const handleOpenGroupDetails = (group: MenuGroup) => {
     setSelectedGroup(group)
+    setModalSearchTerm("") // Reset search
     setDetailsModalOpen(true)
   }
 
@@ -232,14 +279,11 @@ export default function CompanyMenusPage() {
     try {
       const batch = writeBatch(db)
 
-      // 1. Delete all individual company menus in this group
       groupToDelete.menus.forEach(menu => {
         const menuRef = doc(db, "companyMenus", menu.id)
         batch.delete(menuRef)
       })
 
-      // 2. Try to delete the parent combinedMenu doc if the ID matches a combinedMenuId
-      // Note: We check if the ID looks like a firestore ID, not a date string
       if (!groupToDelete.id.includes("_")) {
          const combinedRef = doc(db, "combinedMenus", groupToDelete.id)
          batch.delete(combinedRef)
@@ -252,10 +296,9 @@ export default function CompanyMenusPage() {
         description: `Deleted menu group and ${groupToDelete.menus.length} company menus.`,
       })
 
-      // Refresh data
       loadCompanyMenus()
       setDeleteAlertOpen(false)
-      setDetailsModalOpen(false) // Close details if open
+      setDetailsModalOpen(false) 
 
     } catch (error) {
       console.error("Error deleting group:", error)
@@ -330,7 +373,7 @@ export default function CompanyMenusPage() {
         </div>
       </div>
 
-      {/* Stats Grid - Optimized for space */}
+      {/* Stats Grid */}
       <Card className="bg-slate-50 border-slate-200">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm font-medium text-slate-500 uppercase">
@@ -394,8 +437,6 @@ export default function CompanyMenusPage() {
                   <TableBody>
                     {groupedMenus.map((group) => {
                       const duration = Math.ceil((new Date(group.endDate).getTime() - new Date(group.startDate).getTime()) / (1000 * 60 * 60 * 24)) + 1
-                      
-                      // Get first 3 company names for preview
                       const previewNames = group.menus.slice(0, 3).map(m => m.companyName).join(", ")
                       const remainingCount = group.menus.length - 3
 
@@ -448,88 +489,163 @@ export default function CompanyMenusPage() {
         </CardContent>
       </Card>
 
-      {/* Modal: Group Details (Drill-down) */}
+      {/* 
+        MODAL: Full Screen Group Details 
+      */}
       <Dialog open={detailsModalOpen} onOpenChange={setDetailsModalOpen}>
-        <DialogContent className="max-w-5xl max-h-[85vh] flex flex-col">
-          <DialogHeader>
-            <DialogTitle>Menu Details</DialogTitle>
-            <DialogDescription>
-              {selectedGroup && (
-                <span className="flex items-center gap-2 mt-1">
-                  {formatDate(selectedGroup.startDate)} - {formatDate(selectedGroup.endDate)}
-                  <span className="w-1 h-1 bg-gray-400 rounded-full" />
-                  {selectedGroup.menus.length} Companies
-                </span>
-              )}
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="flex-1 overflow-auto border rounded-md mt-4">
-            <Table>
-              <TableHeader className="sticky top-0 bg-white z-10 shadow-sm">
-                <TableRow>
-                  <TableHead>Company Name</TableHead>
-                  <TableHead>Building</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {selectedGroup?.menus.map((menu) => (
-                  <TableRow key={menu.id}>
-                    <TableCell className="font-medium">{menu.companyName}</TableCell>
-                    <TableCell>{menu.buildingName}</TableCell>
-                    <TableCell>
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                        menu.status === 'published' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
-                      }`}>
-                        {menu.status}
+        <DialogContent className="fixed left-0 top-0 z-50 flex h-screen w-screen !max-w-none flex-col gap-0 border-none bg-white p-0 shadow-none sm:max-w-none translate-x-0 translate-y-0 data-[state=open]:slide-in-from-left-0 data-[state=open]:slide-in-from-top-0">
+          
+          {/* Header */}
+          <div className="border-b px-6 py-4 flex items-center justify-between bg-white shadow-sm z-10 shrink-0">
+            <div className="flex items-center gap-8">
+              <div>
+                <DialogTitle className="text-xl font-bold">Company Menus Detail</DialogTitle>
+                <DialogDescription className="mt-1">
+                  {selectedGroup && (
+                    <span className="flex items-center gap-2 text-sm">
+                      <span className="bg-blue-100 text-blue-800 px-2 py-0.5 rounded text-xs font-medium">
+                          {formatDate(selectedGroup.startDate)} - {formatDate(selectedGroup.endDate)}
                       </span>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-2">
-                        <Button
-                          variant="outline"
-                          size="icon"
-                          className="h-8 w-8"
-                          onClick={() => handleOpenViewModal(menu.id)}
-                          title="View Menu"
-                        >
-                          <Eye className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="icon"
-                          className="h-8 w-8"
-                          onClick={() => handleOpenEditModal(menu.id)}
-                          title="Edit Menu"
-                        >
-                          <Edit className="h-4 w-4" />
-                        </Button>
-                        <Button 
-                          variant="outline" 
-                          size="icon"
-                          className="h-8 w-8"
-                          onClick={() => handleDownload(menu)}
-                          title="Download CSV"
-                        >
-                          <Download className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                      <span className="text-gray-400">|</span>
+                      <span>{groupedModalData.length} Companies</span>
+                    </span>
+                  )}
+                </DialogDescription>
+              </div>
+
+              {/* SEARCH BOX */}
+              <div className="relative w-80">
+                <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
+                <Input
+                  placeholder="Search company or building..."
+                  value={modalSearchTerm}
+                  onChange={(e) => setModalSearchTerm(e.target.value)}
+                  className="pl-10 h-9 bg-gray-50 border-gray-300 focus:bg-white transition-colors"
+                />
+              </div>
+            </div>
+
+            <Button variant="ghost" size="icon" onClick={() => setDetailsModalOpen(false)}>
+                <X className="h-6 w-6 text-gray-500" />
+            </Button>
           </div>
-          <div className="flex justify-between items-center pt-4 border-t mt-auto">
-             <Button variant="destructive" size="sm" onClick={(e) => selectedGroup && handleDeleteGroupClick(selectedGroup, e)}>
+
+          {/* Scrollable Content */}
+          <div className="flex-1 overflow-auto bg-gray-50/50 p-6">
+             <div className="max-w-7xl mx-auto space-y-6">
+                <Card className="border shadow-sm">
+                    <Table>
+                    <TableHeader className="bg-white sticky top-0 z-10">
+                        <TableRow>
+                        <TableHead className="w-[40%]">Building / Location</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Date Generated</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
+                        </TableRow>
+                    </TableHeader>
+                    
+                    <TableBody>
+                        {filteredModalData.length === 0 ? (
+                           <TableRow>
+                             <TableCell colSpan={4} className="h-24 text-center text-gray-500">
+                               No results found for "{modalSearchTerm}"
+                             </TableCell>
+                           </TableRow>
+                        ) : (
+                          filteredModalData.map((company) => (
+                          <React.Fragment key={company.companyName}>
+                              {/* Company Header Row */}
+                              <TableRow className="bg-gray-100 hover:bg-gray-100 border-b border-gray-200">
+                                  <TableCell colSpan={4} className="py-3">
+                                      <div className="flex items-center">
+                                          <span className="text-sm font-bold text-gray-900 uppercase tracking-wide">
+                                              {company.companyName}
+                                          </span>
+                                          <span className="ml-2 px-2 py-0.5 bg-gray-200 text-gray-600 text-xs rounded-full">
+                                              {company.menus.length}
+                                          </span>
+                                      </div>
+                                  </TableCell>
+                              </TableRow>
+
+                              {/* Building Rows */}
+                              {company.menus.map((menu) => (
+                                  <TableRow key={menu.id} className="hover:bg-blue-50/30 transition-colors">
+                                      <TableCell className="pl-8 py-3">
+                                          <div className="flex items-center gap-2">
+                                              <div className="h-1.5 w-1.5 rounded-full bg-blue-300"></div>
+                                              <span className="font-medium text-gray-700">{menu.buildingName}</span>
+                                          </div>
+                                      </TableCell>
+                                      <TableCell>
+                                          <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium capitalize ${
+                                              menu.status === 'published' 
+                                                  ? 'bg-green-100 text-green-800 border border-green-200' 
+                                                  : 'bg-yellow-100 text-yellow-800 border border-yellow-200'
+                                          }`}>
+                                              {menu.status}
+                                          </span>
+                                      </TableCell>
+                                      <TableCell className="text-gray-500 text-sm">
+                                          {formatDate(menu.startDate)}
+                                      </TableCell>
+                                      <TableCell className="text-right">
+                                          <div className="flex justify-end gap-1">
+                                              <Button
+                                                  variant="ghost"
+                                                  size="icon"
+                                                  className="h-8 w-8 text-gray-500 hover:text-blue-600"
+                                                  onClick={() => handleOpenViewModal(menu.id)}
+                                                  title="View Menu"
+                                              >
+                                                  <Eye className="h-4 w-4" />
+                                              </Button>
+                                              <Button
+                                                  variant="ghost"
+                                                  size="icon"
+                                                  className="h-8 w-8 text-gray-500 hover:text-blue-600"
+                                                  onClick={() => handleOpenEditModal(menu.id)}
+                                                  title="Edit Menu"
+                                              >
+                                                  <Edit className="h-4 w-4" />
+                                              </Button>
+                                              <Button 
+                                                  variant="ghost" 
+                                                  size="icon"
+                                                  className="h-8 w-8 text-gray-500 hover:text-green-600"
+                                                  onClick={() => handleDownload(menu)}
+                                                  title="Download CSV"
+                                              >
+                                                  <Download className="h-4 w-4" />
+                                              </Button>
+                                          </div>
+                                      </TableCell>
+                                  </TableRow>
+                              ))}
+                          </React.Fragment>
+                          ))
+                        )}
+                    </TableBody>
+                    </Table>
+                </Card>
+            </div>
+          </div>
+
+          {/* Footer Actions */}
+          <div className="border-t bg-white px-6 py-4 flex justify-between items-center z-10 shrink-0">
+             <Button 
+                variant="destructive" 
+                onClick={(e) => selectedGroup && handleDeleteGroupClick(selectedGroup, e)}
+                className="gap-2"
+            >
+               <Trash2 className="h-4 w-4" />
                Delete Entire Group
              </Button>
-             <Button variant="secondary" onClick={() => setDetailsModalOpen(false)}>
+             <Button variant="outline" onClick={() => setDetailsModalOpen(false)}>
                Close
              </Button>
           </div>
+
         </DialogContent>
       </Dialog>
 
@@ -543,7 +659,7 @@ export default function CompanyMenusPage() {
               <span className="font-medium text-gray-900">
                 {groupToDelete && `${formatDate(groupToDelete.startDate)} to ${formatDate(groupToDelete.endDate)}`}
               </span>
-              . This action will remove <span className="font-bold">{groupToDelete?.menus.length}</span> individual company menus and cannot be undone.
+              . This action will remove <span className="font-bold">{groupToDelete?.menus.length}</span> individual company menus.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -581,15 +697,6 @@ export default function CompanyMenusPage() {
         menuType="company"
         onSave={() => {
            loadCompanyMenus()
-           // If detailed modal is open, we need to refresh the selected group data too
-           // But simply triggering loadCompanyMenus updates 'menus' state, 
-           // and 'groupedMenus' is a memo, so it updates.
-           // However, 'selectedGroup' is local state. We need to update it.
-           if (selectedGroup) {
-              // We'll update selectedGroup in a useEffect or just let the user close/reopen
-              // For smoother UX, we can find the group again in the new menus list
-              // But for now, simple reload works.
-           }
         }}
         preloadedMenuItems={menuItems}
       />

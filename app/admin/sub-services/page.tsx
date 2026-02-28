@@ -4,6 +4,7 @@ import { useState, useEffect } from "react"
 import { CrudTable } from "@/components/admin/crud-table"
 import { subServicesService, servicesService, type SubService, type Service } from "@/lib/firestore"
 import { toast } from "@/hooks/use-toast"
+import { Switch } from "@/components/ui/switch"
 
 export default function SubServicesPage() {
   const [subServices, setSubServices] = useState<SubService[]>([])
@@ -38,6 +39,7 @@ export default function SubServicesPage() {
   useEffect(() => {
     loadData()
   }, [])
+
 
   const handleAdd = async (data: Omit<SubService, "id" | "createdAt" | "updatedAt">) => {
     try {
@@ -97,7 +99,33 @@ export default function SubServicesPage() {
     { key: "name", label: "Name" },
     { key: "serviceName", label: "Service" },
     { key: "description", label: "Description" },
-    { key: "status", label: "Status" },
+    // --- Existing Status Column ---
+    {
+      key: "status",
+      label: "Status",
+      render: (value: any, item: SubService) => (
+        <div className="flex items-center gap-3">
+          <span className="capitalize w-16">{value}</span>
+          
+        </div>
+      ),
+    },
+    // --- NEW COLUMN: Show Confirmation ---
+    {
+      key: "showConfirmation", // This must match the field name in your Firestore document
+      label: "Show Confirmation",
+      render: (value: boolean, item: SubService) => (
+        <div className="flex items-center pl-4">
+          <Switch
+            checked={!!value} // ensures it is boolean (false if undefined)
+            onCheckedChange={(checked) => {
+              handleEdit(item.id, { showConfirmation: checked })
+            }}
+          />
+        </div>
+      ),
+    },
+
   ]
 
   const formFields = [
@@ -131,6 +159,12 @@ export default function SubServicesPage() {
         { value: "active", label: "Active" },
         { value: "inactive", label: "Inactive" },
       ],
+    },
+    // --- NEW FIELD: Show Confirmation (For the Add/Edit Modal) ---
+    {
+      name: "showConfirmation",
+      label: "Show Confirmation",
+      type: "switch" as const, // This uses the switch logic we saw in your CrudTable code
     },
   ]
 
