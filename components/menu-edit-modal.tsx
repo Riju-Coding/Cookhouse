@@ -3900,17 +3900,17 @@ const handleAddItem = useCallback(
       // 4. Record Updation if active and changed
       // NOTE: For company-wise menus with multi-building updates, we create ONE consolidated record
       // Only create records if we're NOT doing a multi-building update (those create their own record at the end)
-       if (!isDraft && changedCells.length > 0) {
+       // 4. Record Updation if active and changed
+      if (!isDraft && changedCells.length > 0) {
+        // This is the missing variable that caused the crash!
         const changeSummary = createChangeSummary(changedCells)
         
-        // For company-wise menus: Create ONE consolidated entry in combined menu's log
-        // For company-wise menus: Create ONE consolidated entry in combined menu's log
         if (menuType === "company" && menu.combinedMenuId) {
           const combinedLatestNumber = await updationService.getLatestUpdationNumber(menu.combinedMenuId) || 0
           const appliedBuildingIds = [menu.buildingId]
           const appliedBuildingNames = [menu.buildingName]
           
-          // 1. FETCH OTHER BUILDINGS EARLY so we can update the Combined Menu correctly for ALL of them
+          // 1. FETCH OTHER BUILDINGS EARLY
           let otherBuildingsMenus: any[] = []
           if (pushToOtherBuildings && menu.companyId) {
             try {
@@ -3927,7 +3927,6 @@ const handleAddItem = useCallback(
                   )
                 }
               )
-              // Store IDs early so the Combined Menu sync can use ALL of them
               otherBuildingsMenus.forEach(doc => {
                 appliedBuildingIds.push(doc.data().buildingId)
                 appliedBuildingNames.push(doc.data().buildingName)
@@ -3944,7 +3943,7 @@ const handleAddItem = useCallback(
             const companyChangeData = {
               companyId: menu.companyId,
               companyName: menu.companyName,
-              buildingId: menu.buildingId, // Keep primary building here
+              buildingId: menu.buildingId, 
               buildingName: menu.buildingName,
               changes: changedCells.map((cell: any) => ({
                 date: cell.date,
@@ -3957,7 +3956,6 @@ const handleAddItem = useCallback(
               changedAt: new Date(),
             }
             
-            // Record this change for EVERY applied building in the combined menu
             const updates: any = { lastCompanyChangeAt: new Date() }
             appliedBuildingIds.forEach((bId, idx) => {
               updates[`companyChanges.${menu.companyId}.${bId}`] = {
@@ -4016,8 +4014,6 @@ const handleAddItem = useCallback(
                       if (!combinedCell.customAssignments[change.itemId]) {
                         combinedCell.customAssignments[change.itemId] = []
                       }
-                      
-                      // LOOP: Assign to ALL applied buildings
                       appliedBuildingIds.forEach(bId => {
                         const alreadyAssigned = combinedCell.customAssignments[change.itemId].some(
                           (a: any) => a.companyId === menu.companyId && a.buildingId === bId
@@ -4029,26 +4025,20 @@ const handleAddItem = useCallback(
                           })
                         }
                       })
-                      
                     } else if (change.action === "removed" && change.itemId) {
                       if (!combinedCell.customAssignments[change.itemId]) {
                         combinedCell.customAssignments[change.itemId] = getDefaultCompaniesForCell(date, serviceId, subServiceId, mealPlanId, subMealPlanId)
                       }
-                      
-                      // LOOP: Remove ALL applied buildings from custom assignments
                       appliedBuildingIds.forEach(bId => {
                         combinedCell.customAssignments[change.itemId] = combinedCell.customAssignments[change.itemId].filter(
                           (a: any) => !(a.companyId === menu.companyId && a.buildingId === bId)
                         )
                       })
-                      
                       if (combinedCell.customAssignments[change.itemId].length === 0) {
                         delete combinedCell.customAssignments[change.itemId]
                         combinedCell.menuItemIds = combinedCell.menuItemIds.filter((id: string) => id !== change.itemId)
                       }
-                      
                     } else if (change.action === "replaced" && change.itemId && change.replacedWith) {
-                      // 1. ADD new item to ALL applied buildings
                       if (!combinedCell.menuItemIds.includes(change.replacedWith)) {
                         combinedCell.menuItemIds.push(change.replacedWith)
                       }
@@ -4066,8 +4056,6 @@ const handleAddItem = useCallback(
                           })
                         }
                       })
-                      
-                      // 2. REMOVE old item from ALL applied buildings
                       if (!combinedCell.customAssignments[change.itemId]) {
                         combinedCell.customAssignments[change.itemId] = getDefaultCompaniesForCell(date, serviceId, subServiceId, mealPlanId, subMealPlanId)
                       }
@@ -4076,7 +4064,6 @@ const handleAddItem = useCallback(
                           (a: any) => !(a.companyId === menu.companyId && a.buildingId === bId)
                         )
                       })
-                      
                       if (combinedCell.customAssignments[change.itemId].length === 0) {
                         delete combinedCell.customAssignments[change.itemId]
                         combinedCell.menuItemIds = combinedCell.menuItemIds.filter((id: string) => id !== change.itemId)
@@ -4170,7 +4157,7 @@ const handleAddItem = useCallback(
             buildingName: appliedBuildingNames[idx] || bid
           }))
 
-          // Enrich changedCells with item names + company/building info for better updation logs
+          const menuItemsMap = new Map(menuItems.map((item) => [item.id, item.name]))
           const enrichedChangedCells = changedCells.map((cell: any) => ({
             ...cell,
             changes: (cell.changes || []).map((ch: any) => ({
@@ -4235,7 +4222,6 @@ const handleAddItem = useCallback(
           await addDoc(collection(db, "updations"), companyUpdationRecord)
           
         } else if (menuType === "combined") {
-          // For combined menus, create direct updation record as before
           const latestNumber = await updationService.getLatestUpdationNumber(menuId) || 0
 
           const updationRecord: any = {
@@ -4254,7 +4240,9 @@ const handleAddItem = useCallback(
           await addDoc(collection(db, "updations"), updationRecord)
         }
       } else if (menuType === "combined") {
-          // For combined menus, create direct updation record as before
+          // Explicitly define changeSummary here for the combined menu
+          const changeSummary = createChangeSummary(changedCells)
+          
           const latestNumber = await updationService.getLatestUpdationNumber(menuId) || 0
 
           const updationRecord: any = {
@@ -4270,7 +4258,6 @@ const handleAddItem = useCallback(
             createdBy: "user",
           }
 
-          console.log("[v0] Creating updation record for combined menu")
           await addDoc(collection(db, "updations"), updationRecord)
         }
       
