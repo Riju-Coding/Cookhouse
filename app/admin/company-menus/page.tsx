@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { 
@@ -252,6 +253,8 @@ export default function CompanyMenusPage() {
 
   const handleOpenEditModal = useCallback(
     (menuId: string) => {
+       setDetailsModalOpen(false) 
+
       if (menuItems.length === 0 && !menuItemsLoading) {
         preloadMenuItems()
       }
@@ -262,7 +265,9 @@ export default function CompanyMenusPage() {
   )
 
   const handleOpenViewModal = useCallback((menuId: string) => {
-    setSelectedMenuId(menuId)
+    
+     setDetailsModalOpen(false)   
+  setSelectedMenuId(menuId)
     setViewModalOpen(true)
   }, [])
 

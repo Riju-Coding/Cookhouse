@@ -51,7 +51,7 @@ import {
   type SubMealPlan,
   type MealPlanStructureAssignment,
 } from "@/lib/services"
-import { collection, addDoc, updateDoc, doc } from "firebase/firestore"
+import { collection, addDoc, updateDoc, doc, onSnapshot, query, where } from "firebase/firestore"
 import { db } from "@/lib/firebase"
 import { Input } from "@/components/ui/input"
 
@@ -192,46 +192,69 @@ export default function MealPlanStructurePage() {
     fetchBuildings()
   }, [selectedCompany])
 
+  // --- LIVE REAL-TIME LISTENER ---
   useEffect(() => {
-    const loadStructures = async () => {
-      if (selectedCompany && selectedBuilding) {
-        setLoading(true)
-        try {
-          const structureAssignments = await structureAssignmentsService.getAll()
-          const baseAssignment = structureAssignments.find(
-            (s) => s.companyId === selectedCompany && s.buildingId === selectedBuilding && s.status === "active",
-          )
+    let unsubscribeBase: () => void
+    let unsubscribeMealPlans: () => void
 
-          const mealPlanAssignments = await mealPlanStructureAssignmentsService.getAll()
-          const existingMealPlanAssignment = mealPlanAssignments.find(
-            (s) => s.companyId === selectedCompany && s.buildingId === selectedBuilding,
-          )
+    if (selectedCompany && selectedBuilding) {
+      setLoading(true)
 
-          if (baseAssignment) {
-            setBaseStructure(baseAssignment.weekStructure || {})
-          } else {
-            setBaseStructure({})
-            toast({
-              title: "No Base Structure",
-              description: "Please configure 'Structure Assignment' first.",
-              variant: "destructive",
-            })
-          }
+      // 1. Listen to Base Structure (Rows)
+      const baseQuery = query(
+        collection(db, "structureAssignments"),
+        where("companyId", "==", selectedCompany),
+        where("buildingId", "==", selectedBuilding),
+        where("status", "==", "active")
+      )
 
-          if (existingMealPlanAssignment) {
-            setWeeklyStructure(existingMealPlanAssignment.weekStructure || {})
-          } else {
-            setWeeklyStructure({})
-          }
-        } catch (error) {
-          console.error("Error loading structures:", error)
-        } finally {
-          setLoading(false)
+      unsubscribeBase = onSnapshot(baseQuery, (snapshot) => {
+        if (!snapshot.empty) {
+          const data = snapshot.docs[0].data()
+          setBaseStructure(data.weekStructure || {})
+        } else {
+          setBaseStructure({})
+          toast({
+            title: "No Base Structure",
+            description: "Please configure 'Structure Assignment' first.",
+            variant: "destructive",
+          })
         }
-      }
+      }, (error) => {
+        console.error("Error listening to base structure:", error)
+      })
+
+      // 2. Listen to Meal Plan Assignments (Grid Data)
+      const mealPlanQuery = query(
+        collection(db, "mealPlanStructureAssignments"),
+        where("companyId", "==", selectedCompany),
+        where("buildingId", "==", selectedBuilding)
+      )
+
+      unsubscribeMealPlans = onSnapshot(mealPlanQuery, (snapshot) => {
+        if (!snapshot.empty) {
+          const data = snapshot.docs[0].data()
+          setWeeklyStructure(data.weekStructure || {})
+        } else {
+          setWeeklyStructure({})
+        }
+        setLoading(false)
+      }, (error) => {
+        console.error("Error listening to meal plans:", error)
+        setLoading(false)
+      })
+
+    } else {
+      // Clear data if nothing selected
+      setBaseStructure({})
+      setWeeklyStructure({})
     }
 
-    loadStructures()
+    // Cleanup: Stop listening when leaving the page or changing building
+    return () => {
+      if (unsubscribeBase) unsubscribeBase()
+      if (unsubscribeMealPlans) unsubscribeMealPlans()
+    }
   }, [selectedCompany, selectedBuilding])
 
   const getServiceName = (id: string) => services.find((s) => s.id === id)?.name || "Unknown Service"
@@ -432,7 +455,6 @@ export default function MealPlanStructurePage() {
     try {
       const allBuildings = await buildingsService.getAll()
       const mealPlanAssignments = await mealPlanStructureAssignmentsService.getAll()
-      const structureAssignments = await structureAssignmentsService.getAll()
       
       const data: Array<{ company: Company; buildings: Building[] }> = []
       const weeklyData: Record<string, WeeklyStructure> = {}
@@ -639,6 +661,47 @@ export default function MealPlanStructurePage() {
       setIsExporting(false)
     }
   }
+
+  // --- HELPER FUNCTION FOR VIEW ALL MODAL ---
+  const getUnifiedRowsForBuilding = (weeklyStructure: WeeklyStructure) => {
+    const serviceMap = new Map<string, { 
+      serviceId: string; 
+      serviceName: string; 
+      subServices: Map<string, { subServiceId: string; subServiceName: string; mealPlans: any[] }> 
+    }>();
+  
+    // Iterate through ALL days to find every possible service/sub-service
+    DAYS.forEach((day) => {
+      const dayServices = weeklyStructure[day] || [];
+      dayServices.forEach((svc) => {
+        if (!serviceMap.has(svc.serviceId)) {
+          serviceMap.set(svc.serviceId, {
+            serviceId: svc.serviceId,
+            serviceName: svc.serviceName || "Unknown",
+            subServices: new Map()
+          });
+        }
+        
+        const serviceEntry = serviceMap.get(svc.serviceId)!;
+        
+        svc.subServices.forEach((sub) => {
+          if (!serviceEntry.subServices.has(sub.subServiceId)) {
+            serviceEntry.subServices.set(sub.subServiceId, {
+              subServiceId: sub.subServiceId,
+              subServiceName: sub.subServiceName || "Unknown",
+              mealPlans: [] // Placeholder
+            });
+          }
+        });
+      });
+    });
+  
+    // Convert Maps back to Array for rendering
+    return Array.from(serviceMap.values()).map(svc => ({
+      ...svc,
+      subServices: Array.from(svc.subServices.values())
+    }));
+  };
 
   if (isDataLoading)
     return (
@@ -1188,43 +1251,68 @@ export default function MealPlanStructurePage() {
                                               ))}
                                             </TableRow>
                                           </TableHeader>
+                                          
+                                          {/* --- UPDATED RENDERING LOGIC --- */}
                                           <TableBody>
-                                            {Object.entries(buildingWeeklyStructure)
-                                              .find(([_, dayServices]) => dayServices && dayServices.length > 0)?.[1]
-                                              ?.map((svc) => (
-                                                <Fragment key={`${building.id}-svc-${svc.serviceId}`}>
-                                                  <TableRow className="bg-blue-50/50 hover:bg-blue-50/80">
-                                                    <TableCell className="font-semibold text-blue-900 py-2 border-r border-b text-left">
-                                                      {svc.serviceName || "Unknown Service"}
+                                          {(() => {
+                                            const unifiedRows = getUnifiedRowsForBuilding(buildingWeeklyStructure);
+
+                                            if (unifiedRows.length === 0) {
+                                              return (
+                                                <TableRow>
+                                                  <TableCell colSpan={8} className="text-center py-8 text-gray-500">
+                                                    No services configured
+                                                  </TableCell>
+                                                </TableRow>
+                                              );
+                                            }
+
+                                            return unifiedRows.map((svc) => (
+                                              <Fragment key={`${building.id}-svc-${svc.serviceId}`}>
+                                                <TableRow className="bg-blue-50/50 hover:bg-blue-50/80">
+                                                  <TableCell className="font-semibold text-blue-900 py-2 border-r border-b text-left">
+                                                    {svc.serviceName}
+                                                  </TableCell>
+                                                  {DAYS.map((day) => (
+                                                    <TableCell key={day} className="border-r border-b text-center p-1 bg-gray-50/30">
+                                                      {/* Visual filler for Service Row */}
                                                     </TableCell>
-                                                    {DAYS.map((day) => (
-                                                      <TableCell key={day} className="border-r border-b text-center p-1">
-                                                        <div className="text-xs text-gray-600">—</div>
-                                                      </TableCell>
-                                                    ))}
-                                                  </TableRow>
-                                                  {svc.subServices.map((subSvc) => (
-                                                    <TableRow key={`${building.id}-subsvc-${subSvc.subServiceId}`} className="hover:bg-gray-50">
-                                                      <TableCell className="text-gray-700 py-2 border-r border-b pl-8 text-left text-sm">
-                                                        {subSvc.subServiceName || "Unknown Sub-Service"}
-                                                      </TableCell>
-                                                      {DAYS.map((day) => (
-                                                        <TableCell key={day} className="border-r border-b text-left p-2 text-xs">
+                                                  ))}
+                                                </TableRow>
+
+                                                {svc.subServices.map((subSvc) => (
+                                                  <TableRow key={`${building.id}-subsvc-${subSvc.subServiceId}`} className="hover:bg-gray-50">
+                                                    <TableCell className="text-gray-700 py-2 border-r border-b pl-8 text-left text-sm">
+                                                      {subSvc.subServiceName}
+                                                    </TableCell>
+                                                    {DAYS.map((day) => {
+                                                      const dayService = buildingWeeklyStructure[day]?.find(s => s.serviceId === svc.serviceId);
+                                                      const daySubService = dayService?.subServices.find(ss => ss.subServiceId === subSvc.subServiceId);
+                                                      const mealPlans = daySubService?.mealPlans || [];
+                                                      const existsOnDay = !!daySubService;
+
+                                                      if (!existsOnDay) {
+                                                        return (
+                                                          <TableCell key={day} className="border-r border-b bg-gray-100/50 text-center">
+                                                            <span className="text-gray-300 text-xs">-</span>
+                                                          </TableCell>
+                                                        );
+                                                      }
+
+                                                      return (
+                                                        <TableCell key={day} className="border-r border-b text-left p-2 text-xs align-top bg-white">
                                                           <div className="space-y-1">
-                                                            {subSvc.mealPlans && subSvc.mealPlans.length > 0 ? (
-                                                              subSvc.mealPlans.map((plan: any) => (
+                                                            {mealPlans.length > 0 ? (
+                                                              mealPlans.map((plan: any) => (
                                                                 <div key={plan.mealPlanId} className="flex flex-col bg-blue-50 p-1 rounded border border-blue-200">
                                                                   <span className="font-medium text-gray-800">
-                                                                    {plan.mealPlanName || "Unknown Meal Plan"}
+                                                                    {plan.mealPlanName}
                                                                   </span>
                                                                   {plan.subMealPlans && plan.subMealPlans.length > 0 && (
                                                                     <div className="ml-2 mt-1 space-y-0.5 border-l border-blue-300 pl-2">
                                                                       {plan.subMealPlans.map((subPlan: any) => (
-                                                                        <div
-                                                                          key={subPlan.subMealPlanId}
-                                                                          className="text-gray-700 text-xs"
-                                                                        >
-                                                                          • {subPlan.subMealPlanName || "Unknown Sub-Meal Plan"}
+                                                                        <div key={subPlan.subMealPlanId} className="text-gray-700 text-xs">
+                                                                          • {subPlan.subMealPlanName}
                                                                         </div>
                                                                       ))}
                                                                     </div>
@@ -1236,17 +1324,13 @@ export default function MealPlanStructurePage() {
                                                             )}
                                                           </div>
                                                         </TableCell>
-                                                      ))}
-                                                    </TableRow>
-                                                  ))}
-                                                </Fragment>
-                                              )) || (
-                                              <TableRow>
-                                                <TableCell colSpan={8} className="text-center py-8 text-gray-500">
-                                                  No services configured
-                                                </TableCell>
-                                              </TableRow>
-                                            )}
+                                                      );
+                                                    })}
+                                                  </TableRow>
+                                                ))}
+                                              </Fragment>
+                                            ));
+                                          })()}
                                           </TableBody>
                                         </Table>
                                       </div>
@@ -1495,8 +1579,8 @@ function MealPlanSelector({
           >
             <div className="flex flex-col gap-1 w-full overflow-hidden text-left">
               {hasSelection ? (
-                assignedMealPlans.map((mp, idx) => (
-                  <div key={idx} className="flex flex-col text-xs font-medium border-b border-blue-100 last:border-0 pb-1 last:pb-0 mb-1 last:mb-0">
+                assignedMealPlans.map((mp) => (
+                  <div key={mp.mealPlanId} className="flex flex-col text-xs font-medium border-b border-blue-100 last:border-0 pb-1 last:pb-0 mb-1 last:mb-0">
                     <span className="font-bold text-blue-900">{mp.mealPlanName}</span>
                     {mp.subMealPlans.length > 0 && (
                         <span className="text-[10px] text-blue-500 italic pl-2 text-left">
