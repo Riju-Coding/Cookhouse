@@ -1775,7 +1775,6 @@ const MenuGridCell = memo(function MenuGridCell({
             }}
           />
           {showDescModal && console.log("[v0] ItemDescriptionModal opened with selectedMenuItemIds:", selectedMenuItemIds, "allMenuItems:", allMenuItems.length)}
-
           <ItemCompanyAssignmentModal
             isOpen={showAssignmentModal}
             onClose={() => {
