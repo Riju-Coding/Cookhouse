@@ -2323,9 +2323,10 @@ const MenuGridCell = memo(function MenuGridCell({
                                           key={idx}
                                           onClick={(e) => {
                                             e.stopPropagation()
-                                            setEditingCompanyId(comp.companyId)
-                                            setIsCompanyWiseModalOpen(true)
+                                            // setEditingCompanyId(comp.companyId)
+                                            // setIsCompanyWiseModalOpen(true)
                                             setIsCompanyOpen(false)
+                                            console.log("Company selected:", comp.companyName)
                                           }}
                                           className="w-full p-2 hover:bg-purple-100 rounded border-b last:border-0 border-gray-100 text-left transition-colors active:bg-purple-200"
                                         >
@@ -2394,6 +2395,10 @@ const MenuGridCell = memo(function MenuGridCell({
               await menuItemsService.setSelectedDescription(itemId, selectedDescription)
             }}
           />
+
+          {showDescModal && console.log("[v0] ItemDescriptionModal opened with selectedMenuItemIds:", selectedMenuItemIds, "allMenuItems:", allMenuItems.length)}
+
+
 
           <ItemCompanyAssignmentModal
             isOpen={showAssignmentModal}
@@ -4522,14 +4527,15 @@ const handleAnalyzeConflicts = useCallback((cellLogs: any[], currentContext: any
                                     <div className="text-sm text-gray-600 font-normal">{day}</div>
                                   </div>
                                   <label className="flex items-center gap-1 cursor-pointer hover:bg-blue-100 p-1 rounded transition-colors whitespace-nowrap flex-shrink-0" title="Exclude this date from update tracking">
-                                    <input
-                                      type="checkbox"
-                                      onChange={(e) => {
-                                        const mealPlanKey = `${date}`
-                                        onExcludeDate?.(mealPlanKey, e.target.checked)
-                                      }}
-                                      className="h-3.5 w-3.5 text-blue-600 rounded cursor-pointer"
-                                    />
+                                   <input
+  type="checkbox"
+  // onExcludeDate is not defined in MenuEditModal scope. 
+  // If you need this logic, define `const onExcludeDate = ...` or remove the handler.
+  onChange={(e) => {
+    console.log("Exclude date toggled:", date, e.target.checked)
+  }}
+  className="h-3.5 w-3.5 text-blue-600 rounded cursor-pointer"
+/>
                                     <span className="text-xs font-medium text-gray-600">Skip</span>
                                   </label>
                                 </div>
