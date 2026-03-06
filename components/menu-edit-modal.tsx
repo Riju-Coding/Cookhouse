@@ -21,6 +21,7 @@ import {
   CheckCircle,
   Minus,
   ArrowRightLeft,
+  FileArchive 
 } from 'lucide-react'
 import { toast } from "@/hooks/use-toast"
 import type { Service, MealPlan, SubMealPlan, MenuItem, SubService } from "@/lib/types"
@@ -395,6 +396,7 @@ interface ItemCompanyAssignmentModalProps {
   itemToFocus: string | null
   allMenuItems: MenuItem[]
   defaultAssignedStructures: Array<{ companyId: string; companyName: string; buildingId: string; buildingName: string }>
+  allActiveStructures: Array<{ companyId: string; companyName: string; buildingId: string; buildingName: string }> // NEW PROP
   currentCustomAssignments: MenuCell['customAssignments']
   onSave: (newAssignments: MenuCell['customAssignments']) => void
 }
@@ -406,6 +408,7 @@ const ItemCompanyAssignmentModal = memo(function ItemCompanyAssignmentModal({
   itemToFocus,
   allMenuItems,
   defaultAssignedStructures,
+  allActiveStructures,
   currentCustomAssignments,
   onSave,
 }: ItemCompanyAssignmentModalProps) {
@@ -414,15 +417,28 @@ const ItemCompanyAssignmentModal = memo(function ItemCompanyAssignmentModal({
 
   const itemMap = useMemo(() => new Map(allMenuItems.map(item => [item.id, item])), [allMenuItems])
 
-  const allStructures = useMemo(() => {
-    const uniqueStructures = new Map<string, { companyName: string; buildingName: string }>()
-    defaultAssignedStructures.forEach(s => {
-      uniqueStructures.set(`${s.companyId}-${s.buildingId}`, { companyName: s.companyName, buildingName: s.buildingName })
-    })
-    return Array.from(uniqueStructures.entries())
-      .map(([key, names]) => ({ key, ...names }))
-      .sort((a, b) => a.companyName.localeCompare(b.companyName) || a.buildingName.localeCompare(b.buildingName))
-  }, [defaultAssignedStructures])
+  // Split structures into Default (Assigned) and Others (Unassigned)
+  const { defaultStructures, otherStructures, allStructureKeys } = useMemo(() => {
+    const defaultSet = new Set(defaultAssignedStructures.map(s => `${s.companyId}-${s.buildingId}`));
+    
+    // Sort Default
+    const defaults = [...defaultAssignedStructures].sort((a, b) => 
+        a.companyName.localeCompare(b.companyName) || a.buildingName.localeCompare(b.buildingName)
+    );
+
+    // Filter and Sort Others
+    const others = allActiveStructures
+        .filter(s => !defaultSet.has(`${s.companyId}-${s.buildingId}`))
+        .sort((a, b) => a.companyName.localeCompare(b.companyName) || a.buildingName.localeCompare(b.buildingName));
+
+    // Combine all keys for "Select All" logic
+    const allKeys = [
+        ...defaults.map(s => `${s.companyId}-${s.buildingId}`),
+        ...others.map(s => `${s.companyId}-${s.buildingId}`)
+    ];
+
+    return { defaultStructures: defaults, otherStructures: others, allStructureKeys: allKeys };
+  }, [defaultAssignedStructures, allActiveStructures]);
   
   const itemsForModal = useMemo(() => {
     if (itemToFocus) {
@@ -470,6 +486,26 @@ const ItemCompanyAssignmentModal = memo(function ItemCompanyAssignmentModal({
       return newAssignments
     })
   }
+
+  // NEW: Handle Select/Deselect All for a specific Item Column
+  const handleToggleColumnAll = (itemId: string) => {
+    setTempAssignments(prev => {
+        const currentSet = prev[itemId] || new Set();
+        // Check if all are currently selected
+        const areAllSelected = allStructureKeys.every(key => currentSet.has(key));
+        
+        let newSet: Set<string>;
+        if (areAllSelected) {
+            // Deselect All
+            newSet = new Set();
+        } else {
+            // Select All
+            newSet = new Set(allStructureKeys);
+        }
+
+        return { ...prev, [itemId]: newSet };
+    });
+  }
   
   const handleSaveAssignments = () => {
     const defaultStructureKeys = new Set(defaultAssignedStructures.map(s => `${s.companyId}-${s.buildingId}`))
@@ -483,6 +519,7 @@ const ItemCompanyAssignmentModal = memo(function ItemCompanyAssignmentModal({
       const assignedKeysArray = Array.from(assigned).sort()
       const assignedKeysString = assignedKeysArray.join(',')
 
+      // Optimization: Only save if different from default structure
       if (assignedKeysString === defaultKeysString) {
           return 
       }
@@ -501,6 +538,31 @@ const ItemCompanyAssignmentModal = memo(function ItemCompanyAssignmentModal({
   const modalTitle = itemToFocus 
     ? `Customize Assignments: ${items[0]?.name || 'Item'}` 
     : `Customize Item Assignments (${items.length} Items)`;
+
+  const renderRow = (struct: {companyId: string, companyName: string, buildingId: string, buildingName: string}) => {
+     const key = `${struct.companyId}-${struct.buildingId}`;
+     return (
+        <tr key={key} className="hover:bg-blue-50 transition-colors">
+        <td className="sticky left-0 bg-white px-4 py-2 whitespace-nowrap text-sm font-medium text-gray-900 border-r z-10 hover:bg-blue-100">
+            <div className="font-semibold text-xs">{struct.companyName}</div>
+            <div className="text-[10px] text-gray-500">{struct.buildingName}</div>
+        </td>
+        {items.map((item) => {
+            const isAssigned = tempAssignments[item.id]?.has(key) || false;
+            return (
+            <td key={item.id} className="px-4 py-2 text-center border-r border-gray-100">
+                <input
+                type="checkbox"
+                checked={isAssigned}
+                onChange={() => handleToggleAssignment(item.id, key)}
+                className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 cursor-pointer"
+                />
+            </td>
+            )
+        })}
+        </tr>
+     )
+  }
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-60 z-[200] flex items-center justify-center p-4">
@@ -521,55 +583,85 @@ const ItemCompanyAssignmentModal = memo(function ItemCompanyAssignmentModal({
           </div>
         ) : (
           <div className="p-4 overflow-y-auto flex-1">
-            <p className="text-sm text-gray-600 mb-4 italic">
-              Use this grid to override the default company assignments for items. Items MUST be checked for a structure to receive them.
-            </p>
+            <div className="flex items-center justify-between mb-4">
+                 <p className="text-sm text-gray-600 italic">
+                    Use this grid to override the default company assignments for items.
+                </p>
+                <div className="flex gap-4 text-xs">
+                    <div className="flex items-center gap-1">
+                        <div className="w-3 h-3 bg-gray-200 border border-gray-400 rounded-sm"></div>
+                        <span>Unchecked</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                         <div className="w-3 h-3 bg-blue-600 rounded-sm"></div>
+                        <span>Checked (Assigned)</span>
+                    </div>
+                </div>
+            </div>
             
-            {allStructures.length === 0 ? (
+            {(defaultStructures.length === 0 && otherStructures.length === 0) ? (
               <div className="flex items-center justify-center py-8">
-                <p className="text-sm text-gray-500">No companies are assigned to this cell</p>
+                <p className="text-sm text-gray-500">No active companies found</p>
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200 border">
+              <div className="overflow-x-auto shadow-sm border rounded-lg">
+                <table className="min-w-full divide-y divide-gray-200">
                   <thead>
                     <tr className="bg-gray-100">
-                      <th className="sticky left-0 bg-gray-100 px-4 py-2 text-left text-xs font-medium text-gray-700 uppercase tracking-wider min-w-[180px] z-10 border-r">
+                      <th className="sticky left-0 bg-gray-100 px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider min-w-[200px] z-20 border-r border-b">
                         Company / Building
                       </th>
-                      {items.map((item) => (
-                        <th
-                          key={item.id}
-                          className="px-4 py-2 text-center text-xs font-medium text-gray-700 uppercase tracking-wider border-r min-w-[120px]"
-                        >
-                          {item.name}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-200">
-                    {allStructures.map((struct) => (
-                      <tr key={struct.key} className="hover:bg-blue-50 transition-colors">
-                        <td className="sticky left-0 bg-white px-4 py-2 whitespace-nowrap text-sm font-medium text-gray-900 border-r z-10 hover:bg-blue-100">
-                          <div className="font-semibold text-xs">{struct.companyName}</div>
-                          <div className="text-[10px] text-gray-500">{struct.buildingName}</div>
-                        </td>
-                        {items.map((item) => {
-                          const isAssigned = tempAssignments[item.id]?.has(struct.key) || false;
+                      {items.map((item) => {
+                          const currentSet = tempAssignments[item.id] || new Set();
+                          const isAllSelected = allStructureKeys.length > 0 && allStructureKeys.every(k => currentSet.has(k));
+                          const isSomeSelected = currentSet.size > 0 && !isAllSelected;
 
                           return (
-                            <td key={item.id} className="px-4 py-2 text-center">
-                              <input
-                                type="checkbox"
-                                checked={isAssigned}
-                                onChange={() => handleToggleAssignment(item.id, struct.key)}
-                                className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 cursor-pointer"
-                              />
+                            <th
+                            key={item.id}
+                            className="px-4 py-3 text-center text-xs font-bold text-gray-700 uppercase tracking-wider border-r border-b min-w-[140px] bg-gray-50"
+                            >
+                                <div className="flex flex-col gap-2 items-center">
+                                    <span className="truncate w-full" title={item.name}>{item.name}</span>
+                                    
+                                    <label className="flex items-center gap-1.5 cursor-pointer select-none bg-white px-2 py-1 rounded border hover:bg-gray-50 transition-colors shadow-sm">
+                                        <input 
+                                            type="checkbox" 
+                                            checked={isAllSelected}
+                                            ref={input => {
+                                                if (input) input.indeterminate = isSomeSelected;
+                                            }}
+                                            onChange={() => handleToggleColumnAll(item.id)}
+                                            className="h-3.5 w-3.5 text-blue-600 cursor-pointer rounded-sm focus:ring-blue-500"
+                                        />
+                                        <span className="text-[10px] font-medium text-gray-600">Select All</span>
+                                    </label>
+                                </div>
+                            </th>
+                        )
+                      })}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200 bg-white">
+                    {/* Default Section */}
+                    {defaultStructures.length > 0 && (
+                        <tr className="bg-blue-50/50">
+                            <td colSpan={items.length + 1} className="px-4 py-2 text-[11px] font-bold text-blue-800 uppercase tracking-wider sticky left-0 z-10 border-b border-gray-200">
+                                Assigned in Structure (Default)
                             </td>
-                          )
-                        })}
-                      </tr>
-                    ))}
+                        </tr>
+                    )}
+                    {defaultStructures.map(renderRow)}
+
+                    {/* Other Section */}
+                    {otherStructures.length > 0 && (
+                        <tr className="bg-orange-50/50 border-t-2 border-gray-300">
+                            <td colSpan={items.length + 1} className="px-4 py-2 text-[11px] font-bold text-orange-800 uppercase tracking-wider sticky left-0 z-10 border-b border-gray-200">
+                                Other Active Companies (Manual Override)
+                            </td>
+                        </tr>
+                    )}
+                    {otherStructures.map(renderRow)}
                   </tbody>
                 </table>
               </div>
@@ -583,7 +675,7 @@ const ItemCompanyAssignmentModal = memo(function ItemCompanyAssignmentModal({
           </Button>
           <Button 
             onClick={handleSaveAssignments} 
-            disabled={loading || allStructures.length === 0} 
+            disabled={loading} 
             className="bg-blue-600 hover:bg-blue-700 text-white"
           >
             {loading ? (
@@ -1531,7 +1623,24 @@ const MenuGridCell = memo(function MenuGridCell({
     const dropdownRef = useRef<HTMLDivElement>(null)
     
 
-    
+     const allActiveStructures = useMemo(() => {
+        const result: { companyId: string; companyName: string; buildingId: string; buildingName: string }[] = [];
+        if (!companies || !buildings) return result;
+        
+        companies.forEach((comp: any) => {
+            if(comp.status !== 'active') return;
+            const compBuildings = buildings.filter((b: any) => b.companyId === comp.id && b.status === 'active');
+            compBuildings.forEach((b: any) => {
+                result.push({
+                    companyId: comp.id,
+                    companyName: comp.name,
+                    buildingId: b.id,
+                    buildingName: b.name
+                })
+            })
+        })
+        return result;
+    }, [companies, buildings]);                    
 
     // Calculate assigned companies from structure assignments, custom assignments, AND company-wise changes
     const assignedCompanies = useMemo(() => {
@@ -1805,10 +1914,13 @@ const MenuGridCell = memo(function MenuGridCell({
                               setItemToFocus(itemId)
                               setShowAssignmentModal(true)
                             }}
-                            className="p-0.5 rounded hover:bg-purple-100 transition-colors flex-shrink-0"
-                            title="View custom company assignment"
+                            className="p-0.5 rounded hover:bg-purple-100 transition-colors flex-shrink-0 flex items-center gap-0.5"
+                            title={`Custom assignment: ${menuCell.customAssignments[itemId].length} companies`}
                           >
                             <Building2 className="h-3 w-3 text-purple-600" />
+                            <span className="text-[9px] font-bold text-purple-700 leading-none">
+                                {menuCell.customAssignments[itemId].length}
+                            </span>
                           </button>
                         )}
                         {isActive && (
@@ -1944,7 +2056,6 @@ const MenuGridCell = memo(function MenuGridCell({
                     }
                   }
 
-                  // Build array of valid changes to render (filter out nulls first)
                   const validChanges: any[] = []
                   
                   relevantChanges.forEach((ch: any, chIdx: number) => {
@@ -1955,11 +2066,10 @@ const MenuGridCell = memo(function MenuGridCell({
                     let cNames: string[] = []
 
                     // If this updation is from a company-wise change, add all affected company buildings to the display
-                    // Use enriched data from the change itself first, fallback to updation-level data
                     if (ch.companyName && ch.buildingName) {
                       cNames = [`${ch.companyName} - ${ch.buildingName}`]
                     } else if (isFromCompanyWise && appliedBuildingInfo.length > 0) {
-                      cNames = appliedBuildingInfo.map(b => `${sourcedCompanyName} - ${b.buildingName}`)
+                      cNames = appliedBuildingInfo.map((b: any) => `${sourcedCompanyName} - ${b.buildingName}`)
                     }
 
                     if (action === "replaced") {
@@ -1980,13 +2090,16 @@ const MenuGridCell = memo(function MenuGridCell({
                           return c?.name || a.companyId
                         })
                       }
+                      
+                      // Fix: Removed the line that was hiding replacement history in combined menu
 
-                      if (selectedMenuItemIds.includes(newItemId || oldItemId)) return
                     } else if (action === "added") {
                       itemId = ch.replacedWith || ch.itemId
                       const resolvedName = ch.itemName || ch.replacedWithName || allMenuItems.find(m => m.id === itemId)?.name || itemId
-                      const isCompanyWiseChange = ch.itemName && (ch.itemName.includes('Added to') || ch.itemName.includes('Company'))
-                      itemName = isCompanyWiseChange ? ch.itemName : resolvedName
+                      
+                      // FIX: Allow 'Checkbox' to pass through the filter so the UI displays it!
+                      const isCompanyWiseChangeLocal = ch.itemName && (ch.itemName.includes('Added to') || ch.itemName.includes('Company') || ch.itemName.includes('Checkbox'))
+                      itemName = isCompanyWiseChangeLocal ? ch.itemName : resolvedName
                       
                       const addedCustom = ch.customAssignments || ch.newCustomAssignments
                       hasCustom = !!(addedCustom && Array.isArray(addedCustom) && addedCustom.length > 0)
@@ -1996,11 +2109,14 @@ const MenuGridCell = memo(function MenuGridCell({
                           return c?.name || a.companyId
                         })
                       }
+
                     } else if (action === "removed") {
                       itemId = ch.itemId
                       const resolvedName = ch.itemName || allMenuItems.find(m => m.id === itemId)?.name || itemId
-                      const isCompanyWiseChange = ch.itemName && (ch.itemName.includes('Removed from') || ch.itemName.includes('Company'))
-                      itemName = isCompanyWiseChange ? ch.itemName : resolvedName
+                      
+                      // FIX: Allow 'Checkbox' to pass through the filter so the UI displays it!
+                      const isCompanyWiseChangeLocal = ch.itemName && (ch.itemName.includes('Removed from') || ch.itemName.includes('Company') || ch.itemName.includes('Checkbox'))
+                      itemName = isCompanyWiseChangeLocal ? ch.itemName : resolvedName
                       
                       const removedCustom = ch.customAssignments || ch.oldCustomAssignments
                       hasCustom = !!(removedCustom && Array.isArray(removedCustom) && removedCustom.length > 0)
@@ -2010,8 +2126,6 @@ const MenuGridCell = memo(function MenuGridCell({
                           return c?.name || a.companyId
                         })
                       }
-
-                      if (!isCompanyWiseChange && selectedMenuItemIds.includes(itemId)) return
                     }
 
                     if (!itemName) return
@@ -2188,10 +2302,11 @@ const MenuGridCell = memo(function MenuGridCell({
                             setIsOpen(false)
                             setIsLogOpen(false)
                         }}
-                        className={`p-1.5 rounded transition-colors ${isCompanyOpen ? "bg-purple-100 text-purple-700" : "hover:bg-purple-100 text-purple-600"}`}
-                        title="View Companies"
+                        className={`p-1.5 rounded transition-colors flex items-center gap-1 ${isCompanyOpen ? "bg-purple-100 text-purple-700" : "hover:bg-purple-100 text-purple-600"}`}
+                        title={`View Companies (${assignedCompanies.length} assigned)`}
                     >
                         <Building2 className="h-4 w-4" />
+                        <span className="text-[10px] font-bold leading-none">{assignedCompanies.length}</span>
                     </button>
                     {isCompanyOpen && (
                         <div className="absolute bottom-full left-0 mb-1 w-[250px] bg-white border rounded-lg shadow-xl z-[100] flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-150">
@@ -2295,6 +2410,7 @@ const MenuGridCell = memo(function MenuGridCell({
               buildingId: c.buildingId || "",
               buildingName: c.buildingName || ""
             }))}
+            allActiveStructures={allActiveStructures} // <--- ADD THIS LINE
             currentCustomAssignments={menuCell?.customAssignments || {}}
             onSave={(assignments) => {
               console.log("[v0] Saving custom assignments via state update:", assignments)
@@ -2303,6 +2419,7 @@ const MenuGridCell = memo(function MenuGridCell({
               setItemToFocus(null)
             }}
           />
+
 
 
         </td>
@@ -2394,6 +2511,7 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
   const [saving, setSaving] = useState(false)
   const [progress, setProgress] = useState(0)
   const [message, setMessage] = useState("Loading...")
+  const [zipLoading, setZipLoading] = useState(false) // <--- ADD THIS
 
   const [menu, setMenu] = useState<MenuData | null>(null)
   const [menuData, setMenuData] = useState<any>({})
@@ -3246,6 +3364,7 @@ const handleAnalyzeConflicts = useCallback((cellLogs: any[], currentContext: any
   }
 
   // FIXED: buildCompanyMenu now respects customAssignments when filtering items per company
+  // --- FIXED: ITERATE DATA TO CAPTURE CUSTOM ASSIGNMENTS OUTSIDE STRUCTURE ---
   const buildCompanyMenu = (
     company: any,
     building: any,
@@ -3256,78 +3375,70 @@ const handleAnalyzeConflicts = useCallback((cellLogs: any[], currentContext: any
   ) => {
     const companyMenuData: any = {}
 
-    dateRange.forEach(({ date, day }) => {
-      const dayKey = day.toLowerCase()
-      const dayServices = structureAssignment.weekStructure[dayKey] || []
-      const dayMealPlanStructure = mealPlanStructureData.weekStructure[dayKey] || []
+    // Helper: Check if a path exists in the company's default structure
+    const isInDefaultStructure = (date: string, sId: string, ssId: string, mpId: string, smpId: string) => {
+       const dayName = dateRange.find(d => d.date === date)?.day.toLowerCase();
+       if (!dayName) return false;
+       
+       // Check Meal Plan Structure
+       const dayStruct = mealPlanStructureData.weekStructure?.[dayName] || [];
+       const sNode = dayStruct.find((s: any) => s.serviceId === sId);
+       const ssNode = sNode?.subServices?.find((ss: any) => ss.subServiceId === ssId);
+       const mpNode = ssNode?.mealPlans?.find((mp: any) => mp.mealPlanId === mpId);
+       const smpNode = mpNode?.subMealPlans?.find((smp: any) => smp.subMealPlanId === smpId);
+       
+       // Also check Service Structure to be safe (though usually mirrored)
+       const sStruct = structureAssignment.weekStructure?.[dayName] || [];
+       const sActive = sStruct.find((s: any) => s.serviceId === sId)?.subServices?.some((ss: any) => ss.subServiceId === ssId);
 
-      companyMenuData[date] = {}
+       return !!smpNode && !!sActive;
+    };
 
-      dayServices.forEach((service: any) => {
-        const serviceId = service.serviceId
-        const serviceMealPlanStructure = dayMealPlanStructure.find((s: any) => s.serviceId === serviceId)
-
-        if (serviceMealPlanStructure && combinedMenu[date]?.[serviceId]) {
-          companyMenuData[date][serviceId] = {}
-
-          serviceMealPlanStructure.subServices.forEach((subService: any) => {
-            if (!companyMenuData[date][serviceId][subService.subServiceId]) {
-              companyMenuData[date][serviceId][subService.subServiceId] = {}
-            }
-
-            subService.mealPlans.forEach((mealPlan: any) => {
-              const mealPlanId = mealPlan.mealPlanId
-
-              if (combinedMenu[date][serviceId][subService.subServiceId]?.[mealPlanId]) {
-                if (!companyMenuData[date][serviceId][subService.subServiceId][mealPlanId]) {
-                  companyMenuData[date][serviceId][subService.subServiceId][mealPlanId] = {}
-                }
-
-                mealPlan.subMealPlans.forEach((subMealPlan: any) => {
-                  const subMealPlanId = subMealPlan.subMealPlanId
-                  const sourceCell = combinedMenu[date][serviceId][subService.subServiceId][mealPlanId]?.[subMealPlanId]
-
-                  if (sourceCell) {
-                    const allItemIds = sourceCell.menuItemIds || []
-                    const customAssignments = sourceCell.customAssignments || {}
-
-                    // Filter items based on custom assignments
-                    const filteredItemIds = allItemIds.filter((itemId: string) => {
-                      const itemCustom = customAssignments[itemId]
-
-                      if (itemCustom && Array.isArray(itemCustom) && itemCustom.length > 0) {
-                        // This item has custom assignments -
-                        // only include if THIS company+building is in the list
-                        return itemCustom.some(
-                          (assignment: any) =>
-                            assignment.companyId === company.id &&
-                            assignment.buildingId === building.id
-                        )
-                      }
-
-                      // No custom assignment = default behavior (include for all assigned companies)
-                      return true
-                    })
-
-                    // Only create the cell if there are items for this company
-                    if (filteredItemIds.length > 0) {
-                      companyMenuData[date][serviceId][subService.subServiceId][mealPlanId][subMealPlanId] = {
-                        menuItemIds: filteredItemIds,
-                        // Preserve selectedDescriptions if they exist
-                        ...(sourceCell.selectedDescriptions
-                          ? { selectedDescriptions: sourceCell.selectedDescriptions }
-                          : {}),
-                        // Don't copy customAssignments to company menus - they're only relevant at combined level
-                      }
+    // Iterate over the COMBINED DATA to find assignments
+    Object.keys(combinedMenu).forEach(date => {
+      if (!companyMenuData[date]) companyMenuData[date] = {};
+      
+      Object.keys(combinedMenu[date]).forEach(sId => {
+        if (!companyMenuData[date][sId]) companyMenuData[date][sId] = {};
+        
+        Object.keys(combinedMenu[date][sId]).forEach(ssId => {
+          if (!companyMenuData[date][sId][ssId]) companyMenuData[date][sId][ssId] = {};
+          
+          Object.keys(combinedMenu[date][sId][ssId]).forEach(mpId => {
+            if (!companyMenuData[date][sId][ssId][mpId]) companyMenuData[date][sId][ssId][mpId] = {};
+            
+            Object.keys(combinedMenu[date][sId][ssId][mpId]).forEach(smpId => {
+               const sourceCell = combinedMenu[date][sId][ssId][mpId][smpId];
+               
+               if (sourceCell && sourceCell.menuItemIds && sourceCell.menuItemIds.length > 0) {
+                 const customAssignments = sourceCell.customAssignments || {};
+                 const isDefaultPath = isInDefaultStructure(date, sId, ssId, mpId, smpId);
+                 
+                 // Filter items for this company
+                 const itemsForThisCompany = sourceCell.menuItemIds.filter((itemId: string) => {
+                    const itemCustom = customAssignments[itemId];
+                    
+                    if (itemCustom && Array.isArray(itemCustom) && itemCustom.length > 0) {
+                      // 1. Explicit Custom Assignment: Check if company matches
+                      return itemCustom.some((a: any) => a.companyId === company.id && a.buildingId === building.id);
+                    } else {
+                      // 2. No Custom Assignment: Include only if in Default Structure
+                      return isDefaultPath;
                     }
-                  }
-                })
-              }
-            })
-          })
-        }
-      })
-    })
+                 });
+
+                 if (itemsForThisCompany.length > 0) {
+                   companyMenuData[date][sId][ssId][mpId][smpId] = {
+                     menuItemIds: itemsForThisCompany,
+                     selectedDescriptions: sourceCell.selectedDescriptions || {}
+                   };
+                 }
+               }
+            });
+          });
+        });
+      });
+    });
 
     return {
       companyId: company.id,
@@ -3339,7 +3450,6 @@ const handleAnalyzeConflicts = useCallback((cellLogs: any[], currentContext: any
       menuData: companyMenuData,
     }
   }
-
   // Get companies that have modified a specific cell in the combined menu
   const getCompaniesModifyingCell = (
     date: string,
@@ -3809,45 +3919,195 @@ const handleAnalyzeConflicts = useCallback((cellLogs: any[], currentContext: any
           await addDoc(collection(db, "updations"), companyUpdationRecord)
           
         } else if (menuType === "combined") {
-          const latestNumber = await updationService.getLatestUpdationNumber(menuId) || 0
+          
+          const companySpecificUpdates = new Map<string, any>()
 
-          const updationRecord: any = {
-            menuId,
-            menuType,
-            menuName: menu.name || `${menuType} Menu`,
-            updationNumber: latestNumber + 1,
-            changedCells,
-            totalChanges: changeSummary.totalChanges,
-            menuStartDate: menu.startDate,
-            menuEndDate: menu.endDate,
-            createdAt: new Date(),
-            createdBy: "user",
+          // 1. Helper to get Default Structure
+          const getDefaultCompaniesForCell = (dateStr: string, sId: string, ssId: string, mpId: string, smpId: string) => {
+             const d = new Date(dateStr)
+             const days = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"]
+             const dayKey = days[d.getDay()]
+             const result: Array<{companyId: string, buildingId: string}> = []
+             
+             if(!mealPlanAssignments) return []
+
+             mealPlanAssignments.forEach((assignment: any) => {
+               const dayStructure = assignment.weekStructure?.[dayKey] || []
+               const serviceInDay = dayStructure.find((s: any) => s.serviceId === sId)
+               const subServiceInDay = serviceInDay?.subServices?.find((ss: any) => ss.subServiceId === ssId)
+               const mealPlanInDay = subServiceInDay?.mealPlans?.find((mp: any) => mp.mealPlanId === mpId)
+               const subMealPlanInDay = mealPlanInDay?.subMealPlans?.find((smp: any) => smp.subMealPlanId === smpId)
+               if (subMealPlanInDay) {
+                 result.push({ companyId: assignment.companyId, buildingId: assignment.buildingId })
+               }
+             })
+             return result
           }
 
-          await addDoc(collection(db, "updations"), updationRecord)
-        }
-      } else if (menuType === "combined") {
-          // Explicitly define changeSummary here for the combined menu
+          // 2. Helper to get EFFECTIVE assignments
+          const getEffectiveAssignments = (cell: any, itemId: string, date: string, sId: string, ssId: string, mpId: string, smpId: string) => {
+              if (!cell.menuItemIds || !cell.menuItemIds.includes(itemId)) return [];
+
+              const customs = cell.customAssignments || {};
+              if (customs[itemId] && Array.isArray(customs[itemId])) {
+                  return customs[itemId];
+              }
+
+              return getDefaultCompaniesForCell(date, sId, ssId, mpId, smpId);
+          }
+
+          // --- MANUALLY DETECT CHECKBOX CHANGES (FIXED) ---
+          Object.keys(menuData).forEach(date => {
+            Object.keys(menuData[date] || {}).forEach(sId => {
+              Object.keys(menuData[date][sId] || {}).forEach(ssId => {
+                Object.keys(menuData[date][sId][ssId] || {}).forEach(mpId => {
+                  Object.keys(menuData[date][sId][ssId][mpId] || {}).forEach(smpId => {
+                    const oldCell = originalMenuData[date]?.[sId]?.[ssId]?.[mpId]?.[smpId] || {}
+                    const newCell = menuData[date]?.[sId]?.[ssId]?.[mpId]?.[smpId] || {}
+                    
+                    const oldItems = oldCell.menuItemIds || []
+                    const newItems = newCell.menuItemIds || []
+
+                    const allItems = new Set([...oldItems, ...newItems])
+                    const cellCheckboxChanges: any[] = []
+
+                    allItems.forEach(itemId => {
+                      // Get Effective State (Normalized)
+                      const oldEffective = getEffectiveAssignments(oldCell, itemId, date, sId, ssId, mpId, smpId);
+                      const newEffective = getEffectiveAssignments(newCell, itemId, date, sId, ssId, mpId, smpId);
+
+                      // Create Sets for comparison
+                      const oldKeys = new Set(oldEffective.map((a:any) => `${a.companyId}|${a.buildingId}`));
+                      const newKeys = new Set(newEffective.map((a:any) => `${a.companyId}|${a.buildingId}`));
+
+                      const addedTo = newEffective.filter((a:any) => !oldKeys.has(`${a.companyId}|${a.buildingId}`));
+                      const removedFrom = oldEffective.filter((a:any) => !newKeys.has(`${a.companyId}|${a.buildingId}`));
+                      
+                      const itemName = menuItemsMap.get(itemId) || itemId
+                      
+                      const recordCompanyTimeline = (compAssign: any, actionType: "added"|"removed") => {
+                         const companyObj = companies.find((c: any) => c.id === compAssign.companyId)
+                         const buildingObj = buildings.find((b: any) => b.id === compAssign.buildingId)
+                         
+                         // Skip if item was just ADDED or REMOVED entirely (handled by standard change detection)
+                         const isNewItem = !oldItems.includes(itemId) && newItems.includes(itemId)
+                         const isRemovedItem = oldItems.includes(itemId) && !newItems.includes(itemId)
+                         
+                         if (isNewItem) return; 
+                         if (isRemovedItem) return;
+
+                         // 1. Add for Combined Timeline
+                         cellCheckboxChanges.push({
+                            action: actionType,
+                            itemId,
+                            itemName: `${itemName} (${actionType === "added" ? "Assigned to" : "Removed from"} ${companyObj?.name || 'Company'} via Checkbox)`,
+                            companyId: compAssign.companyId,
+                            companyName: companyObj?.name || "Company",
+                            buildingId: compAssign.buildingId,
+                            buildingName: buildingObj?.name || "Building"
+                         })
+
+                         // 2. Prepare data for Company Timeline
+                         const key = `${compAssign.companyId}|${compAssign.buildingId}`
+                         if (!companySpecificUpdates.has(key)) {
+                            companySpecificUpdates.set(key, { companyId: compAssign.companyId, buildingId: compAssign.buildingId, changedCells: [] })
+                         }
+                         const compUpdate = companySpecificUpdates.get(key)
+                         let targetCell = compUpdate.changedCells.find((c:any) => c.date === date && c.serviceId === sId && c.mealPlanId === mpId && c.subMealPlanId === smpId)
+                         if (!targetCell) {
+                             targetCell = { date, serviceId: sId, subServiceId: ssId, mealPlanId: mpId, subMealPlanId: smpId, changes: [] }
+                             compUpdate.changedCells.push(targetCell)
+                         }
+                         
+                         targetCell.changes.push({
+                             action: actionType,
+                             itemId,
+                             itemName: `${itemName} (via Checkbox)`,
+                             companyId: compAssign.companyId,
+                             companyName: companyObj?.name || "Company",
+                             buildingId: compAssign.buildingId,
+                             buildingName: buildingObj?.name || "Building"
+                         })
+                      }
+
+                      addedTo.forEach((a:any) => recordCompanyTimeline(a, "added"))
+                      removedFrom.forEach((a:any) => recordCompanyTimeline(a, "removed"))
+                    })
+
+                    if (cellCheckboxChanges.length > 0) {
+                      let existingCell = changedCells.find((c: any) => 
+                        c.date === date && c.serviceId === sId && c.subServiceId === ssId && 
+                        c.mealPlanId === mpId && c.subMealPlanId === smpId
+                      )
+                      if (existingCell) {
+                        existingCell.changes.push(...cellCheckboxChanges)
+                      } else {
+                        changedCells.push({
+                          date, serviceId: sId, subServiceId: ssId, mealPlanId: mpId, subMealPlanId: smpId,
+                          changes: cellCheckboxChanges
+                        })
+                      }
+                    }
+                  })
+                })
+              })
+            })
+          })
+
+          // Now calculate the summary INCLUDING the new checkbox changes
           const changeSummary = createChangeSummary(changedCells)
           
-          const latestNumber = await updationService.getLatestUpdationNumber(menuId) || 0
+          if (changedCells.length > 0) {
+            const latestNumber = await updationService.getLatestUpdationNumber(menuId) || 0
 
-          const updationRecord: any = {
-            menuId,
-            menuType,
-            menuName: menu.name || `${menuType} Menu`,
-            updationNumber: latestNumber + 1,
-            changedCells,
-            totalChanges: changeSummary.totalChanges,
-            menuStartDate: menu.startDate,
-            menuEndDate: menu.endDate,
-            createdAt: new Date(),
-            createdBy: "user",
+            // 1. SAVE COMBINED MENU RECORD
+            const updationRecord: any = {
+              menuId,
+              menuType,
+              menuName: menu.name || `${menuType} Menu`,
+              updationNumber: latestNumber + 1,
+              changedCells,
+              totalChanges: changeSummary.totalChanges,
+              menuStartDate: menu.startDate,
+              menuEndDate: menu.endDate,
+              createdAt: new Date(),
+              createdBy: "user",
+            }
+            await addDoc(collection(db, "updations"), updationRecord)
+
+            // 2. SAVE INDIVIDUAL COMPANY RECORDS
+            for (const updateData of Array.from(companySpecificUpdates.values())) {
+               const companyObj = companies.find((c: any) => c.id === updateData.companyId)
+               const buildingObj = buildings.find((b: any) => b.id === updateData.buildingId)
+               
+               if (companyObj && buildingObj) {
+                  const companyUpdationRecord: any = {
+                    menuId: menuId, 
+                    menuType: "company",
+                    menuName: `${companyObj.name} - ${buildingObj.name}`,
+                    updationNumber: latestNumber + 1,
+                    changedCells: updateData.changedCells,
+                    totalChanges: updateData.changedCells.reduce((acc: number, c: any) => acc + c.changes.length, 0),
+                    menuStartDate: menu.startDate,
+                    menuEndDate: menu.endDate,
+                    createdAt: new Date(),
+                    createdBy: "user",
+                    companyId: companyObj.id,
+                    companyName: companyObj.name,
+                    buildingId: buildingObj.id,
+                    buildingName: buildingObj.name,
+                    isCompanyWiseChange: true,
+                    // FIX: Added the critical Sourced Fields so the UI groups it!
+                    sourcedFromCompanyId: companyObj.id,
+                    sourcedFromCompanyName: companyObj.name,
+                    sourcedFromCombinedMenuId: menuId
+                  }
+                  await addDoc(collection(db, "updations"), companyUpdationRecord)
+               }
+            }
           }
-
-          await addDoc(collection(db, "updations"), updationRecord)
         }
-      
+      }
 
       toast({
         title: "Success",
@@ -3871,31 +4131,322 @@ const handleAnalyzeConflicts = useCallback((cellLogs: any[], currentContext: any
       subMealPlans: subMealPlans.filter((smp) => smp.mealPlanId === mp.id),
     }))
   }, [mealPlans, subMealPlans])
+ const isSubMealPlanInStructure = useCallback((mealPlanId: string, subMealPlanId: string) => {
+    // Safety checks
+    if (!selectedService || !selectedSubService || !mealPlanAssignments.length) return false;
 
-  const filteredMealPlanStructure = useMemo(() => {
-    if (!selectedService || !selectedSubService || !mealPlanAssignments.length) return []
-
-    // For company-wise menus, filter assignments to only the current company
-    const relevantAssignments = menuType === "company" && menu?.companyId 
+    // Determine which set of assignments to check against
+    const relevantAssignments = menuType === "company" && menu?.companyId
+      // For COMPANY menu: Use ONLY that company's assignments
       ? mealPlanAssignments.filter((assignment: any) => assignment.companyId === menu.companyId)
-      : mealPlanAssignments
+      // For COMBINED menu: Use ALL company assignments
+      : mealPlanAssignments;
+
+    // Check if this meal plan/sub meal plan exists in ANY day of the week
+    // within the relevant assignments for the selected service/sub-service.
+    return dateRange.some(({ day }) => {
+      const dayKey = day.toLowerCase();
+      return relevantAssignments.some(assignment => {
+        const dayStructure = assignment.weekStructure?.[dayKey] || [];
+        
+        // Navigate the structure tree to find a match
+        const sInDay = dayStructure.find((s: any) => s.serviceId === selectedService.id);
+        const ssInDay = sInDay?.subServices?.find((ss: any) => ss.subServiceId === selectedSubService.id);
+        const mpInDay = ssInDay?.mealPlans?.find((mp: any) => mp.mealPlanId === mealPlanId);
+        
+        return mpInDay?.subMealPlans?.some((smp: any) => smp.subMealPlanId === subMealPlanId);
+      });
+    });
+  }, [mealPlanAssignments, menuType, menu?.companyId, dateRange, selectedService, selectedSubService]);
+
+  // 2. Updated Memo to include rows that have DATA even if not in structure
+  const filteredMealPlanStructure = useMemo(() => {
+    if (!selectedService || !selectedSubService) return [];
 
     return mealPlanStructure.map(({ mealPlan, subMealPlans: subMPs }) => {
       const visibleSubMealPlans = subMPs.filter(subMealPlan => {
-        return dateRange.some(({ day }) => {
-          const dayKey = day.toLowerCase()
-          return relevantAssignments.some(assignment => {
-            const dayStructure = assignment.weekStructure?.[dayKey] || []
-            const sInDay = dayStructure.find((s: any) => s.serviceId === selectedService.id)
-            const ssInDay = sInDay?.subServices?.find((ss: any) => ss.subServiceId === selectedSubService.id)
-            const mpInDay = ssInDay?.mealPlans?.find((mp: any) => mp.mealPlanId === mealPlan.id)
-            return mpInDay?.subMealPlans?.some((smp: any) => smp.subMealPlanId === subMealPlan.id)
-          })
-        })
-      })
-      return { mealPlan, subMealPlans: visibleSubMealPlans }
-    }).filter(group => group.subMealPlans.length > 0)
-  }, [mealPlanStructure, dateRange, mealPlanAssignments, selectedService, selectedSubService, menuType, menu?.companyId])
+        // A. Is it part of the standard company structure?
+        const inStructure = isSubMealPlanInStructure(mealPlan.id, subMealPlan.id);
+        
+        // B. Does it have data assigned (Custom Assignment/Forced)?
+        // We scan all dates for this specific row to see if any items exist in menuData
+        const hasData = dateRange.some(({ date }) => {
+           // Safely access the deeply nested data
+           const cell = menuData?.[date]?.[selectedService.id]?.[selectedSubService.id]?.[mealPlan.id]?.[subMealPlan.id];
+           return cell?.menuItemIds && cell.menuItemIds.length > 0;
+        });
+
+        // SHOW ROW IF: It is in the structure OR it has data assigned
+        return inStructure || hasData;
+      });
+      return { mealPlan, subMealPlans: visibleSubMealPlans };
+    }).filter(group => group.subMealPlans.length > 0);
+  }, [mealPlanStructure, isSubMealPlanInStructure, dateRange, menuData, selectedService, selectedSubService]);
+// --- ZIP DOWNLOAD LOGIC ---
+ // --- ZIP DOWNLOAD LOGIC ---
+  const handleDownloadZIP = async () => {
+    if (menuType !== "combined" || !menuId) return;
+
+    try {
+      setZipLoading(true);
+      toast({ title: "Preparing ZIP...", description: "Formatting menus..." });
+
+      // Dynamic Imports
+      const ExcelJS = (await import("exceljs")).default;
+      const JSZip = (await import("jszip")).default;
+      const fileSaver = await import("file-saver");
+      const saveAs = fileSaver.saveAs || fileSaver.default;
+      
+      const { mealPlanStructureAssignmentsService } = await import("@/lib/services");
+
+      // 1. Fetch Fresh Data
+      const [companyMenusSnap, allMpAssignments] = await Promise.all([
+        getDocs(query(collection(db, "companyMenus"), where("combinedMenuId", "==", menuId))),
+        mealPlanStructureAssignmentsService.getAll()
+      ]);
+      
+      const companyMenus = companyMenusSnap.docs.map(d => d.data() as MenuData);
+      const zip = new JSZip();
+      const getName = (id: string) => menuItems.find(i => i.id === id)?.name || id;
+
+      const getBuildingName = (cId: string, bId: string) => {
+         const found = companyMenus.find(cm => cm.companyId === cId && cm.buildingId === bId);
+         return found ? `${found.companyName} - ${found.buildingName}` : `${cId}-${bId}`;
+      };
+
+      // =========================================================
+      // PART A: Generate Individual Company Files
+      // =========================================================
+      if (companyMenus.length > 0) {
+        const groupedByCompany: Record<string, MenuData[]> = {};
+        companyMenus.forEach(cm => {
+          if (!cm.companyName) return;
+          if (!groupedByCompany[cm.companyName]) groupedByCompany[cm.companyName] = [];
+          groupedByCompany[cm.companyName].push(cm);
+        });
+
+        for (const [companyName, menus] of Object.entries(groupedByCompany)) {
+          const workbook = new ExcelJS.Workbook();
+          let hasSheets = false;
+
+          for (const buildingMenu of menus) {
+            const mpAssignment = allMpAssignments.find((m: any) =>
+              m.companyId === buildingMenu.companyId &&
+              m.buildingId === buildingMenu.buildingId &&
+              m.status === "active"
+            );
+
+            if (!mpAssignment) continue;
+
+            const sheetName = (buildingMenu.buildingName || "Building").replace(/[\\/?*[\]]/g, "").substring(0, 31);
+            const worksheet = workbook.addWorksheet(sheetName);
+            hasSheets = true;
+
+            worksheet.addRow([`Menu - ${companyName}`]);
+            worksheet.addRow([`Building: ${buildingMenu.buildingName}`]);
+            worksheet.addRow([`Period: ${menu?.startDate} to ${menu?.endDate}`]);
+            worksheet.addRow([]);
+            const headers = ["Meal Plan", "Sub Meal Plan", ...dateRange.map((d) => d.date)];
+            worksheet.addRow(headers);
+
+            services.forEach(service => {
+              const serviceSubServices = (subServices.get(service.id) || []).sort((a, b) => (a.order || 999) - (b.order || 999));
+              serviceSubServices.forEach(subService => {
+                const subServiceRows: any[] = [];
+                mealPlans.forEach(mealPlan => {
+                  const relevantSubMealPlans = subMealPlans.filter(smp => smp.mealPlanId === mealPlan.id);
+                  relevantSubMealPlans.forEach(subMealPlan => {
+                    let isAllowed = false;
+                    Object.values(mpAssignment.weekStructure || {}).forEach((dayServices: any) => {
+                      if (isAllowed) return;
+                      if (Array.isArray(dayServices)) {
+                          const sNode = dayServices.find((s: any) => s.serviceId === service.id);
+                          const ssNode = sNode?.subServices?.find((ss: any) => ss.subServiceId === subService.id);
+                          const mpNode = ssNode?.mealPlans?.find((mp: any) => mp.mealPlanId === mealPlan.id);
+                          const smpNode = mpNode?.subMealPlans?.find((smp: any) => smp.subMealPlanId === subMealPlan.id);
+                          if (smpNode) isAllowed = true;
+                      }
+                    });
+
+                    const rowHasData = dateRange.some(({ date }) => {
+                       const cell = buildingMenu.menuData?.[date]?.[service.id]?.[subService.id]?.[mealPlan.id]?.[subMealPlan.id];
+                       return cell?.menuItemIds && cell.menuItemIds.length > 0;
+                    });
+
+                    if (isAllowed || rowHasData) {
+                      const row: any[] = [];
+                      row.push(mealPlan.name);
+                      row.push(subMealPlan.name);
+                      dateRange.forEach(({ date }) => {
+                        const cell = buildingMenu.menuData?.[date]?.[service.id]?.[subService.id]?.[mealPlan.id]?.[subMealPlan.id];
+                        const itemNames = (cell?.menuItemIds || []).map((id: string) => getName(id)).join(", ");
+                        row.push(itemNames);
+                      });
+                      subServiceRows.push(row);
+                    }
+                  });
+                });
+                if (subServiceRows.length > 0) {
+                  const headerRow = worksheet.addRow([`--- ${service.name} : ${subService.name} ---`]);
+                  headerRow.font = { bold: true, color: { argb: 'FF2E75B6' } };
+                  subServiceRows.forEach(r => worksheet.addRow(r));
+                  worksheet.addRow([]);
+                }
+              });
+            });
+            worksheet.columns.forEach(col => { col.width = 25; });
+            worksheet.getRow(5).font = { bold: true };
+          }
+
+          if (hasSheets) {
+            const buffer = await workbook.xlsx.writeBuffer();
+            zip.file(`${companyName}.xlsx`, buffer);
+          }
+        }
+      }
+
+      // =========================================================
+      // PART B: Generate Combined Master Menu File (Formatted)
+      // =========================================================
+      const combinedWorkbook = new ExcelJS.Workbook();
+      
+      services.forEach(service => {
+          const sheetName = service.name.substring(0, 31).replace(/[\\/?*[\]]/g, "");
+          const worksheet = combinedWorkbook.addWorksheet(sheetName);
+
+          const assignmentSummary = new Map<string, Set<string>>(); 
+
+          // 1. MAIN MENU TABLE
+          worksheet.addRow([`Combined Master Menu - ${service.name}`]);
+          worksheet.addRow([`Period: ${menu?.startDate} to ${menu?.endDate}`]);
+          worksheet.addRow([]);
+          const headers = ["Meal Plan", "Sub Meal Plan", ...dateRange.map((d) => d.date)];
+          worksheet.addRow(headers);
+          
+          const serviceSubServices = (subServices.get(service.id) || []).sort((a, b) => (a.order || 999) - (b.order || 999));
+
+          serviceSubServices.forEach(subService => {
+              const subServiceRows: any[] = [];
+
+              mealPlans.forEach(mealPlan => {
+                  const relevantSubMealPlans = subMealPlans.filter(smp => smp.mealPlanId === mealPlan.id);
+                  relevantSubMealPlans.forEach(subMealPlan => {
+                      
+                      const rowHasData = dateRange.some(({ date }) => {
+                          const cell = menuData?.[date]?.[service.id]?.[subService.id]?.[mealPlan.id]?.[subMealPlan.id];
+                          return cell?.menuItemIds && cell.menuItemIds.length > 0;
+                      });
+
+                      if (rowHasData) {
+                          const row: any[] = [];
+                          row.push(mealPlan.name);
+                          row.push(subMealPlan.name);
+
+                          dateRange.forEach(({ date }) => {
+                              const cell = menuData?.[date]?.[service.id]?.[subService.id]?.[mealPlan.id]?.[subMealPlan.id];
+                              const items = cell?.menuItemIds || [];
+                              const displayStrings = items.map((id: string) => {
+                                  const name = getName(id);
+                                  const custom = cell?.customAssignments?.[id];
+                                  if (custom && Array.isArray(custom) && custom.length > 0) {
+                                      // Collection logic
+                                      if (!assignmentSummary.has(name)) {
+                                          assignmentSummary.set(name, new Set());
+                                      }
+                                      custom.forEach((c: any) => {
+                                          assignmentSummary.get(name)?.add(getBuildingName(c.companyId, c.buildingId));
+                                      });
+                                      return `${name} (${custom.length})`;
+                                  }
+                                  return name;
+                              });
+                              row.push(displayStrings.join(", "));
+                          });
+                          subServiceRows.push(row);
+                      }
+                  });
+              });
+
+              if (subServiceRows.length > 0) {
+                  const headerRow = worksheet.addRow([`--- ${service.name} : ${subService.name} ---`]);
+                  headerRow.font = { bold: true, color: { argb: 'FF2E75B6' } };
+                  subServiceRows.forEach(r => worksheet.addRow(r));
+                  worksheet.addRow([]);
+              }
+          });
+
+          worksheet.columns.forEach(col => { col.width = 25; });
+          worksheet.getRow(4).font = { bold: true };
+
+          // 2. FORMATTED SUMMARY TABLE
+          if (assignmentSummary.size > 0) {
+              worksheet.addRow([]);
+              worksheet.addRow([]);
+              
+              // Title Row
+              const titleRow = worksheet.addRow(["CUSTOM ASSIGNMENT DETAILS"]);
+              titleRow.font = { bold: true, size: 14, color: { argb: 'FF2F75B5' } };
+              worksheet.mergeCells(`A${titleRow.number}:C${titleRow.number}`);
+              titleRow.alignment = { horizontal: 'left' };
+
+              // Header Row
+              const tableHeaderRow = worksheet.addRow(["Item Name", "Count", "Assigned Buildings"]);
+              tableHeaderRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+              tableHeaderRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4472C4' } }; // Blue background
+              tableHeaderRow.alignment = { vertical: 'middle', horizontal: 'center' };
+              
+              // Data Rows
+              let startRow = tableHeaderRow.number;
+              assignmentSummary.forEach((buildingsSet, itemName) => {
+                  // Format list with bullets/newlines for "Sub-cell" effect
+                  const buildingsStr = Array.from(buildingsSet).sort().map(b => `• ${b}`).join("\n");
+                  
+                  const row = worksheet.addRow([itemName, buildingsSet.size, buildingsStr]);
+                  
+                  // Alignment
+                  row.getCell(2).alignment = { vertical: 'top', horizontal: 'center' };
+                  row.getCell(3).alignment = { vertical: 'top', wrapText: true }; // Enable text wrapping
+              });
+              
+              let endRow = worksheet.lastRow?.number || startRow;
+
+              // Apply Borders to the Table
+              for (let i = startRow; i <= endRow; i++) {
+                  const row = worksheet.getRow(i);
+                  ['A', 'B', 'C'].forEach(col => {
+                      row.getCell(col).border = {
+                          top: { style: 'thin' },
+                          left: { style: 'thin' },
+                          bottom: { style: 'thin' },
+                          right: { style: 'thin' }
+                      };
+                  });
+              }
+
+              // Adjust Column Widths for Summary
+              worksheet.getColumn(1).width = 30; // Item Name
+              worksheet.getColumn(2).width = 10; // Count
+              worksheet.getColumn(3).width = 60; // Buildings List
+          }
+      });
+
+      const combinedBuffer = await combinedWorkbook.xlsx.writeBuffer();
+      zip.file(`00_Combined_Master_Menu.xlsx`, combinedBuffer);
+
+      // =========================================================
+      // Finalize ZIP
+      // =========================================================
+      const zipContent = await zip.generateAsync({ type: "blob" });
+      saveAs(zipContent, `Combined-Menu-Export-${menu?.startDate}.zip`);
+      toast({ title: "Success", description: "All menus downloaded." });
+
+    } catch (error) {
+      console.error("ZIP Error", error);
+      toast({ title: "Error", description: "Failed to create ZIP file.", variant: "destructive" });
+    } finally {
+      setZipLoading(false);
+    }
+  };
 
   if (!isOpen) return null
 
@@ -3986,92 +4537,122 @@ const handleAnalyzeConflicts = useCallback((cellLogs: any[], currentContext: any
                             ))}
                           </tr>
                         </thead>
-                        <tbody>
+                       <tbody>
                           {filteredMealPlanStructure.map(({ mealPlan, subMealPlans: subMPs }) =>
-                            subMPs.map((subMealPlan, idx) => (
-                              <tr key={`${mealPlan.id}-${subMealPlan.id}`} className="hover:bg-gray-50/50">
-                                <td className="border border-gray-300 bg-gray-200 p-2 sticky left-0 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] align-top">
-                                  {idx === 0 && <div className="font-bold text-blue-700 mb-1">{mealPlan.name}</div>}
-                                  <div className="text-sm text-gray-700 ml-3">↳ {subMealPlan.name}</div>
-                                </td>
-                                {dateRange.slice(0, visibleDates).map(({ date, day }) => {
-                                  const cellKey = `${date}-${selectedService.id}-${selectedSubService.id}-${mealPlan.id}-${subMealPlan.id}`
-                                  const menuCell = menuData[date]?.[selectedService.id]?.[selectedSubService.id]?.[mealPlan.id]?.[subMealPlan.id]
-                                  const selectedItems: string[] = menuCell?.menuItemIds || []
-                                  
-                                  const prevItems = prevWeekMap[date]?.[selectedService.id]?.[selectedSubService.id]?.[mealPlan.id]?.[subMealPlan.id] || []
+                            subMPs.map((subMealPlan, idx) => {
+                              
+                              // CALCULATE IF THIS IS AN EXTRA ROW
+                              const inStructure = isSubMealPlanInStructure(mealPlan.id, subMealPlan.id);
+                              const isExtraRow = !inStructure; // If not in structure, but visible, it's Extra/Custom
 
-                                  // Get updations relevant to this cell
-  const cellUpdations = updations.filter(upd => 
-    upd.changedCells?.some(cell => 
-      cell.date === date && 
-      cell.serviceId === selectedService.id && 
-      cell.mealPlanId === mealPlan.id && 
-      cell.subMealPlanId === subMealPlan.id
-    )
-  )
+                              return (
+                                <tr 
+                                  key={`${mealPlan.id}-${subMealPlan.id}`} 
+                                  className={`transition-colors border-b ${
+                                    isExtraRow 
+                                      ? "bg-purple-50 border-l-[6px] border-l-purple-600 shadow-inner" 
+                                      : "hover:bg-gray-50/50"
+                                  }`}
+                                >
+                                  {/* ROW HEADER CELL */}
+                                  <td className={`border-r border-gray-300 p-2 sticky left-0 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] align-top ${
+                                    isExtraRow ? "bg-purple-100/90" : "bg-gray-200"
+                                  }`}>
+                                    {idx === 0 && <div className="font-bold text-blue-700 mb-1">{mealPlan.name}</div>}
+                                    
+                                    <div className="flex flex-col gap-1 mt-1">
+                                       <div className="text-sm text-gray-700 ml-3 font-medium flex items-center gap-2">
+                                          ↳ {subMealPlan.name}
+                                       </div>
 
-  return (
-    <MenuGridCell
-      key={cellKey}
-      
-      date={date}
-      day={day}
-      service={selectedService}
-      subServiceId={selectedSubService.id}
-      mealPlan={mealPlan}
-      menuCell={menuCell}
-      subMealPlan={subMealPlan}
-      selectedMenuItemIds={selectedItems}
-      allMenuItems={menuItems}
-      onUpdateCustomAssignments={(assignments) =>
-                                        handleUpdateCustomAssignments(
-                                          date,
-                                          selectedService.id,
-                                          selectedSubService.id,
-                                          mealPlan.id,
-                                          subMealPlan.id,
-                                          assignments
-                                        )
-                                      }
-                                      onAddItem={(itemId) =>
-                                        handleAddItem(date, selectedService.id, mealPlan.id, subMealPlan.id, itemId)
-                                      }
-                                      onRemoveItem={(itemId) =>
-                                        handleRemoveItem(date, selectedService.id, mealPlan.id, subMealPlan.id, itemId)
-                                      }
-                                      onCreateItem={handleCreateItem}
-                                      onStartDrag={(d, items) => handleStartDrag(d, items)}
-                                      isDragActive={dragActive}
-                                      isDragHover={hoveredDate === date}
-                                      onHoverDrag={() => {
+                                       {/* VISUAL BADGE FOR EXTRA ROW */}
+                                       {isExtraRow && (
+                                         <div className="ml-3 mt-1 flex items-center gap-1 p-1 bg-purple-600 text-white rounded text-[10px] font-bold w-fit shadow-sm animate-in fade-in">
+                                            <AlertCircle className="h-3 w-3" />
+                                            <span>Custom Added</span>
+                                         </div>
+                                       )}
+                                    </div>
+                                  </td>
+
+                                  {/* DATE CELLS */}
+                                  {dateRange.slice(0, visibleDates).map(({ date, day }) => {
+                                    const cellKey = `${date}-${selectedService.id}-${selectedSubService.id}-${mealPlan.id}-${subMealPlan.id}`
+                                    const menuCell = menuData[date]?.[selectedService.id]?.[selectedSubService.id]?.[mealPlan.id]?.[subMealPlan.id]
+                                    const selectedItems: string[] = menuCell?.menuItemIds || []
+                                    const prevItems = prevWeekMap[date]?.[selectedService.id]?.[selectedSubService.id]?.[mealPlan.id]?.[subMealPlan.id] || []
+
+                                    // Get updations relevant to this cell
+                                    const cellUpdations = updations.filter(upd => 
+                                      upd.changedCells?.some(cell => 
+                                        cell.date === date && 
+                                        cell.serviceId === selectedService.id && 
+                                        cell.mealPlanId === mealPlan.id && 
+                                        cell.subMealPlanId === subMealPlan.id
+                                      )
+                                    )
+
+                                    return (
+                                      <MenuGridCell
+                                        key={cellKey}
+                                        date={date}
+                                        day={day}
+                                        service={selectedService}
+                                        subServiceId={selectedSubService.id}
+                                        mealPlan={mealPlan}
+                                        menuCell={menuCell}
+                                        subMealPlan={subMealPlan}
+                                        selectedMenuItemIds={selectedItems}
+                                        allMenuItems={menuItems}
+                                        onUpdateCustomAssignments={(assignments) =>
+                                          handleUpdateCustomAssignments(
+                                            date,
+                                            selectedService.id,
+                                            selectedSubService.id,
+                                            mealPlan.id,
+                                            subMealPlan.id,
+                                            assignments
+                                          )
+                                        }
+                                        onAddItem={(itemId) =>
+                                          handleAddItem(date, selectedService.id, mealPlan.id, subMealPlan.id, itemId)
+                                        }
+                                        onRemoveItem={(itemId) =>
+                                          handleRemoveItem(date, selectedService.id, mealPlan.id, subMealPlan.id, itemId)
+                                        }
+                                        onCreateItem={handleCreateItem}
+                                        onStartDrag={(d, items) => handleStartDrag(d, items)}
+                                        isDragActive={dragActive}
+                                        isDragHover={hoveredDate === date}
+                                        onHoverDrag={() => {
+                                            setHoveredDate(date)
+                                            if(dragActive) applyDragToCell(date, mealPlan.id, subMealPlan.id)
+                                        }}
+                                        onCopy={() => handleCopy(selectedItems)}
+                                        onPaste={() => handlePaste(date, mealPlan.id, subMealPlan.id)}
+                                        canPaste={!!copyBuffer?.items.length}
+                                        prevItems={prevItems}
+                                        isActive={activeCell === cellKey}
+                                        onActivate={() => setActiveCell(cellKey)}
+                                        onCellMouseEnter={() => {
                                           setHoveredDate(date)
-                                          if(dragActive) applyDragToCell(date, mealPlan.id, subMealPlan.id)
-                                      }}
-                                      onCopy={() => handleCopy(selectedItems)}
-                                      onPaste={() => handlePaste(date, mealPlan.id, subMealPlan.id)}
-                                      canPaste={!!copyBuffer?.items.length}
-                                      prevItems={prevItems}
-                                      isActive={activeCell === cellKey}
-                                      onActivate={() => setActiveCell(cellKey)}
-                                      onCellMouseEnter={() => {
-                                        setHoveredDate(date)
-                                        if (dragActive) applyDragToCell(date, mealPlan.id, subMealPlan.id)
-                                      }}
-                                      companies={companies}
-                                      buildings={buildings}
-                                      structureAssignments={mealPlanAssignments}
-                                      repetitionLog={repetitionLog}
-                                      cellUpdations={cellUpdations}
-                                      onShowConflicts={handleAnalyzeConflicts}
-                                    />
-                                  )
-                                })}
-                              </tr>
-                            )),
-
+                                          if (dragActive) applyDragToCell(date, mealPlan.id, subMealPlan.id)
+                                        }}
+                                        companies={companies}
+                                        buildings={buildings}
+                                        structureAssignments={mealPlanAssignments}
+                                        repetitionLog={repetitionLog}
+                                        cellUpdations={cellUpdations}
+                                        onShowConflicts={handleAnalyzeConflicts}
+                                      />
+                                    )
+                                  })}
+                                </tr>
+                              )
+                            })
                           )}
                         </tbody>
+
                       </table>
                       {filteredMealPlanStructure.length === 0 && (
                         <div className="p-8 text-center text-gray-500 italic">No meal plans assigned for this selection.</div>
@@ -4090,6 +4671,19 @@ const handleAnalyzeConflicts = useCallback((cellLogs: any[], currentContext: any
 
           {/* Footer */}
           <div className="border-t p-4 flex-none flex gap-2 justify-between items-center bg-white z-40">
+             {/* --- NEW ZIP BUTTON (Only for Combined) --- */}
+              {menuType === "combined" && (
+                <Button 
+                    variant="outline" 
+                    onClick={handleDownloadZIP} 
+                    disabled={zipLoading || loading} 
+                    className="border-green-300 text-green-700 hover:bg-green-50"
+                >
+                    {zipLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <FileArchive className="h-4 w-4 mr-2" />}
+                    ZIP Companies
+                </Button>
+              )}
+              {/* ------------------------------------------ */}
             {/* Push to Other Buildings Checkbox - Only show for company-wise menus */}
             {menuType === 'company' && (
               <div className="flex items-center gap-2">
@@ -4110,6 +4704,7 @@ const handleAnalyzeConflicts = useCallback((cellLogs: any[], currentContext: any
                 </label>
               </div>
             )}
+            
             <div className="flex gap-2">
               <Button variant="outline" onClick={() => handleSave(true)} disabled={saving || loading} className="border-purple-300 text-purple-700 hover:bg-purple-50">
                  {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
