@@ -1,6 +1,8 @@
 "use client"
 
 import type React from "react"
+// 1. Import NextTopLoader
+import NextTopLoader from 'nextjs-toploader';
 
 import { useState, useMemo, useRef, useCallback, useEffect } from "react"
 import { useAuth } from "@/hooks/use-auth"
@@ -181,6 +183,19 @@ export function AdminLayout({ children }: AdminLayoutProps) {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      {/* 2. Add the component here at the top of the return */}
+      <NextTopLoader
+        color="#000000"
+        initialPosition={0.08}
+        crawlSpeed={200}
+        height={3}
+        crawl={true}
+        showSpinner={false}
+        easing="ease"
+        speed={200}
+        shadow="0 0 10px #000000,0 0 5px #000000"
+      />
+
       {sidebarOpen && (
         <div className="fixed inset-0 z-50 lg:hidden">
           <div className="fixed inset-0 bg-gray-600 bg-opacity-75" onClick={() => setSidebarOpen(false)} />
