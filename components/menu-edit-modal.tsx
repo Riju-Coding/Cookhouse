@@ -2258,7 +2258,7 @@ const MenuGridCell = memo(function MenuGridCell({
                       <Plus className="h-4 w-4" />
                     </button>
                     {isOpen && (
-                      <div className="absolute bottom-full left-0 mb-1 w-[270px] bg-white border rounded-lg shadow-xl z-[100] flex flex-col overflow-hidden">
+                      <div className="absolute bottom-full left-0 mb-[-40px] w-[270px] bg-white border rounded-lg shadow-xl z-[100] flex flex-col overflow-hidden">
                         <div className="p-3 border-b bg-gradient-to-r from-blue-50 to-white">
                             <Input
                               type="text"
@@ -4187,8 +4187,7 @@ const handleAnalyzeConflicts = useCallback((cellLogs: any[], currentContext: any
       return { mealPlan, subMealPlans: visibleSubMealPlans };
     }).filter(group => group.subMealPlans.length > 0);
   }, [mealPlanStructure, isSubMealPlanInStructure, dateRange, menuData, selectedService, selectedSubService]);
-// --- ZIP DOWNLOAD LOGIC ---
- // --- ZIP DOWNLOAD LOGIC ---
+// --- ZIP DOWNLOAD LOGIC (With Final Advanced Formatting) ---
   const handleDownloadZIP = async () => {
     if (menuType !== "combined" || !menuId) return;
 
@@ -4204,7 +4203,7 @@ const handleAnalyzeConflicts = useCallback((cellLogs: any[], currentContext: any
       
       const { mealPlanStructureAssignmentsService } = await import("@/lib/services");
 
-      // 1. Fetch Fresh Data
+      // 1. Fetch Data
       const [companyMenusSnap, allMpAssignments] = await Promise.all([
         getDocs(query(collection(db, "companyMenus"), where("combinedMenuId", "==", menuId))),
         mealPlanStructureAssignmentsService.getAll()
@@ -4215,12 +4214,25 @@ const handleAnalyzeConflicts = useCallback((cellLogs: any[], currentContext: any
       const getName = (id: string) => menuItems.find(i => i.id === id)?.name || id;
 
       const getBuildingName = (cId: string, bId: string) => {
-         const found = companyMenus.find(cm => cm.companyId === cId && cm.buildingId === bId);
-         return found ? `${found.companyName} - ${found.buildingName}` : `${cId}-${bId}`;
+         const company = companies.find((c: any) => c.id === cId);
+         const building = buildings.find((b: any) => b.id === bId);
+         if (company && building) return `${company.name} - ${building.name}`;
+         return `${cId} - ${bId}`;
+      };
+
+      // New Date Formatting Helper
+      const formatDateForExcelHeader = (dateString: string) => {
+        const date = new Date(dateString);
+        const day = date.getUTCDate();
+        const daySuffix = (day % 10 === 1 && day !== 11) ? 'st' : (day % 10 === 2 && day !== 12) ? 'nd' : (day % 10 === 3 && day !== 13) ? 'rd' : 'th';
+        const formattedDay = `${day}${daySuffix}`;
+        const month = date.toLocaleString('default', { month: 'short' });
+        const weekday = date.toLocaleString('default', { weekday: 'short' });
+        return `${formattedDay} ${month}\n(${weekday})`; // Add newline for day
       };
 
       // =========================================================
-      // PART A: Generate Individual Company Files
+      // PART A: Generate Individual Company Files (Unchanged)
       // =========================================================
       if (companyMenus.length > 0) {
         const groupedByCompany: Record<string, MenuData[]> = {};
@@ -4233,27 +4245,18 @@ const handleAnalyzeConflicts = useCallback((cellLogs: any[], currentContext: any
         for (const [companyName, menus] of Object.entries(groupedByCompany)) {
           const workbook = new ExcelJS.Workbook();
           let hasSheets = false;
-
           for (const buildingMenu of menus) {
-            const mpAssignment = allMpAssignments.find((m: any) =>
-              m.companyId === buildingMenu.companyId &&
-              m.buildingId === buildingMenu.buildingId &&
-              m.status === "active"
-            );
-
+            const mpAssignment = allMpAssignments.find((m: any) => m.companyId === buildingMenu.companyId && m.buildingId === buildingMenu.buildingId && m.status === "active");
             if (!mpAssignment) continue;
-
             const sheetName = (buildingMenu.buildingName || "Building").replace(/[\\/?*[\]]/g, "").substring(0, 31);
             const worksheet = workbook.addWorksheet(sheetName);
             hasSheets = true;
-
             worksheet.addRow([`Menu - ${companyName}`]);
             worksheet.addRow([`Building: ${buildingMenu.buildingName}`]);
             worksheet.addRow([`Period: ${menu?.startDate} to ${menu?.endDate}`]);
             worksheet.addRow([]);
             const headers = ["Meal Plan", "Sub Meal Plan", ...dateRange.map((d) => d.date)];
             worksheet.addRow(headers);
-
             services.forEach(service => {
               const serviceSubServices = (subServices.get(service.id) || []).sort((a, b) => (a.order || 999) - (b.order || 999));
               serviceSubServices.forEach(subService => {
@@ -4272,12 +4275,7 @@ const handleAnalyzeConflicts = useCallback((cellLogs: any[], currentContext: any
                           if (smpNode) isAllowed = true;
                       }
                     });
-
-                    const rowHasData = dateRange.some(({ date }) => {
-                       const cell = buildingMenu.menuData?.[date]?.[service.id]?.[subService.id]?.[mealPlan.id]?.[subMealPlan.id];
-                       return cell?.menuItemIds && cell.menuItemIds.length > 0;
-                    });
-
+                    const rowHasData = dateRange.some(({ date }) => { const cell = buildingMenu.menuData?.[date]?.[service.id]?.[subService.id]?.[mealPlan.id]?.[subMealPlan.id]; return cell?.menuItemIds && cell.menuItemIds.length > 0; });
                     if (isAllowed || rowHasData) {
                       const row: any[] = [];
                       row.push(mealPlan.name);
@@ -4302,7 +4300,6 @@ const handleAnalyzeConflicts = useCallback((cellLogs: any[], currentContext: any
             worksheet.columns.forEach(col => { col.width = 25; });
             worksheet.getRow(5).font = { bold: true };
           }
-
           if (hasSheets) {
             const buffer = await workbook.xlsx.writeBuffer();
             zip.file(`${companyName}.xlsx`, buffer);
@@ -4311,7 +4308,7 @@ const handleAnalyzeConflicts = useCallback((cellLogs: any[], currentContext: any
       }
 
       // =========================================================
-      // PART B: Generate Combined Master Menu File (Formatted)
+      // PART B: Generate Combined Master Menu File (Final Format)
       // =========================================================
       const combinedWorkbook = new ExcelJS.Workbook();
       
@@ -4319,128 +4316,108 @@ const handleAnalyzeConflicts = useCallback((cellLogs: any[], currentContext: any
           const sheetName = service.name.substring(0, 31).replace(/[\\/?*[\]]/g, "");
           const worksheet = combinedWorkbook.addWorksheet(sheetName);
 
-          const assignmentSummary = new Map<string, Set<string>>(); 
+          const dateHeaders = dateRange.map(d => formatDateForExcelHeader(d.date));
+          const totalColumns = dateHeaders.length + 1; // SubMealPlan + Dates
 
-          // 1. MAIN MENU TABLE
-          worksheet.addRow([`Combined Master Menu - ${service.name}`]);
-          worksheet.addRow([`Period: ${menu?.startDate} to ${menu?.endDate}`]);
-          worksheet.addRow([]);
-          const headers = ["Meal Plan", "Sub Meal Plan", ...dateRange.map((d) => d.date)];
-          worksheet.addRow(headers);
+          // Main Title
+          worksheet.mergeCells(1, 1, 1, totalColumns);
+          const titleCell = worksheet.getCell('A1');
+          titleCell.value = `Combined Master Menu - ${service.name}`;
+          titleCell.font = { size: 16, bold: true, color: {argb: 'FF2F5496'} };
+          titleCell.alignment = { vertical: 'middle', horizontal: 'center' };
+          worksheet.getRow(1).height = 30;
+
+          // Date Header Row
+          const headerRow = worksheet.addRow(["Sub Meal Plan", ...dateHeaders]);
+          headerRow.height = 40;
+          headerRow.eachCell(cell => {
+              cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+              cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4472C4' } };
+              cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+              cell.border = { top: { style: 'medium' }, left: { style: 'medium' }, bottom: { style: 'medium' }, right: { style: 'medium' } };
+          });
           
           const serviceSubServices = (subServices.get(service.id) || []).sort((a, b) => (a.order || 999) - (b.order || 999));
 
           serviceSubServices.forEach(subService => {
-              const subServiceRows: any[] = [];
+              let hasDataForSubService = false;
+              const subServiceStartRowNumber = worksheet.rowCount + 1;
 
               mealPlans.forEach(mealPlan => {
                   const relevantSubMealPlans = subMealPlans.filter(smp => smp.mealPlanId === mealPlan.id);
                   relevantSubMealPlans.forEach(subMealPlan => {
-                      
+                      const rowAssignmentSummary = new Map<string, Set<string>>();
                       const rowHasData = dateRange.some(({ date }) => {
                           const cell = menuData?.[date]?.[service.id]?.[subService.id]?.[mealPlan.id]?.[subMealPlan.id];
                           return cell?.menuItemIds && cell.menuItemIds.length > 0;
                       });
 
                       if (rowHasData) {
-                          const row: any[] = [];
-                          row.push(mealPlan.name);
-                          row.push(subMealPlan.name);
-
+                          hasDataForSubService = true;
+                          const rowData: string[] = [subMealPlan.name];
+                          
                           dateRange.forEach(({ date }) => {
                               const cell = menuData?.[date]?.[service.id]?.[subService.id]?.[mealPlan.id]?.[subMealPlan.id];
                               const items = cell?.menuItemIds || [];
-                              const displayStrings = items.map((id: string) => {
+                              const cellContent = items.map((id: string) => {
                                   const name = getName(id);
                                   const custom = cell?.customAssignments?.[id];
                                   if (custom && Array.isArray(custom) && custom.length > 0) {
-                                      // Collection logic
-                                      if (!assignmentSummary.has(name)) {
-                                          assignmentSummary.set(name, new Set());
-                                      }
-                                      custom.forEach((c: any) => {
-                                          assignmentSummary.get(name)?.add(getBuildingName(c.companyId, c.buildingId));
-                                      });
+                                      if (!rowAssignmentSummary.has(name)) rowAssignmentSummary.set(name, new Set());
+                                      custom.forEach((c: any) => rowAssignmentSummary.get(name)?.add(getBuildingName(c.companyId, c.buildingId)));
                                       return `${name} (${custom.length})`;
                                   }
                                   return name;
-                              });
-                              row.push(displayStrings.join(", "));
+                              }).join("\n");
+                              rowData.push(cellContent);
                           });
-                          subServiceRows.push(row);
+                          
+                          const dataRow = worksheet.addRow(rowData);
+                          dataRow.eachCell(cell => { cell.alignment = { vertical: 'top', wrapText: true }; cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } }; });
+
+                          // ** Inline Summary Table **
+                          if (rowAssignmentSummary.size > 0) {
+                              const summaryHeader = worksheet.addRow(["", "Item", "Count", "Assigned Buildings"]);
+                              worksheet.mergeCells(summaryHeader.number, 4, summaryHeader.number, totalColumns); // Merge cells for the title
+                              summaryHeader.getCell(2).font = { bold: true, color: { argb: 'FF808080' } };
+                              summaryHeader.getCell(3).font = { bold: true, color: { argb: 'FF808080' } };
+                              summaryHeader.getCell(4).font = { bold: true, color: { argb: 'FF808080' } };
+
+                              rowAssignmentSummary.forEach((buildings, item) => {
+                                  const list = Array.from(buildings).sort().join("\n");
+                                  const summaryDataRow = worksheet.addRow(["", item, buildings.size, list]);
+                                  summaryDataRow.getCell(4).alignment = { wrapText: true, vertical: 'top' };
+                                  // Style summary rows
+                                  [2,3,4].forEach(colNum => {
+                                      summaryDataRow.getCell(colNum).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2F2F2' } };
+                                      summaryDataRow.getCell(colNum).border = { left: {style: 'thin'}, right: {style: 'thin'}};
+                                  });
+                              });
+                               // Add bottom border to last summary row
+                              worksheet.lastRow?.eachCell(c => c.border = {...c.border, bottom: {style: 'thin'}});
+                          }
                       }
                   });
               });
 
-              if (subServiceRows.length > 0) {
-                  const headerRow = worksheet.addRow([`--- ${service.name} : ${subService.name} ---`]);
-                  headerRow.font = { bold: true, color: { argb: 'FF2E75B6' } };
-                  subServiceRows.forEach(r => worksheet.addRow(r));
-                  worksheet.addRow([]);
+              // Add Sub-Service Header if data exists
+              if (hasDataForSubService) {
+                  const subServiceHeaderRow = worksheet.getRow(subServiceStartRowNumber);
+                  worksheet.mergeCells(subServiceStartRowNumber, 1, subServiceStartRowNumber, totalColumns);
+                  subServiceHeaderRow.getCell(1).value = subService.name;
+                  subServiceHeaderRow.getCell(1).font = { bold: true, color: { argb: 'FF2E75B6' }, size: 14 };
+                  subServiceHeaderRow.getCell(1).alignment = { vertical: 'middle', horizontal: 'center' };
+                  subServiceHeaderRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDDEBF7' } };
+                  subServiceHeaderRow.getCell(1).border = { top: {style: 'medium'}, bottom: {style: 'medium'} };
               }
           });
-
-          worksheet.columns.forEach(col => { col.width = 25; });
-          worksheet.getRow(4).font = { bold: true };
-
-          // 2. FORMATTED SUMMARY TABLE
-          if (assignmentSummary.size > 0) {
-              worksheet.addRow([]);
-              worksheet.addRow([]);
-              
-              // Title Row
-              const titleRow = worksheet.addRow(["CUSTOM ASSIGNMENT DETAILS"]);
-              titleRow.font = { bold: true, size: 14, color: { argb: 'FF2F75B5' } };
-              worksheet.mergeCells(`A${titleRow.number}:C${titleRow.number}`);
-              titleRow.alignment = { horizontal: 'left' };
-
-              // Header Row
-              const tableHeaderRow = worksheet.addRow(["Item Name", "Count", "Assigned Buildings"]);
-              tableHeaderRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
-              tableHeaderRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4472C4' } }; // Blue background
-              tableHeaderRow.alignment = { vertical: 'middle', horizontal: 'center' };
-              
-              // Data Rows
-              let startRow = tableHeaderRow.number;
-              assignmentSummary.forEach((buildingsSet, itemName) => {
-                  // Format list with bullets/newlines for "Sub-cell" effect
-                  const buildingsStr = Array.from(buildingsSet).sort().map(b => `• ${b}`).join("\n");
-                  
-                  const row = worksheet.addRow([itemName, buildingsSet.size, buildingsStr]);
-                  
-                  // Alignment
-                  row.getCell(2).alignment = { vertical: 'top', horizontal: 'center' };
-                  row.getCell(3).alignment = { vertical: 'top', wrapText: true }; // Enable text wrapping
-              });
-              
-              let endRow = worksheet.lastRow?.number || startRow;
-
-              // Apply Borders to the Table
-              for (let i = startRow; i <= endRow; i++) {
-                  const row = worksheet.getRow(i);
-                  ['A', 'B', 'C'].forEach(col => {
-                      row.getCell(col).border = {
-                          top: { style: 'thin' },
-                          left: { style: 'thin' },
-                          bottom: { style: 'thin' },
-                          right: { style: 'thin' }
-                      };
-                  });
-              }
-
-              // Adjust Column Widths for Summary
-              worksheet.getColumn(1).width = 30; // Item Name
-              worksheet.getColumn(2).width = 10; // Count
-              worksheet.getColumn(3).width = 60; // Buildings List
-          }
+          
+          worksheet.columns.forEach(col => { col.width = 30; });
       });
 
       const combinedBuffer = await combinedWorkbook.xlsx.writeBuffer();
       zip.file(`00_Combined_Master_Menu.xlsx`, combinedBuffer);
 
-      // =========================================================
-      // Finalize ZIP
-      // =========================================================
       const zipContent = await zip.generateAsync({ type: "blob" });
       saveAs(zipContent, `Combined-Menu-Export-${menu?.startDate}.zip`);
       toast({ title: "Success", description: "All menus downloaded." });
@@ -4487,7 +4464,7 @@ const handleAnalyzeConflicts = useCallback((cellLogs: any[], currentContext: any
           </div>
 
           {/* Content */}
-          <div className="flex-1 overflow-y-auto min-h-0 bg-gray-50/50">
+          <div className="flex-1 bg-gray-50/50">
             {loading ? (
               <div className="p-8 space-y-4 flex flex-col items-center justify-center h-full">
                 <LoadingProgress progress={progress} message={message} />
@@ -4507,7 +4484,7 @@ const handleAnalyzeConflicts = useCallback((cellLogs: any[], currentContext: any
 
                 <div className="p-4 flex-1">
                   {selectedService && selectedSubService ? (
-                    <div className="overflow-x-auto border rounded bg-white shadow-sm pb-12">
+                    <div className="border rounded bg-white shadow-sm pb-12">
                       <table className="w-full border-collapse">
                         <thead className="bg-gray-100 sticky top-0 z-20 shadow-sm">
                           <tr>
