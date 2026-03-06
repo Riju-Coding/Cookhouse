@@ -1621,8 +1621,20 @@ const MenuGridCell = memo(function MenuGridCell({
     const [excludedMealPlans, setExcludedMealPlans] = useState<Set<string>>(new Set())
     const [liveChanges, setLiveChanges] = useState<Record<string, any[]>>({})
     const dropdownRef = useRef<HTMLDivElement>(null)
-    
-
+    const cellRef = useRef<HTMLTableCellElement>(null); // Ref for the TD element
+    const [dropdownDirection, setDropdownDirection] = useState<'up' | 'down'>('up'); // State to control direction
+    useEffect(() => {
+        // This effect runs when the cell becomes active to check its position
+        if (isActive && cellRef.current) {
+            const rect = cellRef.current.getBoundingClientRect();
+            // If the top of the cell is less than ~350px from the viewport top, open down
+            if (rect.top < 350) { 
+                setDropdownDirection('down');
+            } else {
+                setDropdownDirection('up');
+            }
+        }
+    }, [isActive]);
      const allActiveStructures = useMemo(() => {
         const result: { companyId: string; companyName: string; buildingId: string; buildingName: string }[] = [];
         if (!companies || !buildings) return result;
@@ -4464,7 +4476,7 @@ const handleAnalyzeConflicts = useCallback((cellLogs: any[], currentContext: any
           </div>
 
           {/* Content */}
-          <div className="flex-1 bg-gray-50/50">
+          <div className="flex-1 overflow-y-auto min-h-0 bg-gray-50/50">
             {loading ? (
               <div className="p-8 space-y-4 flex flex-col items-center justify-center h-full">
                 <LoadingProgress progress={progress} message={message} />
