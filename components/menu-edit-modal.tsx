@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo, memo, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { createPortal } from 'react-dom' // <--- ADD THIS IMPORT
 import { 
   Loader2, 
   Save, 
@@ -1318,59 +1319,116 @@ function ConflictDetailsDrawer({
                       </tr>
                     ))}
 
-                    {itemAnalysis.occurrences.map((occ: any, oIdx: number) => {
-                      const referenceDate = currentSelectionDate || (itemAnalysis.occurrences[0]?.date ?? null)
-                      const daysOffset = calculateDaysDifference(referenceDate, occ.date)
-                      return (
-                        <tr 
-                          key={oIdx} 
-                          className={`transition-colors ${
-                            occ.isCurrentCell 
-                              ? "bg-yellow-50 border-l-4 border-l-yellow-400"
-                              : "hover:bg-gray-50"
-                          }`}
-                        >
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => handleSelectCurrent(occ.date)}
-                        className={`cursor-pointer hover:underline font-medium flex-1 ${currentSelectionDate === occ.date ? "text-blue-700" : "text-gray-900"}`}
-                      >
-                        <div className="font-medium text-gray-900">
-                          {new Date(occ.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                        </div>
-                        <div className="text-xs text-gray-500">{occ.day}</div>
-                      </button>
-                      <button
-                        onClick={() => handleCompanyIconClick(occ)}
-                        className="p-1 hover:bg-gray-200 rounded text-gray-600 hover:text-gray-900"
-                        title="View companies"
-                      >
-                        <Building2 className="h-4 w-4" />
-                      </button>
-                    </div>
-                    {occ.isCurrentCell && (
-                      <span className="text-[10px] font-bold text-yellow-700 mt-1 block">
-                        (Current Cell)
-                      </span>
-                    )}
-                  </td>
-                          <td className="px-4 py-3">
-                            <div className={`font-bold text-center ${daysOffset === 0 ? "text-blue-700 bg-blue-100 rounded px-2 py-1" : daysOffset > 0 ? "text-green-700" : "text-orange-700"}`}>
-                              {daysOffset > 0 ? "+" : ""}{daysOffset}
-                            </div>
-                          </td>
-                          <td className="px-4 py-3">
-                            <div className="text-gray-900 font-medium">{occ.serviceName}</div>
-                            <div className="text-xs text-gray-500">{occ.subServiceName}</div>
-                          </td>
-                          <td className="px-4 py-3">
-                            <div className="text-gray-900 font-medium">{occ.mealPlanName || 'N/A'}</div>
-                            <div className="text-xs text-gray-500">{occ.subMealPlanName || 'N/A'}</div>
-                          </td>
-                        </tr>
-                      )
-                    })}
+                   {itemAnalysis.occurrences.map((occ: any, oIdx: number) => {
+  // Determine the date we are comparing against (User's current selection)
+  const referenceDate = currentSelectionDate || (itemAnalysis.occurrences[0]?.date ?? null);
+  
+  // Calculate the numerical distance between the dates
+  const daysOffset = calculateDaysDifference(referenceDate, occ.date);
+  
+  // Logical styling based on the nature of the occurrence
+  const isSelected = currentSelectionDate === occ.date;
+  const isPreviousWeek = occ.isPrevWeek; // This flag comes from our updated handleAnalyzeConflicts
+
+  return (
+    <tr 
+      key={oIdx} 
+      className={`transition-colors border-b border-gray-100 ${
+        occ.isCurrentCell 
+          ? "bg-yellow-50/50 border-l-4 border-l-yellow-400" 
+          : isSelected 
+          ? "bg-blue-50/30" 
+          : "hover:bg-gray-50"
+      }`}
+    >
+      <td className="px-4 py-3">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => handleSelectCurrent(occ.date)}
+            className={`text-left group flex-1 transition-all ${
+              isSelected ? "scale-[1.02]" : ""
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <span className={`font-bold ${isSelected ? "text-blue-700" : "text-gray-900"}`}>
+                {new Date(occ.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+              </span>
+              
+              {/* Previous Week Label */}
+              {isPreviousWeek && (
+                <span className="inline-flex items-center bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded text-[10px] font-black uppercase border border-slate-300 tracking-tighter">
+                  Last Week
+                </span>
+              )}
+
+              {/* Current Selection Indicator */}
+              {isSelected && (
+                <div className="h-1.5 w-1.5 rounded-full bg-blue-600 animate-pulse" />
+              )}
+            </div>
+            <div className={`text-xs ${isSelected ? "text-blue-500 font-medium" : "text-gray-500"}`}>
+              {occ.day}
+            </div>
+          </button>
+
+          {/* Company Assignment Action */}
+          <button
+            onClick={() => handleCompanyIconClick(occ)}
+            className={`p-1.5 rounded-md transition-all ${
+              isPreviousWeek 
+                ? "text-slate-400 hover:bg-slate-100" 
+                : "text-gray-500 hover:bg-gray-200 hover:text-blue-600"
+            }`}
+            title="View Company Assignments"
+          >
+            <Building2 className="h-4 w-4" />
+          </button>
+        </div>
+
+        {occ.isCurrentCell && (
+          <span className="text-[10px] font-bold text-yellow-700 mt-1 flex items-center gap-1">
+            <span className="h-1 w-1 rounded-full bg-yellow-700" />
+            Active Grid Selection
+          </span>
+        )}
+      </td>
+
+      <td className="px-4 py-3 text-center">
+        <div 
+          className={`inline-block min-w-[32px] px-2 py-1 rounded text-xs font-black shadow-sm ${
+            isPreviousWeek
+              ? "bg-slate-100 text-slate-500 border border-slate-200" // Gray for last week
+              : daysOffset === 0 
+              ? "bg-blue-600 text-white" // Blue for reference date
+              : daysOffset > 0 
+              ? "bg-green-100 text-green-700 border border-green-200" // Green for future
+              : "bg-orange-100 text-orange-700 border border-orange-200" // Orange for past
+          }`}
+        >
+          {daysOffset > 0 ? `+${daysOffset}` : daysOffset}
+        </div>
+      </td>
+
+      <td className="px-4 py-3">
+        <div className={`font-bold text-sm ${isPreviousWeek ? "text-slate-500" : "text-gray-900"}`}>
+          {occ.serviceName}
+        </div>
+        <div className="text-[11px] text-gray-500 leading-tight">
+          {occ.subServiceName}
+        </div>
+      </td>
+
+      <td className="px-4 py-3">
+        <div className={`font-bold text-sm ${isPreviousWeek ? "text-slate-500" : "text-gray-900"}`}>
+          {occ.mealPlanName || 'N/A'}
+        </div>
+        <div className="text-[11px] text-gray-500 italic">
+          {occ.subMealPlanName || 'N/A'}
+        </div>
+      </td>
+    </tr>
+  );
+})}
 
                   </tbody>
                 </table>
@@ -1624,17 +1682,18 @@ const MenuGridCell = memo(function MenuGridCell({
     const cellRef = useRef<HTMLTableCellElement>(null); // Ref for the TD element
     const [dropdownDirection, setDropdownDirection] = useState<'up' | 'down'>('up'); // State to control direction
     useEffect(() => {
-        // This effect runs when the cell becomes active to check its position
-        if (isActive && cellRef.current) {
-            const rect = cellRef.current.getBoundingClientRect();
-            // If the top of the cell is less than ~350px from the viewport top, open down
-            if (rect.top < 350) { 
-                setDropdownDirection('down');
-            } else {
-                setDropdownDirection('up');
-            }
+    if (isActive && cellRef.current) {
+        const rect = cellRef.current.getBoundingClientRect();
+        // We increase the threshold to 450px to ensure top rows always open down.
+        // Also, if you want it to ALWAYS open down (as you suggested), 
+        // you can simply set: setDropdownDirection('down');
+        if (rect.top < 450) { 
+            setDropdownDirection('down');
+        } else {
+            setDropdownDirection('up');
         }
-    }, [isActive]);
+    }
+}, [isActive]);
      const allActiveStructures = useMemo(() => {
         const result: { companyId: string; companyName: string; buildingId: string; buildingName: string }[] = [];
         if (!companies || !buildings) return result;
@@ -1876,6 +1935,7 @@ const MenuGridCell = memo(function MenuGridCell({
   
     return (
       <td
+          ref={cellRef}
           onClick={() => onActivate()}
           onMouseEnter={() => {
             onCellMouseEnter?.()
@@ -1893,6 +1953,21 @@ const MenuGridCell = memo(function MenuGridCell({
 
           <div className="flex flex-col h-full min-h-[60px]">
             <div className="flex-1 space-y-1">
+              {/* --- ADD THIS BLOCK: PREVIOUS WEEK MENU DISPLAY --- */}
+    {prevItems && prevItems.length > 0 && (
+      <div className="mb-2 pb-1 border-b border-dashed border-gray-200">
+        {prevItems.map((pId) => {
+          const pItem = allMenuItems.find((i) => i.id === pId);
+          if (!pItem) return null;
+          return (
+            <div key={`pw-${pId}`} className="flex items-center gap-1 text-[10px] text-yellow-800 italic bg-gray-50 px-1 rounded">
+              <FileArchive className="h-2.5 w-2.5 opacity-100" />
+              <span className="truncate">PW: {pItem.name}</span>
+            </div>
+          );
+        })}
+      </div>
+    )}
               {itemsToRender.map((itemId) => {
                 const isRemoved = !selectedMenuItemIds.includes(itemId)
                 const item = allMenuItems.find((i) => i.id === itemId)
@@ -2270,7 +2345,9 @@ const MenuGridCell = memo(function MenuGridCell({
                       <Plus className="h-4 w-4" />
                     </button>
                     {isOpen && (
-                      <div className="absolute bottom-full left-0 mb-[-40px] w-[270px] bg-white border rounded-lg shadow-xl z-[100] flex flex-col overflow-hidden">
+  <div className={`absolute left-0 w-[280px] bg-white border rounded-lg shadow-2xl z-[200] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-100
+      ${dropdownDirection === 'down' ? 'top-full mt-2' : 'bottom-full mb-2'}
+  `}>
                         <div className="p-3 border-b bg-gradient-to-r from-blue-50 to-white">
                             <Input
                               type="text"
@@ -2321,7 +2398,9 @@ const MenuGridCell = memo(function MenuGridCell({
                         <span className="text-[10px] font-bold leading-none">{assignedCompanies.length}</span>
                     </button>
                     {isCompanyOpen && (
-                        <div className="absolute bottom-full left-0 mb-1 w-[250px] bg-white border rounded-lg shadow-xl z-[100] flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-150">
+  <div className={`absolute left-0 w-[250px] bg-white border rounded-lg shadow-xl z-[100] flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-150
+      ${dropdownDirection === 'down' ? 'top-full mt-1' : 'bottom-full mb-1'}
+  `}>
                             <div className="p-2 border-b bg-purple-50">
                                 <h4 className="font-semibold text-xs text-purple-800 flex items-center gap-2">
                                     <Building2 className="h-4 w-4" />
@@ -2976,7 +3055,6 @@ const menuDoc = { id: docSnap.id, ...(docSnap.data() as any) } as MenuData
   }, [repetitionLog, menuType])
 
 const handleAnalyzeConflicts = useCallback((cellLogs: any[], currentContext: any) => {
-    // 1. Filter out logs associated with blank/empty item names immediately
     const validLogs = cellLogs.filter(l => {
         const item = menuItems.find(i => i.id === l.itemId);
         return item?.name && item.name.trim().length > 0;
@@ -2987,91 +3065,66 @@ const handleAnalyzeConflicts = useCallback((cellLogs: any[], currentContext: any
         return; 
     }
 
-    // 2. Identify unique items from valid logs
     const conflictItemIds = Array.from(new Set(validLogs.map(l => l.itemId)));
     
-    // 3. Scan the menu for strict repetitions
     const analysis = conflictItemIds.map(itemId => {
         const item = menuItems.find(i => i.id === itemId);
-        if (!item || !item.name || item.name.trim() === "") return null;
+        if (!item) return null;
 
         const occurrences: any[] = [];
 
-        // Scan ALL dates to find where this item appears
+        // 1. ADD PREVIOUS WEEK OCCURRENCES FROM LOGS
+        const prevWeekEntries = repetitionLog.filter(l => 
+            l.itemId === itemId && 
+            l.type === "Prev-week repeat" &&
+            l.serviceId === currentContext.serviceId &&
+            l.subServiceId === currentContext.subServiceId
+        );
+
+        prevWeekEntries.forEach(pwl => {
+            occurrences.push({
+                date: pwl.prevDate,
+                day: new Date(pwl.prevDate).toLocaleDateString('en-US', { weekday: 'long' }),
+                serviceName: pwl.serviceName,
+                subServiceName: pwl.subServiceName,
+                mealPlanName: pwl.mealPlanName,
+                subMealPlanName: pwl.subMealPlanName,
+                isPrevWeek: true, // Label it as previous week
+                isCurrentCell: false
+            });
+        });
+
+        // 2. ADD CURRENT WEEK OCCURRENCES (Existing scanning logic)
         dateRange.forEach(({ date, day }) => {
             const dayData = menuData[date];
             if (!dayData) return;
-
-            // Strict Path Matching
-            const sId = currentContext.serviceId;
-            const ssId = currentContext.subServiceId;
-            const mpId = currentContext.mealPlanId;
-            const smpId = currentContext.subMealPlanId;
-
-            const cell = dayData[sId]?.[ssId]?.[mpId]?.[smpId];
+            const cell = dayData[currentContext.serviceId]?.[currentContext.subServiceId]?.[currentContext.mealPlanId]?.[currentContext.subMealPlanId];
 
             if (cell?.menuItemIds?.includes(itemId)) {
-                // Found an occurrence
-                const serviceName = services.find(s => s.id === sId)?.name;
-                const subServiceName = subServices.get(sId)?.find(ss => ss.id === ssId)?.name;
-                const mealPlanName = mealPlans.find(m => m.id === mpId)?.name;
-                const subMealPlanName = subMealPlans.find(s => s.id === smpId)?.name;
-
-                // Get company assignments for the table/popup
-                const dayKey = day.toLowerCase();
-                const companyAssignments: any[] = [];
-                
-                allStructureAssignments?.forEach((assignment: any) => {
-                    const company = companies?.find((c: any) => c.id === assignment.companyId);
-                    const building = buildings?.find((b: any) => b.id === assignment.buildingId);
-                    if (!company || !building) return;
-                    
-                    const dayStructure = assignment.weekStructure?.[dayKey] || [];
-                    const serviceInDay = dayStructure.find((s: any) => s.serviceId === sId);
-                    if (!serviceInDay) return;
-                    
-                    const subServiceInDay = serviceInDay.subServices?.find((ss: any) => ss.subServiceId === ssId);
-                    if (!subServiceInDay) return;
-                    
-                    const mealPlanInDay = subServiceInDay.mealPlans?.find((mp: any) => mp.mealPlanId === mpId);
-                    if (!mealPlanInDay) return;
-                    
-                    const subMealPlanInDay = mealPlanInDay.subMealPlans?.find((smp: any) => smp.subMealPlanId === smpId);
-                    if (!subMealPlanInDay) return;
-                    
-                    companyAssignments.push({
-                        companyId: assignment.companyId,
-                        companyName: company.name,
-                        buildingId: assignment.buildingId,
-                        buildingName: building.name
-                    });
-                });
-
                 occurrences.push({
                     date,
                     day,
-                    serviceName,
-                    subServiceName,
-                    mealPlanName,
-                    subMealPlanName,
-                    companyAssignments, // Important for the table
+                    serviceName: services.find(s => s.id === currentContext.serviceId)?.name,
+                    subServiceName: subServices.get(currentContext.serviceId)?.find(ss => ss.id === currentContext.subServiceId)?.name,
+                    mealPlanName: mealPlans.find(m => m.id === currentContext.mealPlanId)?.name,
+                    subMealPlanName: subMealPlans.find(s => s.id === currentContext.subMealPlanId)?.name,
+                    isPrevWeek: false,
                     isCurrentCell: date === currentContext.date
                 });
             }
         });
 
-        // Always return data so drawer opens (even if count is 1 temporarily)
         return {
             itemId,
             itemName: item.name,
             totalCount: occurrences.length,
-            occurrences
+            occurrences: occurrences.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
         };
     }).filter(Boolean); 
 
     setConflictAnalysisData(analysis);
     setConflictDrawerOpen(true);
-  }, [menuData, dateRange, menuItems, services, subServices, allStructureAssignments, companies, buildings]);
+}, [menuData, dateRange, menuItems, services, subServices, repetitionLog]);
   
 
  const handleAddItem = useCallback(
