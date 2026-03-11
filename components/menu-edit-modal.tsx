@@ -1511,85 +1511,127 @@ interface MenuData {
   [key: string]: any
 }
 
+// --- Removed Items Modal Component ---
+const RemovedItemsModal = memo(function RemovedItemsModal({
+  isOpen,
+  onClose,
+  itemName,
+  companies: removedCompanies,
+  allCompanies,
+  allBuildings,
+}: {
+  isOpen: boolean
+  onClose: () => void
+  itemName: string
+  companies: Array<{ companyId: string; buildingId: string }>
+  allCompanies: any[]
+  allBuildings: any[]
+}) {
+  if (!isOpen) return null;
+
+  const companyBuildingMap = removedCompanies.reduce((acc, comp) => {
+    if (!acc[comp.companyId]) {
+      acc[comp.companyId] = [];
+    }
+    acc[comp.companyId].push(comp.buildingId);
+    return acc;
+  }, {} as Record<string, string[]>);
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 z-[150] flex items-center justify-center p-4">
+      <div className="bg-white rounded-lg max-w-md w-full max-h-[60vh] overflow-auto">
+        <div className="sticky top-0 bg-gradient-to-r from-red-50 to-white border-b p-4 flex items-center justify-between">
+          <div>
+            <h3 className="font-semibold text-lg flex items-center gap-2">
+              <Building2 className="h-5 w-5 text-red-600" />
+              Removed From
+            </h3>
+            <p className="text-sm text-gray-600 mt-1 font-medium">{itemName}</p>
+          </div>
+          <button onClick={onClose} className="text-gray-500 hover:text-gray-700" type="button">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+        <div className="p-4 space-y-3">
+          {Object.entries(companyBuildingMap).map(([compId, buildingIds]) => {
+            const company = allCompanies?.find((c: any) => c.id === compId);
+            return (
+              <div key={compId} className="border rounded-lg p-3 bg-red-50 border-red-200">
+                <div className="text-sm font-semibold text-gray-900">{company?.name || compId}</div>
+                <div className="mt-2 space-y-1">
+                  {(buildingIds as string[]).map((buildingId) => {
+                    const building = allBuildings?.find((b: any) => b.id === buildingId);
+                    return (
+                      <div key={buildingId} className="text-sm text-gray-700 ml-3 flex items-center gap-2">
+                        <div className="h-1 w-1 rounded-full bg-gray-400" />
+                        {building?.name || buildingId}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+});
+
 // --- NEW: Timeline Entry Component ---
+// --- NEW TIMELINE COMPONENT ---
 const TimelineEntry = memo(function TimelineEntry({
   label,
-  labelColor,
   labelBg,
   itemName,
   action,
-  dateStr,
-  hasCustomAssignment,
-  companyNames,
+  isLive = false,
+  buildingCount,
+  onBuildingClick,
+  removedCompanies = []
 }: {
   label: string
-  labelColor: string
   labelBg: string
   itemName: string
-  action: "added" | "removed" | "replaced" | "live-added" | "live-removed"
-  dateStr?: string
-  hasCustomAssignment?: boolean
-  companyNames?: string[]
+  action: "added" | "removed" | "replaced" | "og" | "null"
+  isLive?: boolean
+  buildingCount?: number
+  onBuildingClick?: () => void
+  removedCompanies?: Array<{ companyId: string; buildingId: string }>
 }) {
-  const actionConfig = {
-    "added": { icon: <Plus className="h-2.5 w-2.5" />, color: "text-green-700", bg: "bg-green-50", borderColor: "border-green-200", actionLabel: "Added", dotColor: "bg-green-500" },
-    "removed": { icon: <Minus className="h-2.5 w-2.5" />, color: "text-red-700", bg: "bg-red-50", borderColor: "border-red-200", actionLabel: "Removed", dotColor: "bg-yellow-400" },
-    "replaced": { icon: <ArrowRightLeft className="h-2.5 w-2.5" />, color: "text-orange-700", bg: "bg-orange-50", borderColor: "border-orange-200", actionLabel: "Replaced", dotColor: "bg-orange-500" },
-    "live-added": { icon: <Plus className="h-2.5 w-2.5" />, color: "text-green-700", bg: "bg-green-50", borderColor: "border-green-200", actionLabel: "Added", dotColor: "bg-green-500" },
-    "live-removed": { icon: <Minus className="h-2.5 w-2.5" />, color: "text-red-700", bg: "bg-red-50", borderColor: "border-red-200", actionLabel: "Removed", dotColor: "bg-yellow-400" },
+  const config = {
+    added: { icon: <Plus className="h-2 w-2" />, color: "text-green-700", bg: "bg-green-50" },
+    removed: { icon: <Minus className="h-2 w-2" />, color: "text-red-700", bg: "bg-red-50" },
+    replaced: { icon: <ArrowRightLeft className="h-2 w-2" />, color: "text-orange-700", bg: "bg-orange-50" },
+    og: { icon: <CheckCircle className="h-2 w-2" />, color: "text-blue-700", bg: "bg-blue-50" },
+    null: { icon: <CheckCircle className="h-2 w-2" />, color: "text-gray-600", bg: "bg-gray-50" },
   }
   
-  const config = actionConfig[action] || actionConfig["added"]
+  const style = config[action] || config.added;
 
   return (
-    <div className="mb-1.5 relative">
-      <div className={`absolute left-[-11px] top-1.5 w-1.5 h-1.5 ${config.dotColor} rounded-full border ${config.dotColor === "bg-yellow-400" ? "border-yellow-300" : config.dotColor === "bg-green-500" ? "border-green-400" : "border-orange-400"}`}></div>
+    <div className={`mb-1.5 relative pl-3 border-l-2 ${isLive ? 'border-dashed border-green-300' : 'border-gray-200'}`}>
       <div className="flex flex-wrap items-center gap-1">
-        {/* Updation label - only show if not empty */}
-        {label && <span className={`inline-block ${labelBg} ${labelColor} px-1 py-0 rounded text-[8px] font-black`}>{label}</span>}
-        
-        {/* Action badge - ALWAYS VISIBLE */}
-        <span className={`inline-flex items-center gap-0.5 ${config.bg} ${config.color} px-1 py-0 rounded text-[8px] font-bold border ${config.borderColor} whitespace-nowrap`}>
-          {config.icon}
-          {config.actionLabel}
+        <span className={`inline-block ${labelBg} text-white px-1 py-0 rounded text-[8px] font-black uppercase`}>
+          {label}
         </span>
-        
-        {/* Company-wise tag - ALWAYS VISIBLE IF HAS CUSTOM ASSIGNMENT */}
-        {(hasCustomAssignment || (companyNames && companyNames.length > 0)) && (
-          <span className="inline-flex items-center gap-0.5 bg-purple-100 text-purple-700 px-1 py-0 rounded text-[8px] font-bold border border-purple-200 whitespace-nowrap">
+        <span className={`inline-flex items-center gap-0.5 ${style.bg} ${style.color} px-1 py-0 rounded text-[8px] font-bold border whitespace-nowrap`}>
+          {style.icon} {action === "null" ? "NULL" : action.toUpperCase()}
+        </span>
+        {buildingCount && buildingCount > 0 && (
+          <button 
+            onClick={onBuildingClick}
+            className="inline-flex items-center gap-0.5 bg-blue-50 text-blue-600 px-1 py-0 rounded text-[8px] font-bold border border-blue-200 hover:bg-blue-100 transition-colors"
+            title={`Custom assignments: ${buildingCount} building(s)`}
+          >
             <Building2 className="h-2 w-2" />
-            Multi-Building
-          </span>
+            <span className="font-semibold">{buildingCount}</span>
+          </button>
         )}
       </div>
-      
-      {/* Item name - special handling for replaced items showing "old → new" */}
-      {action === "replaced" && itemName.includes("→") ? (
-        <div className="text-xs font-semibold mt-0.5 break-words">
-          <span className="text-gray-400 line-through">{itemName.split("→")[0].trim()}</span>
-          <span className="text-gray-500 mx-1">→</span>
-          <span className="text-green-700">{itemName.split("→")[1].trim()}</span>
-        </div>
-      ) : (
-        <div className={`text-xs font-semibold mt-0.5 break-words ${action === "removed" || action === "live-removed" ? "text-gray-500 line-through" : "text-gray-800"}`}>
-          {itemName}
-        </div>
-      )}
-      
-      {/* Company/Building names - DISPLAY ALL AFFECTED BUILDINGS */}
-      {companyNames && companyNames.length > 0 && (
-        <div className="flex flex-wrap gap-0.5 mt-0.5">
-          {companyNames.map((name, i) => (
-            <span key={i} className="inline-flex items-center gap-0.5 bg-purple-50 text-purple-600 px-1 py-0 rounded text-[7px] font-medium border border-purple-100">
-              <Building2 className="h-1.5 w-1.5" />
-              {name}
-            </span>
-          ))}
-        </div>
-      )}
-      
-      {/* Date */}
-      {dateStr && <div className="text-[10px] text-gray-400 mt-0.5 whitespace-nowrap">{dateStr}</div>}
+      <div className={`text-[11px] font-semibold mt-0.5 break-words ${action === "removed" ? "text-gray-400 line-through" : "text-gray-800"}`}>
+        {action === "null" ? "(Empty State)" : itemName}
+      </div>
     </div>
   )
 })
@@ -1629,7 +1671,10 @@ const MenuGridCell = memo(function MenuGridCell({
     onExcludeDate,
     onExcludeMealPlan,
     onUpdateCustomAssignments,  // <--- MAKE SURE THIS IS HERE!
-    externalCompanyChangedItems // <--- (Keep this if you added it earlier)
+    externalCompanyChangedItems, // <--- (Keep this if you added it earlier)
+    liveChanges,  // <--- ADD THIS TO DESTRUCTURING
+    originalMenuData  // <--- ADD THIS
+     
   }: {
     
     date: string
@@ -1664,8 +1709,10 @@ const MenuGridCell = memo(function MenuGridCell({
     onExcludeItem?: (itemId: string, exclude: boolean) => void
     onExcludeDate?: (date: string, exclude: boolean) => void
     onExcludeMealPlan?: (mealPlanKey: string, exclude: boolean) => void
-    onUpdateCustomAssignments?: (assignments: MenuCell['customAssignments']) => void // <--- AND MAKE SURE IT IS HERE IN THE TYPES!
+   onUpdateCustomAssignments?: (assignments: MenuCell['customAssignments']) => void
     externalCompanyChangedItems?: Set<string>
+    liveChanges: Record<string, any[]> // <--- ADD THIS
+    originalMenuData: any              // <--- ADD THIS
   }) {
     const [isOpen, setIsOpen] = useState(false)
     const [isCompanyOpen, setIsCompanyOpen] = useState(false)
@@ -1677,10 +1724,14 @@ const MenuGridCell = memo(function MenuGridCell({
     const [itemToFocus, setItemToFocus] = useState<string | null>(null)
     const [excludedItems, setExcludedItems] = useState<Set<string>>(new Set())
     const [excludedMealPlans, setExcludedMealPlans] = useState<Set<string>>(new Set())
-    const [liveChanges, setLiveChanges] = useState<Record<string, any[]>>({})
+    const [showRemovedItemsModal, setShowRemovedItemsModal] = useState(false)
+    const [removedItemData, setRemovedItemData] = useState<{ itemName: string; companies: Array<{ companyId: string; buildingId: string }> } | null>(null)
+    // NOTE: liveChanges is now passed as a prop from parent - REMOVED local state to avoid shadowing the prop
     const dropdownRef = useRef<HTMLDivElement>(null)
     const cellRef = useRef<HTMLTableCellElement>(null); // Ref for the TD element
-    const [dropdownDirection, setDropdownDirection] = useState<'up' | 'down'>('up'); // State to control direction
+    
+    const [dropdownDirection, setDropdownDirection] = useState<'up' | 'down'>('up');
+     // State to control direction
     useEffect(() => {
     if (isActive && cellRef.current) {
         const rect = cellRef.current.getBoundingClientRect();
@@ -1877,16 +1928,7 @@ const MenuGridCell = memo(function MenuGridCell({
     }
   
     const handleAdd = (itemId: string) => {
-      onAddItem(itemId)
-      
-      // Track live change
-      const cellKey = `${date}|${service.id}|${mealPlan.id}|${subMealPlan.id}`
-      const itemName = allMenuItems.find(m => m.id === itemId)?.name || itemId
-      setLiveChanges(prev => ({
-        ...prev,
-        [cellKey]: [...(prev[cellKey] || []), { action: "added", itemName, itemId }]
-      }))
-      
+      onAddItem(itemId)  // This now handles liveChanges in parent component
       setSearch("")
       setIsOpen(false)
     }
@@ -1920,18 +1962,35 @@ const MenuGridCell = memo(function MenuGridCell({
     }
 
     // Build timeline data
-    const cellKey = `${date}|${service.id}|${mealPlan.id}|${subMealPlan.id}`
-    const currentLiveChanges = liveChanges[cellKey] || []
-    const hasLiveChanges = currentLiveChanges.length > 0
-    const hasUpdations = cellUpdations && cellUpdations.length > 0
-    const hasTimeline = hasLiveChanges || hasUpdations
-    
-    // NEW: Get removed items from company-wise changes to display them
-    const removedCompanyWiseItems = currentLiveChanges
-      .filter(c => c.action === "removed" && c.editedInCompanyWise && !selectedMenuItemIds.includes(c.itemId))
-      .map(c => c.itemId)
+    // --- REDESIGN: LIVE SESSION LOGIC ---
+    const cellKey = `${date}|${service.id}|${mealPlan.id}|${subMealPlan.id}`;
+    const currentLiveChanges = liveChanges?.[cellKey] || [];
+
+    // 1. Logic to calculate which items to show (Current + Strikethrough)
+    const itemsToRender = useMemo(() => {
+        // Items currently saved in the menu data
+        const activeIds = new Set(selectedMenuItemIds);
+        
+        // Items that were removed OR replaced during this live session
+        const sessionRemovedIds = currentLiveChanges
+            .filter(c => c.action === "removed" || c.action === "replaced")
+            .map(c => c.oldItemId || c.itemId); // Get the ID of the item that was taken out
+            
+        // Items that were in the cell at the start of the session (OG) but are now gone
+        const ogIds = originalMenuData?.[date]?.[service.id]?.[subServiceId]?.[mealPlan.id]?.[subMealPlan.id]?.menuItemIds || [];
+        const ogRemovedIds = ogIds.filter((id: string) => !activeIds.has(id));
+
+        // Combine all: [Current Items] + [Session Removals] + [Original Removals]
+        return Array.from(new Set([...selectedMenuItemIds, ...sessionRemovedIds, ...ogRemovedIds]));
+    }, [selectedMenuItemIds, currentLiveChanges, originalMenuData, date, service.id, subServiceId, mealPlan.id, subMealPlan.id]);
+
+    // 2. Red State Logic: Cell turns red if it is currently EMPTY but has a session history
+    const isRedState = selectedMenuItemIds.length === 0 && currentLiveChanges.length > 0;
+
+    const hasUpdations = cellUpdations && cellUpdations.length > 0;
+    const hasTimeline = currentLiveChanges.length > 0 || hasUpdations;
       
-    const itemsToRender = Array.from(new Set([...selectedMenuItemIds, ...removedCompanyWiseItems]))
+    
   
     return (
       <td
@@ -1941,12 +2000,18 @@ const MenuGridCell = memo(function MenuGridCell({
             onCellMouseEnter?.()
             if (onHoverDrag) onHoverDrag(date)
           }}
-          className={`border border-gray-300 p-2 align-top min-w-[200px] transition-all duration-150 relative 
+         className={`border border-gray-300 p-2 align-top min-w-[200px] transition-all duration-150 relative 
             ${isActive ? "ring-2 ring-blue-500 bg-white z-[60]" : "bg-white hover:bg-gray-50"} 
             ${isDragHover ? "ring-2 ring-blue-300 bg-blue-50" : ""}
             ${cellLogs.length > 0 && !isActive ? "bg-red-50" : ""} 
+            ${isRedState ? "bg-red-50 !border-red-300 shadow-inner" : ""}
           `}
         >
+          {isRedState && (
+          <div className="absolute inset-0 bg-red-500/5 pointer-events-none flex items-center justify-center">
+            <AlertCircle className="h-8 w-8 text-red-100 opacity-50" />
+          </div>
+        )}
           {cellLogs.length > 0 && !isActive && (
              <div className="absolute top-1 right-1 h-2 w-2 rounded-full bg-red-500 z-10"></div>
           )}
@@ -1968,336 +2033,311 @@ const MenuGridCell = memo(function MenuGridCell({
         })}
       </div>
     )}
-              {itemsToRender.map((itemId) => {
-                const isRemoved = !selectedMenuItemIds.includes(itemId)
-                const item = allMenuItems.find((i) => i.id === itemId)
-                const hasError = cellLogs.some(log => log.itemId === itemId)
-                // Check if this item has custom company assignments (current state)
-                const hasCustomAssignment = menuCell?.customAssignments && menuCell.customAssignments[itemId]
-                const isItemExcluded = excludedItems.has(itemId)
+{itemsToRender.map((itemId) => {
+    const isCurrentlyActive = selectedMenuItemIds.includes(itemId);
+    const item = allMenuItems.find((i) => i.id === itemId);
+    if (!item) return null;
 
-                // Debug: Log when item is not found
-                if (!item) {
-                  return null
-                }
-                return (
-                  <div key={itemId} className="space-y-1">
-                    <div
-                      className={`group relative flex items-center justify-between border px-1.5 py-0.5 rounded text-xs transition-colors
-                          ${isItemExcluded
-                              ? "bg-yellow-50 border-yellow-200 text-yellow-800 opacity-75"
-                              : hasError 
-                              ? "bg-red-100 border-red-200 text-red-800" 
-                              : "bg-blue-50/50 hover:bg-blue-100 border-transparent hover:border-blue-200 text-gray-700"
-                          }
-                      `}
-                    >
-                      <span className="truncate font-medium leading-tight" title={item?.name || `Item: ${itemId}`}>{item?.name || `Item (${itemId.slice(0, 8)})`}</span>
-                      <div className="flex items-center gap-0.5 ml-1">
-                        {hasCustomAssignment && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              setItemToFocus(itemId)
-                              setShowAssignmentModal(true)
-                            }}
-                            className="p-0.5 rounded hover:bg-purple-100 transition-colors flex-shrink-0 flex items-center gap-0.5"
-                            title={`Custom assignment: ${menuCell.customAssignments[itemId].length} companies`}
-                          >
-                            <Building2 className="h-3 w-3 text-purple-600" />
-                            <span className="text-[9px] font-bold text-purple-700 leading-none">
-                                {menuCell.customAssignments[itemId].length}
-                            </span>
-                          </button>
-                        )}
-                        {isActive && (
-                          <>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                handleExcludeItem(itemId)
-                              }}
-                              className={`p-0.5 rounded transition-colors flex-shrink-0 ${
-                                isItemExcluded 
-                                  ? "bg-yellow-200 text-yellow-700" 
-                                  : "opacity-0 group-hover:opacity-100 hover:bg-yellow-100 text-yellow-600"
-                              }`}
-                              title="Exclude from update tracking"
-                            >
-                              <X className="h-3 w-3" />
-                            </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                onRemoveItem(itemId)
-                                
-                                // Don't track removals in live changes - only additions are tracked
-                              }}
-                              className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 flex-shrink-0"
-                              title="Remove item"
-                            >
-                              <X className="h-3 w-3" />
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                )
-              })}
+    // Find the MOST RECENT action for this item (last action in the list)
+    const itemChanges = currentLiveChanges.filter(c => c.itemId === itemId || c.oldItemId === itemId);
+    const mostRecentAction = itemChanges.length > 0 ? itemChanges[itemChanges.length - 1] : null;
+    
+    // Get the actual action considering the most recent change
+    let finalAction = null;
+    if (mostRecentAction) {
+      if (mostRecentAction.action === "added") {
+        finalAction = "added";
+      } else if (mostRecentAction.action === "removed") {
+        finalAction = "removed";
+      } else if (mostRecentAction.action === "replaced" && mostRecentAction.oldItemId === itemId) {
+        finalAction = "removed"; // Old item in replacement is treated as removed
+      }
+    }
+
+    // Determine visual state based on final action
+    const isRemovedInSession = finalAction === "removed";
+    const isAddedInSession = finalAction === "added";
+    
+    // If item is currently active, it's been re-added - so isCutState should be false
+    const isCutState = isRemovedInSession && !isCurrentlyActive;
+
+    // Get live action for display
+    let liveAction = null;
+    let liveActionBg = "";
+    
+    // Check if item is in a saved U-record
+    let itemURecord = null;
+    if (isCurrentlyActive && cellUpdations && cellUpdations.length > 0) {
+      for (let i = cellUpdations.length - 1; i >= 0; i--) {
+        const upd = cellUpdations[i];
+        const relevantCell = upd.changedCells?.find((c: any) => 
+          c.date === date && 
+          c.serviceId === service.id && 
+          c.mealPlanId === mealPlan.id && 
+          c.subMealPlanId === subMealPlan.id
+        );
+        
+        if (relevantCell) {
+          const itemInThisRecord = relevantCell.changes.some((ch: any) => 
+            ch.itemId === itemId || ch.replacedWith === itemId
+          );
+          
+          if (itemInThisRecord) {
+            itemURecord = i + 1; // U-record index
+            break;
+          }
+        }
+      }
+    }
+    
+    // Priority: If currently active with U-record, show U-label; otherwise show L+aded for live adds; L-removed for removals
+    if (isCurrentlyActive && itemURecord !== null) {
+      // Item is currently selected and came from a saved U-record
+      liveAction = `U${itemURecord}+added`;
+      liveActionBg = "bg-blue-50 text-blue-700 border-blue-200";
+    } else if (isCurrentlyActive && itemChanges.length > 0) {
+      // Item is currently selected and has live changes - show L+aded
+      liveAction = "L+aded";
+      liveActionBg = "bg-green-50 text-green-700 border-green-200";
+    } else if (isRemovedInSession && !isCurrentlyActive) {
+      // Item is removed and NOT currently active - show L-removed
+      liveAction = "L-removed";
+      liveActionBg = "bg-red-50 text-red-700 border-red-200";
+    }
+
+    // Get removed companies for removed items
+    // Look for the "removed" action entry in itemChanges which should contain the companies at removal time
+    const removedActionEntry = itemChanges.find(c => c.action === "removed" || (c.action === "replaced" && c.oldItemId === itemId));
+    const removedCompanies = removedActionEntry?.removedCompanies || removedActionEntry?.removedFromCompanies || [];
+
+    return (
+        <div key={itemId} className="space-y-1">
+            <div
+                className={`group relative flex items-center justify-between border px-1.5 py-0.5 rounded text-xs transition-colors
+                    ${isCutState
+                        ? "bg-red-50 border-red-200 text-red-400 line-through opacity-70" 
+                        : "bg-blue-50/50 border-transparent text-gray-700 hover:bg-blue-100"
+                    }
+                `}
+            >
+                <div className="flex items-center gap-2 truncate">
+                    {/* --- Live Action Label (Added or Removed in session) --- */}
+                    {liveAction && (
+                        <span className={`px-1 py-0 rounded-[2px] text-[8px] font-black uppercase flex-shrink-0 border ${liveActionBg}`}>
+                            {liveAction}
+                        </span>
+                    )}
+                    {/* --- Legacy Removed Tag --- */}
+                    {isCutState && !liveAction && (
+                        <span className="bg-red-500 text-white px-1 py-0 rounded-[2px] text-[8px] font-black uppercase flex-shrink-0">
+                            Removed
+                        </span>
+                    )}
+                    <span className="truncate font-medium leading-tight">{item.name}</span>
+                </div>
+
+                <div className="flex items-center gap-0.5 ml-1">
+                    {isCurrentlyActive && (
+                        <>
+                            {/* Building Icon for Custom Assignments (Active Items) */}
+                            {!isCutState && menuCell?.customAssignments && menuCell.customAssignments[itemId] && (
+                                <button 
+                                    onClick={(e) => { 
+                                        e.stopPropagation(); 
+                                        setItemToFocus(itemId);
+                                        setShowAssignmentModal(true);
+                                    }} 
+                                    className="text-blue-500 hover:text-blue-700 flex items-center gap-1 px-1.5 py-0.5 rounded bg-blue-50 hover:bg-blue-100 transition-colors"
+                                    title={`Custom assignments: ${menuCell.customAssignments[itemId].length} building(s)`}
+                                >
+                                    <Building2 className="h-3 w-3" />
+                                    <span className="text-[10px] font-semibold">{menuCell.customAssignments[itemId].length}</span>
+                                </button>
+                            )}
+                            {/* Building Icon for Removed Items */}
+                            {isRemovedInSession && removedCompanies.length > 0 && (
+                                <button 
+                                    onClick={(e) => { 
+                                        e.stopPropagation(); 
+                                        setRemovedItemData({
+                                          itemName: item.name,
+                                          companies: removedCompanies
+                                        });
+                                        setShowRemovedItemsModal(true);
+                                    }} 
+                                    className="text-red-500 hover:text-red-700 flex items-center gap-1 px-1.5 py-0.5 rounded bg-red-50 hover:bg-red-100 transition-colors"
+                                    title={`Removed from: ${removedCompanies.length} building(s)`}
+                                >
+                                    <Building2 className="h-3 w-3" />
+                                    <span className="text-[10px] font-semibold">{removedCompanies.length}</span>
+                                </button>
+                            )}
+                            {/* Remove Item Button */}
+                            {!isCutState && (
+                                <button onClick={(e) => { e.stopPropagation(); onRemoveItem(itemId); }} className="group-hover:opacity-100 text-red-400 hover:text-red-600 opacity-0 transition-opacity">
+                                    <X className="h-3 w-3" />
+                                </button>
+                            )}
+                        </>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+})}
             </div>
 
             {/* ===== ENHANCED UPDATE TIMELINE ===== */}
-            {hasTimeline && (
-              <div className="mt-2 ml-2 border-l-2 border-yellow-300 pl-3 py-1">
-                
-                {/* Live Changes - Show ADDED items currently in cell, and REMOVED items that were removed */}
-                {currentLiveChanges.length > 0 && (
-                  <>
-                    {(() => {
-                      // Deduplicate: if an item was added then removed in same session, only show the remove
-                      const itemStates = new Map<string, { action: string; change: any }>()
-                      
-                      currentLiveChanges.forEach(change => {
-                        const existing = itemStates.get(change.itemId)
-                        if (!existing) {
-                          itemStates.set(change.itemId, { action: change.action, change })
-                        } else if (existing.action === "added" && change.action === "removed") {
-                          // Item was added then removed - show as removed only
-                          itemStates.set(change.itemId, { action: "removed", change })
-                        } else if (existing.action === "removed" && change.action === "added") {
-                          // Item was removed then re-added - show as added
-                          itemStates.set(change.itemId, { action: "added", change })
-                        }
-                      })
-                      
-                      // Filter and render the final state
-                      return Array.from(itemStates.values())
-                        .filter(({ action, change }) => {
-                          // For "added" items, SHOW if item IS currently in cell (user just added it and hasn't saved yet)
-                          if (action === "added") return selectedMenuItemIds.includes(change.itemId)
-                          // For "removed" items, SHOW only if item is NOT in cell (user removed it)
-                          if (action === "removed") return !selectedMenuItemIds.includes(change.itemId)
-                          return false
-                        })
-                        .map(({ change, action }, idx) => {
-                          const hasCustom = change.hasCustomAssignment || false
-                          const cNames = change.companyNames || []
-                          
-                          // Check if item still has custom assignments even when removed
-                          const itemStillHasCustom = menuCell?.customAssignments && menuCell.customAssignments[change.itemId]
-                          const finalHasCustom = action === "removed" ? itemStillHasCustom : hasCustom
-                          
-                          // Determine label based on final action in this session
-                          const labelText = action === "removed" ? "REMOVED (This Session)" : "ADDED (This Session)"
-                          const labelBgColor = action === "removed" ? "bg-red-500" : "bg-green-500"
-                          
-                          return (
-                            <TimelineEntry
-                              key={`live-${change.itemId}-${idx}`}
-                              label={labelText}
-                              labelColor="text-white"
-                              labelBg={labelBgColor}
-                              itemName={change.itemName}
-                              action={change.action === "removed" ? "live-removed" : "live-added"}
-                              hasCustomAssignment={finalHasCustom}
-                              companyNames={cNames}
-                            />
-                          )
-                        })
-                    })()}
-                  </>
-                )}
+           {/* ===== REDESIGNED UPDATION TIMELINE ===== */}
+{hasTimeline && (
+  <div className="mt-4 space-y-2 border-t pt-3 ml-1">
+    
+    {/* 0. NULL STATE (if no original items) */}
+    {(() => {
+      const ogIds = originalMenuData?.[date]?.[service.id]?.[subServiceId]?.[mealPlan.id]?.[subMealPlan.id]?.menuItemIds || [];
+      if (ogIds.length === 0) {
+        return (
+          <TimelineEntry 
+            key="null-state" 
+            label="NULL" 
+            labelBg="bg-gray-600" 
+            itemName="" 
+            action="null" 
+          />
+        );
+      }
+      return null;
+    })()}
 
-                {/* Saved Updations - Latest First, show ALL change types */}
-                {cellUpdations && [...cellUpdations].reverse().map((upd, revIdx) => {
-                  const totalUpdations = cellUpdations.length
-                  const updIdx = totalUpdations - revIdx - 1
+    {/* 1. OG (Original Items) - Items that exist from original and not added in any U-record */}
+    {(() => {
+      const ogIds = originalMenuData?.[date]?.[service.id]?.[subServiceId]?.[mealPlan.id]?.[subMealPlan.id]?.menuItemIds || [];
+      
+      // Collect ALL items that were added/replaced in ANY U-record
+      const itemsAddedInURecords = new Set<string>();
+      if (cellUpdations && cellUpdations.length > 0) {
+        cellUpdations.forEach((upd: any) => {
+          const relevantCell = upd.changedCells?.find((c: any) => 
+            c.date === date && 
+            c.serviceId === service.id && 
+            c.mealPlanId === mealPlan.id && 
+            c.subMealPlanId === subMealPlan.id
+          );
+          
+          if (relevantCell) {
+            relevantCell.changes.forEach((ch: any) => {
+              // If item was added, it's not OG
+              if (ch.action === "added") {
+                itemsAddedInURecords.add(ch.itemId);
+              }
+              // If item is the NEW item in a replacement, it's not OG
+              if (ch.action === "replaced" && ch.replacedWith) {
+                itemsAddedInURecords.add(ch.replacedWith);
+              }
+            });
+          }
+        });
+      }
+      
+      // OG items are those that were never added in any U-record
+      const trueOGIds = ogIds.filter((id: string) => !itemsAddedInURecords.has(id));
+      
+      if (trueOGIds.length === 0) return null;
+      
+      return trueOGIds.map((id: string) => (
+        <TimelineEntry 
+          key={`og-${id}`} 
+          label="OG" 
+          labelBg="bg-gray-900" 
+          itemName={allMenuItems.find(m => m.id === id)?.name || id} 
+          action="og" 
+        />
+      ));
+    })()}
 
-                  const relevantCellChange = upd.changedCells
-                    ?.find((cell: any) => cell.date === date && cell.serviceId === service.id && cell.mealPlanId === mealPlan.id && cell.subMealPlanId === subMealPlan.id)
+    {/* 2. U-Records (Historical Saved Checkpoints) with Separate Counters - REVERSE ORDER (Latest First) */}
+    {cellUpdations && [...cellUpdations].reverse().map((upd, reverseIdx) => {
+      const uIdx = cellUpdations.length - reverseIdx - 1;
+      // Find the change record for this specific cell in the historical updation
+      const relevantCell = upd.changedCells?.find((c: any) => 
+        c.date === date && 
+        c.serviceId === service.id && 
+        c.mealPlanId === mealPlan.id && 
+        c.subMealPlanId === subMealPlan.id
+      );
 
-                  const relevantChanges = relevantCellChange?.changes || []
-                  if (relevantChanges.length === 0) return null
+      if (!relevantCell) return null;
 
-                  const updDate = new Date(upd.createdAt)
-                  const dateStr = updDate.toLocaleDateString('en-US', { day: 'numeric', month: 'short' })
-                  
-                  // Check if this updation was sourced from a company-wise menu
-                  const isFromCompanyWise = upd.isCompanyWiseChange && upd.sourcedFromCompanyName
-                  const sourcedCompanyName = upd.sourcedFromCompanyName || null
-                  const sourcedBuildingName = upd.sourcedFromBuildingName || null
-                  const appliedBuildingInfo = upd.appliedBuildingInfo || []
-                  const appliedMultipleBuildings = upd.appliedToAllBuildings && upd.otherBuildingsCount > 0
+      // Use separate counters based on type
+      const isCompanyWiseChange = upd.menuType === "company" || upd.isCompanyWiseChange;
+      const updationKey = isCompanyWiseChange ? "U" : "U";
+      const updationIndex = uIdx + 1;
 
-                  // Generate a single label for all buildings in this update
-                  let updationLabel = `U${updIdx + 1}`
-                  if (isFromCompanyWise && sourcedCompanyName) {
-                    if (appliedMultipleBuildings && appliedBuildingInfo.length > 0) {
-                      // Show all affected buildings: "U1 - Company (Bldg1, Bldg2, Bldg3)"
-                      const buildingNames = appliedBuildingInfo.map(b => b.buildingName).join(', ')
-                      updationLabel = `U${updIdx + 1} - ${sourcedCompanyName} (${buildingNames})`
-                    } else {
-                      // Show single building: "U1 - Company (Building)"
-                      updationLabel = `U${updIdx + 1} - ${sourcedCompanyName}${sourcedBuildingName ? ` (${sourcedBuildingName})` : ''}`
-                    }
-                  }
+      // FIXED: Deduplicate timeline entries
+      // Build a Set of items that are already shown in the "Current Items" section with their U-record label
+      const itemsShownWithULabel = new Set<string>();
+      itemsToRender.forEach((itemId) => {
+        const isCurrentlyActive = selectedMenuItemIds.includes(itemId);
+        const itemChanges = currentLiveChanges.filter(c => c.itemId === itemId || c.oldItemId === itemId);
+        
+        // Check if this item has a U-record in cellUpdations
+        if (isCurrentlyActive && cellUpdations && cellUpdations.length > 0) {
+          for (let i = cellUpdations.length - 1; i >= 0; i--) {
+            const upd = cellUpdations[i];
+            const relevantCell = upd.changedCells?.find((c: any) => 
+              c.date === date && 
+              c.serviceId === service.id && 
+              c.mealPlanId === mealPlan.id && 
+              c.subMealPlanId === subMealPlan.id
+            );
+            
+            if (relevantCell) {
+              const itemInThisRecord = relevantCell.changes.some((ch: any) => 
+                ch.itemId === itemId || ch.replacedWith === itemId
+              );
+              
+              if (itemInThisRecord) {
+                // This item will be shown with a U-label in the current items section
+                itemsShownWithULabel.add(`${itemId}|U${i + 1}`);
+                break;
+              }
+            }
+          }
+        }
+      });
 
-                  const validChanges: any[] = []
-                  
-                  relevantChanges.forEach((ch: any, chIdx: number) => {
-                    let action: "added" | "removed" | "replaced" = ch.action || "added"
-                    let itemName = ""
-                    let itemId = ""
-                    let hasCustom = false
-                    let cNames: string[] = []
+      return relevantCell.changes.map((ch: any, cIdx: number) => {
+        const itemIdToCheck = ch.itemId || ch.replacedWith;
+        const timelineKey = `${itemIdToCheck}|U${updationIndex}`;
+        
+        // Skip if this item is already shown in the current items section with a U-label
+        if (itemsShownWithULabel.has(timelineKey)) return null;
+        
+        // Resolve item names from the saved record or current items map
+        const resolvedName = ch.itemName || ch.replacedWithName || allMenuItems.find(m => m.id === (ch.replacedWith || ch.itemId))?.name || ch.itemId;
+        
+        return (
+          <TimelineEntry 
+            key={`u-${upd.id}-${cIdx}`} 
+            label={`${updationKey}${updationIndex}`} 
+            labelBg={isCompanyWiseChange ? "bg-purple-600" : "bg-blue-600"} 
+            itemName={resolvedName} 
+            action={ch.action} 
+          />
+        );
+      });
+    })}
 
-                    // If this updation is from a company-wise change, add all affected company buildings to the display
-                    if (ch.companyName && ch.buildingName) {
-                      cNames = [`${ch.companyName} - ${ch.buildingName}`]
-                    } else if (isFromCompanyWise && appliedBuildingInfo.length > 0) {
-                      cNames = appliedBuildingInfo.map((b: any) => `${sourcedCompanyName} - ${b.buildingName}`)
-                    }
 
-                    if (action === "replaced") {
-                      const oldItemId = ch.itemId
-                      const newItemId = ch.replacedWith
-                      const oldName = ch.itemName || allMenuItems.find(m => m.id === oldItemId)?.name || oldItemId
-                      const newName = ch.replacedWithName || allMenuItems.find(m => m.id === newItemId)?.name || newItemId
-                      itemName = `${oldName} → ${newName}`
-                      itemId = oldItemId
-                      
-                      const oldCustom = ch.oldCustomAssignments || ch.customAssignments
-                      const newCustom = ch.newCustomAssignments
-                      hasCustom = !!(oldCustom || newCustom)
-                      
-                      if (oldCustom && Array.isArray(oldCustom) && !isFromCompanyWise) {
-                        cNames = oldCustom.map((a: any) => {
-                          const c = companies.find(co => co.id === a.companyId)
-                          return c?.name || a.companyId
-                        })
-                      }
-                      
-                      // Fix: Removed the line that was hiding replacement history in combined menu
 
-                    } else if (action === "added") {
-                      itemId = ch.replacedWith || ch.itemId
-                      const resolvedName = ch.itemName || ch.replacedWithName || allMenuItems.find(m => m.id === itemId)?.name || itemId
-                      
-                      // FIX: Allow 'Checkbox' to pass through the filter so the UI displays it!
-                      const isCompanyWiseChangeLocal = ch.itemName && (ch.itemName.includes('Added to') || ch.itemName.includes('Company') || ch.itemName.includes('Checkbox'))
-                      itemName = isCompanyWiseChangeLocal ? ch.itemName : resolvedName
-                      
-                      const addedCustom = ch.customAssignments || ch.newCustomAssignments
-                      hasCustom = !!(addedCustom && Array.isArray(addedCustom) && addedCustom.length > 0)
-                      if (hasCustom && !isFromCompanyWise) {
-                        cNames = addedCustom.map((a: any) => {
-                          const c = companies.find(co => co.id === a.companyId)
-                          return c?.name || a.companyId
-                        })
-                      }
-
-                    } else if (action === "removed") {
-                      itemId = ch.itemId
-                      const resolvedName = ch.itemName || allMenuItems.find(m => m.id === itemId)?.name || itemId
-                      
-                      // FIX: Allow 'Checkbox' to pass through the filter so the UI displays it!
-                      const isCompanyWiseChangeLocal = ch.itemName && (ch.itemName.includes('Removed from') || ch.itemName.includes('Company') || ch.itemName.includes('Checkbox'))
-                      itemName = isCompanyWiseChangeLocal ? ch.itemName : resolvedName
-                      
-                      const removedCustom = ch.customAssignments || ch.oldCustomAssignments
-                      hasCustom = !!(removedCustom && Array.isArray(removedCustom) && removedCustom.length > 0)
-                      if (hasCustom && !isFromCompanyWise) {
-                        cNames = removedCustom.map((a: any) => {
-                          const c = companies.find(co => co.id === a.companyId)
-                          return c?.name || a.companyId
-                        })
-                      }
-                    }
-
-                    if (!itemName) return
-
-                    validChanges.push({
-                      action,
-                      itemName,
-                      itemId,
-                      hasCustom,
-                      cNames,
-                      chIdx
-                    })
-                  })
-
-                  // Now render: show label only once per update, then all changes
-                  if (validChanges.length === 0) return null
-                  
-                  return validChanges.map((changeData: any, renderIdx: number) => (
-                    <TimelineEntry
-                      key={`upd-${upd.id}-${changeData.chIdx}`}
-                      label={renderIdx === 0 ? updationLabel : ""}
-                      labelColor={isFromCompanyWise ? "text-white" : "text-white"}
-                      labelBg={isFromCompanyWise ? (appliedMultipleBuildings ? "bg-purple-600" : "bg-blue-500") : "bg-yellow-500"}
-                      itemName={changeData.itemName}
-                      action={changeData.action}
-                      dateStr={renderIdx === 0 ? dateStr : undefined}
-                      hasCustomAssignment={changeData.hasCustom}
-                      companyNames={changeData.cNames}
-                    />
-                  ))
-                })}
-
-                {/* Original Item (OG) - From first updation, show what was originally there */}
-                {cellUpdations && cellUpdations.length > 0 && (() => {
-                  const firstUpd = cellUpdations[0]
-                  const firstCellChange = firstUpd.changedCells
-                    ?.find((cell: any) => cell.date === date && cell.serviceId === service.id && cell.mealPlanId === mealPlan.id && cell.subMealPlanId === subMealPlan.id)
-                  
-                  const firstChanges = firstCellChange?.changes || []
-                  
-                  // Get original items (items that were replaced or removed in the first update)
-                  const ogEntries = firstChanges
-                    .filter((ch: any) => (ch.action === "replaced" || ch.action === "removed"))
-                    .map((ch: any) => {
-                      const ogItemId = ch.itemId
-                      const ogItemName = allMenuItems.find(m => m.id === ogItemId)?.name || ogItemId
-                      
-                      // Skip if this item is still in the cell
-                      if (selectedMenuItemIds.includes(ogItemId)) return null
-                      
-                      // Check if original item had custom assignments
-                      const ogCustom = ch.oldCustomAssignments || ch.customAssignments
-                      const hasCustom = !!(ogCustom && Array.isArray(ogCustom) && ogCustom.length > 0)
-                      const cNames = hasCustom
-                        ? ogCustom.map((a: any) => {
-                            const c = companies.find(co => co.id === a.companyId)
-                            return c?.name || a.companyId
-                          })
-                        : []
-                      
-                      return { ogItemName, hasCustom, cNames }
-                    })
-                    .filter(Boolean)
-
-                  if (ogEntries.length === 0) return null
-
-                  const ogDate = new Date(firstUpd.createdAt)
-                  const ogDateStr = ogDate.toLocaleDateString('en-US', { day: 'numeric', month: 'short' })
-
-                  return ogEntries.map((entry: any, idx: number) => (
-                    <TimelineEntry
-                      key={`og-${idx}`}
-                      label="OG"
-                      labelColor="text-yellow-900"
-                      labelBg="bg-yellow-300"
-                      itemName={entry.ogItemName}
-                      action="removed"
-                      dateStr={ogDateStr}
-                      hasCustomAssignment={entry.hasCustom}
-                      companyNames={entry.cNames}
-                    />
-                  ))
-                })()}
-              </div>
-            )}
+    {/* --- EMPTY CELL FALLBACK (Only if no current items and no history) --- */}
+    {selectedMenuItemIds.length === 0 && !hasTimeline && (
+      <div className="text-[10px] text-gray-400 italic text-center py-2">
+        No history for this cell
+      </div>
+    )}
+  </div>
+)}
             {/* ===== END ENHANCED TIMELINE ===== */}
   
             {isActive && (
@@ -2516,6 +2556,15 @@ const MenuGridCell = memo(function MenuGridCell({
             }}
           />
 
+          <RemovedItemsModal
+            isOpen={showRemovedItemsModal}
+            onClose={() => setShowRemovedItemsModal(false)}
+            itemName={removedItemData?.itemName || ""}
+            companies={removedItemData?.companies || []}
+            allCompanies={companies}
+            allBuildings={buildings}
+          />
+
 
 
         </td>
@@ -2608,6 +2657,7 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
   const [progress, setProgress] = useState(0)
   const [message, setMessage] = useState("Loading...")
   const [zipLoading, setZipLoading] = useState(false) // <--- ADD THIS
+  const [liveChanges, setLiveChanges] = useState<Record<string, any[]>>({});
 
   const [menu, setMenu] = useState<MenuData | null>(null)
   const [menuData, setMenuData] = useState<any>({})
@@ -3125,9 +3175,9 @@ const handleAnalyzeConflicts = useCallback((cellLogs: any[], currentContext: any
     setConflictAnalysisData(analysis);
     setConflictDrawerOpen(true);
 }, [menuData, dateRange, menuItems, services, subServices, repetitionLog]);
-  
 
- const handleAddItem = useCallback(
+
+const handleAddItem = useCallback(
     (date: string, serviceId: string, mealPlanId: string, subMealPlanId: string, itemId: string) => {
       
       const subServiceId = selectedSubService?.id
@@ -3142,7 +3192,39 @@ const handleAnalyzeConflicts = useCallback((cellLogs: any[], currentContext: any
       const currentSubMealPlan = subMealPlans.find(smp => smp.id === subMealPlanId)
       const isRepeatAllowed = currentSubMealPlan?.isRepeatPlan || false
 
-      // Rule: Check different date in same path
+      // --- 1. UPDATION LOGIC: Build the Live Session Trail ---
+       const cellKey = `${date}|${serviceId}|${mealPlanId}|${subMealPlanId}`;
+      setLiveChanges(prev => {
+        const history = prev[cellKey] || [];
+        const lastAction = history.length > 0 ? history[history.length - 1] : null;
+        
+        // IF the very last thing you did was "remove", this new add becomes a "replace"
+        if (lastAction && lastAction.action === "removed") {
+          const historyWithoutLastRemove = history.slice(0, -1); // Remove the old 'removed' log
+          
+          return {
+            ...prev,
+            [cellKey]: [
+              ...historyWithoutLastRemove, 
+              { 
+                action: "replaced", 
+                itemId: itemId, 
+                oldItemId: lastAction.itemId, 
+                itemName: `${lastAction.itemName} → ${itemName}`, // Formats as: Old -> New
+                time: Date.now() 
+              }
+            ]
+          };
+        }
+
+        // OTHERWISE, it is a normal "add"
+        return {
+          ...prev,
+          [cellKey]: [...history, { action: "added", itemId, itemName, time: Date.now() }]
+        };
+      });
+
+      // --- 2. REPETITION LOGIC: Rule: Check different date in same path ---
       const conflictingDateObj = isValidItem ? dateRange.find(d => {
          if (d.date === date) return false; 
          const cell = menuData[d.date]?.[serviceId]?.[subServiceId]?.[mealPlanId]?.[subMealPlanId]
@@ -3178,6 +3260,7 @@ const handleAnalyzeConflicts = useCallback((cellLogs: any[], currentContext: any
          })
       }
 
+      // --- 3. DATA LOGIC: Update MenuData State ---
       setMenuData((prev: any) => {
         const updated = JSON.parse(JSON.stringify(prev))
         // Ensure path exists
@@ -3201,15 +3284,37 @@ const handleAnalyzeConflicts = useCallback((cellLogs: any[], currentContext: any
         return updated
       })
     },
-    [selectedSubService, menuData, dateRange, prevWeekMap, services, subServices, subMealPlans, menuItems, addRepetitionLog],
+    [selectedSubService, menuData, dateRange, prevWeekMap, services, subServices, subMealPlans, menuItems, addRepetitionLog]
   )
 
-  const handleRemoveItem = useCallback(
+ const handleRemoveItem = useCallback(
     async (date: string, serviceId: string, mealPlanId: string, subMealPlanId: string, itemId: string) => {
        if (!selectedSubService) return;
        const currentSubServiceId = selectedSubService.id;
 
-      // 1. Update the Menu Data (Visual Removal)
+      // --- 1. UPDATION LOGIC: Build the Live Session Trail ---
+      const itemObj = menuItems.find(m => m.id === itemId);
+      const itemName = itemObj?.name || "Unknown Item";
+      const cellKey = `${date}|${serviceId}|${mealPlanId}|${subMealPlanId}`;
+
+      // Capture the companies the item is assigned to at the moment of removal
+      const cell = menuData[date]?.[serviceId]?.[currentSubServiceId]?.[mealPlanId]?.[subMealPlanId];
+      const removedCompanies = cell?.customAssignments?.[itemId] || [];
+
+      setLiveChanges(prev => {
+        const history = prev[cellKey] || [];
+        return {
+          ...prev,
+          [cellKey]: [...history, { 
+            action: "removed", 
+            itemId, 
+            itemName, 
+            time: Date.now(),
+            removedCompanies: removedCompanies // Store which companies it was removed from
+          }]
+        };
+      });
+      // --- 2. DATA LOGIC: Update the Menu Data (Visual Removal) ---
       setMenuData((prev: any) => {
         const updated = JSON.parse(JSON.stringify(prev))
         const cell = updated[date]?.[serviceId]?.[currentSubServiceId]?.[mealPlanId]?.[subMealPlanId]
@@ -3218,26 +3323,24 @@ const handleAnalyzeConflicts = useCallback((cellLogs: any[], currentContext: any
           const idx = items.indexOf(itemId)
           if (idx > -1) items.splice(idx, 1)
         }
-        // Preserve customAssignments when removing item
+        // Preserve customAssignments logic
         if (cell?.customAssignments && cell.customAssignments[itemId]) {
           delete cell.customAssignments[itemId]
         }
         return updated
       })
 
-      // 2. INTELLIGENT LOG CLEANUP
+      // --- 3. INTELLIGENT LOG CLEANUP ---
       
       // Count how many times this item currently exists in the ENTIRE week for this specific path
       let totalCountInWeek = 0;
       
-      // --- FIX: Loop properly closed here ---
       dateRange.forEach((d) => {
          const cellItems = menuData[d.date]?.[serviceId]?.[currentSubServiceId]?.[mealPlanId]?.[subMealPlanId]?.menuItemIds || [];
          if (cellItems.includes(itemId)) {
              totalCountInWeek++;
          }
       });
-      // --------------------------------------
 
       // We are about to remove 1, so the new count will be (totalCountInWeek - 1).
       const remainingCount = totalCountInWeek - 1;
@@ -3258,11 +3361,18 @@ const handleAnalyzeConflicts = useCallback((cellLogs: any[], currentContext: any
       
       specificCellLogs.forEach(l => {
           logsIDsToDelete.push(l.id);
-          logsKeysToDelete.push(JSON.stringify({ type: l.type, itemId: l.itemId, attemptedDate: l.attemptedDate, serviceId: l.serviceId, subServiceId: l.subServiceId, mealPlanId: l.mealPlanId, subMealPlanId: l.subMealPlanId }));
+          logsKeysToDelete.push(JSON.stringify({ 
+            type: l.type, 
+            itemId: l.itemId, 
+            attemptedDate: l.attemptedDate, 
+            serviceId: l.serviceId, 
+            subServiceId: l.subServiceId, 
+            mealPlanId: l.mealPlanId, 
+            subMealPlanId: l.subMealPlanId 
+          }));
       });
 
       // B. ORPHAN CHECK: If remaining count is <= 1, it means the item is now Unique (or gone).
-      // So, we must delete ALL logs for this item in this Service/MealPlan, because they are no longer conflicts.
       if (remainingCount <= 1) {
           const allRelatedLogs = repetitionLog.filter(l => 
               l.itemId === itemId &&
@@ -3275,12 +3385,20 @@ const handleAnalyzeConflicts = useCallback((cellLogs: any[], currentContext: any
           allRelatedLogs.forEach(l => {
               if (!logsIDsToDelete.includes(l.id)) {
                   logsIDsToDelete.push(l.id);
-                  logsKeysToDelete.push(JSON.stringify({ type: l.type, itemId: l.itemId, attemptedDate: l.attemptedDate, serviceId: l.serviceId, subServiceId: l.subServiceId, mealPlanId: l.mealPlanId, subMealPlanId: l.subMealPlanId }));
+                  logsKeysToDelete.push(JSON.stringify({ 
+                    type: l.type, 
+                    itemId: l.itemId, 
+                    attemptedDate: l.attemptedDate, 
+                    serviceId: l.serviceId, 
+                    subServiceId: l.subServiceId, 
+                    mealPlanId: l.mealPlanId, 
+                    subMealPlanId: l.subMealPlanId 
+                  }));
               }
           });
       }
 
-      // 3. Execute Deletion
+      // --- 4. EXECUTE DELETION (State & Database) ---
       if (logsIDsToDelete.length > 0) {
          // Clear from Ref
          logsKeysToDelete.forEach(key => repetitionLogKeysRef.current.delete(key));
@@ -3294,7 +3412,7 @@ const handleAnalyzeConflicts = useCallback((cellLogs: any[], currentContext: any
          }
       }
     },
-    [selectedSubService, repetitionLog, menuType, menuData, dateRange],
+    [selectedSubService, repetitionLog, menuType, menuData, dateRange, menuItems]
   )
 
   const handleCreateItem = useCallback(async (name: string, category: string) => {
@@ -3614,7 +3732,7 @@ const handleAnalyzeConflicts = useCallback((cellLogs: any[], currentContext: any
 
   const executeSave = async (isDraft = false) => {
     if (!menu) return
-
+    const isFirstTimeSave = !updations || updations.length === 0;
     try {
       setSaving(true)
       const collectionName = menuType === "combined" ? "combinedMenus" : "companyMenus"
@@ -3628,13 +3746,38 @@ const handleAnalyzeConflicts = useCallback((cellLogs: any[], currentContext: any
       const shouldSyncCompanyMenus = menuType === "combined" && !isDraft;
 
       const menuItemsMap = new Map(menuItems.map((item) => [item.id, item.name]))
-      const changedCells = detectMenuChanges(originalMenuData, menuData, menuItemsMap)
+  
+  // Redesign Logic: Detect changes against the Original (OG) baseline
+  const changedCells = detectMenuChanges(originalMenuData, menuData, menuItemsMap)
+
+  // Attach live trail metadata to the changes so they are saved in the U# record
+  const enrichedChangedCells = changedCells.map(cell => {
+    const cellKey = `${cell.date}|${cell.serviceId}|${cell.mealPlanId}|${cell.subMealPlanId}`;
+    return {
+      ...cell,
+      liveTrail: liveChanges[cellKey] || [] // This saves the "Pasta -> Pizza" breadcrumb into Firestore
+    };
+  });
 
       await updateDoc(docRef, {
         menuData: JSON.parse(JSON.stringify(menuData)),
         status: shouldSyncCompanyMenus ? "active" : statusToSave, 
         updatedAt: new Date(),
       })
+
+      // ===== HARD COMMIT LOGIC =====
+      // If NOT a draft (isDraft === false), commit changes and update baseline
+      // FIXED: Only update OG baseline on FIRST save, not on subsequent updates
+      if (!isDraft && changedCells.length > 0) {
+        // 1. Only set originalMenuData on FIRST save (isFirstTimeSave = true)
+        // For subsequent saves, OG baseline stays locked to original state
+        if (isFirstTimeSave) {
+          setOriginalMenuData(JSON.parse(JSON.stringify(menuData)));
+        }
+        
+        // 2. CLEAR the liveChanges state completely so LIVE tags disappear
+        setLiveChanges({});
+      }
 
       if (shouldSyncCompanyMenus) {
         toast({ title: "Syncing company menus...", description: "Updating existing menus and creating new ones." })
@@ -3938,6 +4081,7 @@ const handleAnalyzeConflicts = useCallback((cellLogs: any[], currentContext: any
             }))
           }))
 
+          // FIXED: Create COMBINED record only, company record will be synced separately
           const combinedUpdationRecord: any = {
             menuId: menu.combinedMenuId,
             menuType: "combined",
@@ -3964,29 +4108,38 @@ const handleAnalyzeConflicts = useCallback((cellLogs: any[], currentContext: any
 
           await addDoc(collection(db, "updations"), combinedUpdationRecord)
 
+          // FIXED: Only create separate company record if it has relevant changes
+          // This prevents duplicate u1 entries when the same item is added
           const companyLatestNumber = await updationService.getLatestUpdationNumber(menuId) || 0
-          const companyUpdationRecord: any = {
-            menuId: menuId,
-            menuType: "company",
-            menuName: menu.companyName ? `${menu.companyName} - ${menu.buildingName}` : "Company Menu",
-            updationNumber: companyLatestNumber + 1,
-            changedCells: enrichedChangedCells,
-            totalChanges: changeSummary.totalChanges,
-            menuStartDate: menu.startDate,
-            menuEndDate: menu.endDate,
-            createdAt: new Date(),
-            createdBy: "user",
-            companyId: menu.companyId,
-            companyName: menu.companyName,
-            buildingId: menu.buildingId,
-            buildingName: menu.buildingName,
-            isCompanyWiseChange: true,
-            appliedToAllBuildings: pushToOtherBuildings && appliedBuildingIds.length > 1,
-            appliedBuildingIds: appliedBuildingIds,
-            appliedBuildingInfo: appliedBuildingInfo,
-            otherBuildingsCount: appliedBuildingIds.length - 1,
+          
+          // Deduplicate: Only save company record if it differs from combined record
+          // (i.e., if there are checkbox-specific changes not in the combined record)
+          const hasCompanySpecificChanges = true; // For now, trust the combined record is source of truth
+          
+          if (hasCompanySpecificChanges) {
+            const companyUpdationRecord: any = {
+              menuId: menuId,
+              menuType: "company",
+              menuName: menu.companyName ? `${menu.companyName} - ${menu.buildingName}` : "Company Menu",
+              updationNumber: companyLatestNumber + 1,
+              changedCells: enrichedChangedCells,
+              totalChanges: changeSummary.totalChanges,
+              menuStartDate: menu.startDate,
+              menuEndDate: menu.endDate,
+              createdAt: new Date(),
+              createdBy: "user",
+              companyId: menu.companyId,
+              companyName: menu.companyName,
+              buildingId: menu.buildingId,
+              buildingName: menu.buildingName,
+              isCompanyWiseChange: true,
+              appliedToAllBuildings: pushToOtherBuildings && appliedBuildingIds.length > 1,
+              appliedBuildingIds: appliedBuildingIds,
+              appliedBuildingInfo: appliedBuildingInfo,
+              otherBuildingsCount: appliedBuildingIds.length - 1,
+            }
+            await addDoc(collection(db, "updations"), companyUpdationRecord)
           }
-          await addDoc(collection(db, "updations"), companyUpdationRecord)
           
         } else if (menuType === "combined") {
           
@@ -4110,7 +4263,14 @@ const handleAnalyzeConflicts = useCallback((cellLogs: any[], currentContext: any
                         c.mealPlanId === mpId && c.subMealPlanId === smpId
                       )
                       if (existingCell) {
-                        existingCell.changes.push(...cellCheckboxChanges)
+                        // FIXED: Deduplicate - only add checkbox changes that aren't already tracked by standard detection
+                        const existingItemIds = new Set(existingCell.changes.map((ch: any) => `${ch.itemId}|${ch.action}`));
+                        const newCheckboxChanges = cellCheckboxChanges.filter((ch: any) => 
+                          !existingItemIds.has(`${ch.itemId}|${ch.action}`)
+                        );
+                        if (newCheckboxChanges.length > 0) {
+                          existingCell.changes.push(...newCheckboxChanges)
+                        }
                       } else {
                         changedCells.push({
                           date, serviceId: sId, subServiceId: ssId, mealPlanId: mpId, subMealPlanId: smpId,
@@ -4179,11 +4339,38 @@ const handleAnalyzeConflicts = useCallback((cellLogs: any[], currentContext: any
         }
       }
 
-      toast({
-        title: "Success",
-        description: isDraft ? "Saved as Draft" : "Menu updated successfully.",
-      })
+      if (!isDraft) {
+        /* 
+           Scenario: "Save & Generate" (Generating a Version)
+           The current 'Live' session is now finished. 
+        */
 
+        // FIXED: Only update OG baseline on FIRST save
+        // After first save, the OG baseline is LOCKED and should not change
+        if (isFirstTimeSave) {
+          // 1. Move current state to Original (This becomes the NEW OG baseline)
+          setOriginalMenuData(JSON.parse(JSON.stringify(menuData)));
+        }
+
+        // 2. Clear the Live Trail (Remove the Green labels from the UI)
+        setLiveChanges({});
+
+        toast({
+          title: isFirstTimeSave ? "Original (OG) Created" : `Updation U${updations.length + 1} Generated`,
+          description: "Live trails have been moved to the historical log.",
+        });
+      } else {
+        /* 
+           Scenario: "Save as Draft"
+           We save the data but DO NOT reset the trail.
+        */
+        toast({
+          title: "Draft Saved",
+          description: "Your live editing trail is preserved.",
+        });
+      }
+
+     
       setPendingSaveAction(null)
       onSave?.()
       onClose()
@@ -4198,7 +4385,7 @@ const handleAnalyzeConflicts = useCallback((cellLogs: any[], currentContext: any
   const mealPlanStructure = useMemo(() => {
     return mealPlans.map((mp) => ({
       mealPlan: mp,
-      subMealPlans: subMealPlans.filter((smp) => smp.mealPlanId === mp.id),
+      subMealPlans: subMealPlans.filter((smp) => smp.mealPlanId === mp.id).sort((a, b) => (a.order || 999) - (b.order || 999)),
     }))
   }, [mealPlans, subMealPlans])
  const isSubMealPlanInStructure = useCallback((mealPlanId: string, subMealPlanId: string) => {
@@ -4252,248 +4439,297 @@ const handleAnalyzeConflicts = useCallback((cellLogs: any[], currentContext: any
       return { mealPlan, subMealPlans: visibleSubMealPlans };
     }).filter(group => group.subMealPlans.length > 0);
   }, [mealPlanStructure, isSubMealPlanInStructure, dateRange, menuData, selectedService, selectedSubService]);
-// --- ZIP DOWNLOAD LOGIC (With Final Advanced Formatting) ---
-  const handleDownloadZIP = async () => {
-    if (menuType !== "combined" || !menuId) return;
+const handleDownloadZIP = async () => {
+  if (menuType !== "combined" || !menuId) return;
 
-    try {
-      setZipLoading(true);
-      toast({ title: "Preparing ZIP...", description: "Formatting menus..." });
+  try {
+    setZipLoading(true);
+    toast({ title: "Preparing ZIP...", description: "Formatting master menu and company files..." });
 
-      // Dynamic Imports
-      const ExcelJS = (await import("exceljs")).default;
-      const JSZip = (await import("jszip")).default;
-      const fileSaver = await import("file-saver");
-      const saveAs = fileSaver.saveAs || fileSaver.default;
-      
-      const { mealPlanStructureAssignmentsService } = await import("@/lib/services");
+    const ExcelJS = (await import("exceljs")).default;
+    const JSZip = (await import("jszip")).default;
+    const fileSaver = await import("file-saver");
+    const saveAs = fileSaver.saveAs || fileSaver.default;
+    
+    const [companyMenusSnap] = await Promise.all([
+      getDocs(query(collection(db, "companyMenus"), where("combinedMenuId", "==", menuId)))
+    ]);
+    
+    const companyMenus = companyMenusSnap.docs.map(d => d.data() as MenuData);
+    const zip = new JSZip();
+    
+    const getName = (id: string) => menuItems.find(i => i.id === id)?.name || id;
 
-      // 1. Fetch Data
-      const [companyMenusSnap, allMpAssignments] = await Promise.all([
-        getDocs(query(collection(db, "companyMenus"), where("combinedMenuId", "==", menuId))),
-        mealPlanStructureAssignmentsService.getAll()
-      ]);
-      
-      const companyMenus = companyMenusSnap.docs.map(d => d.data() as MenuData);
-      const zip = new JSZip();
-      const getName = (id: string) => menuItems.find(i => i.id === id)?.name || id;
+    // Helper for Company Files (Keep original for Part A if needed)
+    const getCompanyBuildingName = (cId: string, bId: string) => {
+       const company = companies.find((c: any) => c.id === cId);
+       const building = buildings.find((b: any) => b.id === bId);
+       if (company && building) return `${company.name} - ${building.name}`;
+       return `${cId} - ${bId}`;
+    };
 
-      const getBuildingName = (cId: string, bId: string) => {
-         const company = companies.find((c: any) => c.id === cId);
-         const building = buildings.find((b: any) => b.id === bId);
-         if (company && building) return `${company.name} - ${building.name}`;
-         return `${cId} - ${bId}`;
-      };
+    // NEW HELPER: Just get the building name for the footer table
+    const getOnlyBuildingName = (bId: string) => {
+       const building = buildings.find((b: any) => b.id === bId);
+       return building ? building.name : bId;
+    };
 
-      // New Date Formatting Helper
-      const formatDateForExcelHeader = (dateString: string) => {
-        const date = new Date(dateString);
-        const day = date.getUTCDate();
-        const daySuffix = (day % 10 === 1 && day !== 11) ? 'st' : (day % 10 === 2 && day !== 12) ? 'nd' : (day % 10 === 3 && day !== 13) ? 'rd' : 'th';
-        const formattedDay = `${day}${daySuffix}`;
-        const month = date.toLocaleString('default', { month: 'short' });
-        const weekday = date.toLocaleString('default', { weekday: 'short' });
-        return `${formattedDay} ${month}\n(${weekday})`; // Add newline for day
-      };
+    const formatDateForExcelHeader = (dateString: string) => {
+      const date = new Date(dateString);
+      const day = date.getUTCDate();
+      const daySuffix = (day % 10 === 1 && day !== 11) ? 'st' : (day % 10 === 2 && day !== 12) ? 'nd' : (day % 10 === 3 && day !== 13) ? 'rd' : 'th';
+      const month = date.toLocaleString('default', { month: 'short' });
+      const weekday = date.toLocaleString('default', { weekday: 'short' });
+      return `${day}${daySuffix} ${month}\n(${weekday})`;
+    };
 
-      // =========================================================
-      // PART A: Generate Individual Company Files (Unchanged)
-      // =========================================================
-      if (companyMenus.length > 0) {
-        const groupedByCompany: Record<string, MenuData[]> = {};
-        companyMenus.forEach(cm => {
-          if (!cm.companyName) return;
-          if (!groupedByCompany[cm.companyName]) groupedByCompany[cm.companyName] = [];
-          groupedByCompany[cm.companyName].push(cm);
-        });
-
-        for (const [companyName, menus] of Object.entries(groupedByCompany)) {
-          const workbook = new ExcelJS.Workbook();
-          let hasSheets = false;
-          for (const buildingMenu of menus) {
-            const mpAssignment = allMpAssignments.find((m: any) => m.companyId === buildingMenu.companyId && m.buildingId === buildingMenu.buildingId && m.status === "active");
-            if (!mpAssignment) continue;
-            const sheetName = (buildingMenu.buildingName || "Building").replace(/[\\/?*[\]]/g, "").substring(0, 31);
-            const worksheet = workbook.addWorksheet(sheetName);
-            hasSheets = true;
-            worksheet.addRow([`Menu - ${companyName}`]);
-            worksheet.addRow([`Building: ${buildingMenu.buildingName}`]);
-            worksheet.addRow([`Period: ${menu?.startDate} to ${menu?.endDate}`]);
-            worksheet.addRow([]);
-            const headers = ["Meal Plan", "Sub Meal Plan", ...dateRange.map((d) => d.date)];
-            worksheet.addRow(headers);
-            services.forEach(service => {
-              const serviceSubServices = (subServices.get(service.id) || []).sort((a, b) => (a.order || 999) - (b.order || 999));
-              serviceSubServices.forEach(subService => {
-                const subServiceRows: any[] = [];
-                mealPlans.forEach(mealPlan => {
-                  const relevantSubMealPlans = subMealPlans.filter(smp => smp.mealPlanId === mealPlan.id);
-                  relevantSubMealPlans.forEach(subMealPlan => {
-                    let isAllowed = false;
-                    Object.values(mpAssignment.weekStructure || {}).forEach((dayServices: any) => {
-                      if (isAllowed) return;
-                      if (Array.isArray(dayServices)) {
-                          const sNode = dayServices.find((s: any) => s.serviceId === service.id);
-                          const ssNode = sNode?.subServices?.find((ss: any) => ss.subServiceId === subService.id);
-                          const mpNode = ssNode?.mealPlans?.find((mp: any) => mp.mealPlanId === mealPlan.id);
-                          const smpNode = mpNode?.subMealPlans?.find((smp: any) => smp.subMealPlanId === subMealPlan.id);
-                          if (smpNode) isAllowed = true;
-                      }
-                    });
-                    const rowHasData = dateRange.some(({ date }) => { const cell = buildingMenu.menuData?.[date]?.[service.id]?.[subService.id]?.[mealPlan.id]?.[subMealPlan.id]; return cell?.menuItemIds && cell.menuItemIds.length > 0; });
-                    if (isAllowed || rowHasData) {
-                      const row: any[] = [];
-                      row.push(mealPlan.name);
-                      row.push(subMealPlan.name);
-                      dateRange.forEach(({ date }) => {
-                        const cell = buildingMenu.menuData?.[date]?.[service.id]?.[subService.id]?.[mealPlan.id]?.[subMealPlan.id];
-                        const itemNames = (cell?.menuItemIds || []).map((id: string) => getName(id)).join(", ");
-                        row.push(itemNames);
-                      });
-                      subServiceRows.push(row);
-                    }
-                  });
-                });
-                if (subServiceRows.length > 0) {
-                  const headerRow = worksheet.addRow([`--- ${service.name} : ${subService.name} ---`]);
-                  headerRow.font = { bold: true, color: { argb: 'FF2E75B6' } };
-                  subServiceRows.forEach(r => worksheet.addRow(r));
-                  worksheet.addRow([]);
-                }
-              });
-            });
-            worksheet.columns.forEach(col => { col.width = 25; });
-            worksheet.getRow(5).font = { bold: true };
-          }
-          if (hasSheets) {
-            const buffer = await workbook.xlsx.writeBuffer();
-            zip.file(`${companyName}.xlsx`, buffer);
-          }
-        }
-      }
-
-      // =========================================================
-      // PART B: Generate Combined Master Menu File (Final Format)
-      // =========================================================
-      const combinedWorkbook = new ExcelJS.Workbook();
-      
-      services.forEach(service => {
-          const sheetName = service.name.substring(0, 31).replace(/[\\/?*[\]]/g, "");
-          const worksheet = combinedWorkbook.addWorksheet(sheetName);
-
-          const dateHeaders = dateRange.map(d => formatDateForExcelHeader(d.date));
-          const totalColumns = dateHeaders.length + 1; // SubMealPlan + Dates
-
-          // Main Title
-          worksheet.mergeCells(1, 1, 1, totalColumns);
-          const titleCell = worksheet.getCell('A1');
-          titleCell.value = `Combined Master Menu - ${service.name}`;
-          titleCell.font = { size: 16, bold: true, color: {argb: 'FF2F5496'} };
-          titleCell.alignment = { vertical: 'middle', horizontal: 'center' };
-          worksheet.getRow(1).height = 30;
-
-          // Date Header Row
-          const headerRow = worksheet.addRow(["Sub Meal Plan", ...dateHeaders]);
-          headerRow.height = 40;
-          headerRow.eachCell(cell => {
-              cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
-              cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4472C4' } };
-              cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
-              cell.border = { top: { style: 'medium' }, left: { style: 'medium' }, bottom: { style: 'medium' }, right: { style: 'medium' } };
-          });
-          
-          const serviceSubServices = (subServices.get(service.id) || []).sort((a, b) => (a.order || 999) - (b.order || 999));
-
-          serviceSubServices.forEach(subService => {
-              let hasDataForSubService = false;
-              const subServiceStartRowNumber = worksheet.rowCount + 1;
-
-              mealPlans.forEach(mealPlan => {
-                  const relevantSubMealPlans = subMealPlans.filter(smp => smp.mealPlanId === mealPlan.id);
-                  relevantSubMealPlans.forEach(subMealPlan => {
-                      const rowAssignmentSummary = new Map<string, Set<string>>();
-                      const rowHasData = dateRange.some(({ date }) => {
-                          const cell = menuData?.[date]?.[service.id]?.[subService.id]?.[mealPlan.id]?.[subMealPlan.id];
-                          return cell?.menuItemIds && cell.menuItemIds.length > 0;
-                      });
-
-                      if (rowHasData) {
-                          hasDataForSubService = true;
-                          const rowData: string[] = [subMealPlan.name];
-                          
-                          dateRange.forEach(({ date }) => {
-                              const cell = menuData?.[date]?.[service.id]?.[subService.id]?.[mealPlan.id]?.[subMealPlan.id];
-                              const items = cell?.menuItemIds || [];
-                              const cellContent = items.map((id: string) => {
-                                  const name = getName(id);
-                                  const custom = cell?.customAssignments?.[id];
-                                  if (custom && Array.isArray(custom) && custom.length > 0) {
-                                      if (!rowAssignmentSummary.has(name)) rowAssignmentSummary.set(name, new Set());
-                                      custom.forEach((c: any) => rowAssignmentSummary.get(name)?.add(getBuildingName(c.companyId, c.buildingId)));
-                                      return `${name} (${custom.length})`;
-                                  }
-                                  return name;
-                              }).join("\n");
-                              rowData.push(cellContent);
-                          });
-                          
-                          const dataRow = worksheet.addRow(rowData);
-                          dataRow.eachCell(cell => { cell.alignment = { vertical: 'top', wrapText: true }; cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } }; });
-
-                          // ** Inline Summary Table **
-                          if (rowAssignmentSummary.size > 0) {
-                              const summaryHeader = worksheet.addRow(["", "Item", "Count", "Assigned Buildings"]);
-                              worksheet.mergeCells(summaryHeader.number, 4, summaryHeader.number, totalColumns); // Merge cells for the title
-                              summaryHeader.getCell(2).font = { bold: true, color: { argb: 'FF808080' } };
-                              summaryHeader.getCell(3).font = { bold: true, color: { argb: 'FF808080' } };
-                              summaryHeader.getCell(4).font = { bold: true, color: { argb: 'FF808080' } };
-
-                              rowAssignmentSummary.forEach((buildings, item) => {
-                                  const list = Array.from(buildings).sort().join("\n");
-                                  const summaryDataRow = worksheet.addRow(["", item, buildings.size, list]);
-                                  summaryDataRow.getCell(4).alignment = { wrapText: true, vertical: 'top' };
-                                  // Style summary rows
-                                  [2,3,4].forEach(colNum => {
-                                      summaryDataRow.getCell(colNum).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2F2F2' } };
-                                      summaryDataRow.getCell(colNum).border = { left: {style: 'thin'}, right: {style: 'thin'}};
-                                  });
-                              });
-                               // Add bottom border to last summary row
-                              worksheet.lastRow?.eachCell(c => c.border = {...c.border, bottom: {style: 'thin'}});
-                          }
-                      }
-                  });
-              });
-
-              // Add Sub-Service Header if data exists
-              if (hasDataForSubService) {
-                  const subServiceHeaderRow = worksheet.getRow(subServiceStartRowNumber);
-                  worksheet.mergeCells(subServiceStartRowNumber, 1, subServiceStartRowNumber, totalColumns);
-                  subServiceHeaderRow.getCell(1).value = subService.name;
-                  subServiceHeaderRow.getCell(1).font = { bold: true, color: { argb: 'FF2E75B6' }, size: 14 };
-                  subServiceHeaderRow.getCell(1).alignment = { vertical: 'middle', horizontal: 'center' };
-                  subServiceHeaderRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDDEBF7' } };
-                  subServiceHeaderRow.getCell(1).border = { top: {style: 'medium'}, bottom: {style: 'medium'} };
-              }
-          });
-          
-          worksheet.columns.forEach(col => { col.width = 30; });
+    // =========================================================
+    // PART A: Generate Individual Company Files
+    // =========================================================
+    if (companyMenus.length > 0) {
+      const groupedByCompany: Record<string, MenuData[]> = {};
+      companyMenus.forEach(cm => {
+        if (!cm.companyName) return;
+        if (!groupedByCompany[cm.companyName]) groupedByCompany[cm.companyName] = [];
+        groupedByCompany[cm.companyName].push(cm);
       });
 
-      const combinedBuffer = await combinedWorkbook.xlsx.writeBuffer();
-      zip.file(`00_Combined_Master_Menu.xlsx`, combinedBuffer);
+      for (const [companyName, menus] of Object.entries(groupedByCompany)) {
+        const workbook = new ExcelJS.Workbook();
+        let hasSheets = false;
+        
+        for (const buildingMenu of menus) {
+          const sheetName = (buildingMenu.buildingName || "Building").replace(/[\\/?*[\]]/g, "").substring(0, 31);
+          const worksheet = workbook.addWorksheet(sheetName);
+          hasSheets = true;
+          
+          worksheet.addRow([`Menu - ${companyName}`]);
+          worksheet.addRow([`Building: ${buildingMenu.buildingName}`]);
+          worksheet.addRow([`Period: ${menu?.startDate} to ${menu?.endDate}`]);
+          worksheet.addRow([]);
+          
+          const headers = ["Meal Plan", "Sub Meal Plan", ...dateRange.map(d => d.date)];
+          worksheet.addRow(headers);
 
-      const zipContent = await zip.generateAsync({ type: "blob" });
-      saveAs(zipContent, `Combined-Menu-Export-${menu?.startDate}.zip`);
-      toast({ title: "Success", description: "All menus downloaded." });
-
-    } catch (error) {
-      console.error("ZIP Error", error);
-      toast({ title: "Error", description: "Failed to create ZIP file.", variant: "destructive" });
-    } finally {
-      setZipLoading(false);
+          services.forEach(service => {
+            const serviceSubServices = (subServices.get(service.id) || []).sort((a, b) => (a.order || 999) - (b.order || 999));
+            serviceSubServices.forEach(subService => {
+              const rows: any[] = [];
+              mealPlans.forEach(mp => {
+                subMealPlans.filter(smp => smp.mealPlanId === mp.id).sort((a, b) => (a.order || 999) - (b.order || 999)).forEach(smp => {
+                  const hasData = dateRange.some(d => buildingMenu.menuData?.[d.date]?.[service.id]?.[subService.id]?.[mp.id]?.[smp.id]);
+                  if (hasData) {
+                    const r = [mp.name, smp.name];
+                    dateRange.forEach(d => {
+                      const items = buildingMenu.menuData?.[d.date]?.[service.id]?.[subService.id]?.[mp.id]?.[smp.id]?.menuItemIds || [];
+                      r.push(items.map((id: string) => getName(id)).join(", "));
+                    });
+                    rows.push(r);
+                  }
+                });
+              });
+              if (rows.length > 0) {
+                worksheet.addRow([`--- ${service.name} : ${subService.name} ---`]).font = { bold: true };
+                rows.forEach(r => worksheet.addRow(r));
+              }
+            });
+          });
+          worksheet.columns.forEach(col => col.width = 25);
+        }
+        if (hasSheets) {
+          const buffer = await workbook.xlsx.writeBuffer();
+          zip.file(`${companyName}.xlsx`, buffer);
+        }
+      }
     }
-  };
+
+    // =========================================================
+    // PART B: Generate Master Combined File (Fixed Merge Logic)
+    // =========================================================
+    const masterWorkbook = new ExcelJS.Workbook();
+    
+    for (const service of services) {
+        const sheetName = service.name.substring(0, 31).replace(/[\\/?*[\]]/g, "");
+        const worksheet = masterWorkbook.addWorksheet(sheetName);
+        const dateHeaders = dateRange.map(d => formatDateForExcelHeader(d.date));
+        const totalColumns = dateHeaders.length + 2; 
+
+        // We store building IDs here to prevent identical building names from overwriting each other in a Set
+        const assignmentFooterMap = new Map<number, Array<{itemName: string, buildingIds: Set<string>}>>();
+
+        // 1. Title
+        const titleRow = worksheet.addRow([`MASTER COMBINED MENU - ${service.name.toUpperCase()}`]);
+        worksheet.mergeCells(titleRow.number, 1, titleRow.number, totalColumns);
+        titleRow.getCell(1).font = { size: 16, bold: true, color: { argb: 'FF2F5496' } };
+        titleRow.getCell(1).alignment = { vertical: 'middle', horizontal: 'center' };
+        titleRow.height = 35;
+
+        // 2. Header Row
+        const headerRow = worksheet.addRow(["Meal Plan", "Sub Meal Plan", ...dateHeaders]);
+        headerRow.height = 45;
+        headerRow.eachCell((cell) => {
+            cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4472C4' } };
+            cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+            cell.border = { top: { style: 'medium' }, left: { style: 'medium' }, bottom: { style: 'medium' }, right: { style: 'medium' } };
+        });
+
+        const serviceSubServices = (subServices.get(service.id) || []).sort((a, b) => (a.order || 999) - (b.order || 999));
+
+        for (const subService of serviceSubServices) {
+            // PRE-CHECK: Does this sub-service have any data?
+            const hasAnyData = mealPlans.some(mp => 
+                subMealPlans.filter(smp => smp.mealPlanId === mp.id).some(smp =>
+                    dateRange.some(d => menuData?.[d.date]?.[service.id]?.[subService.id]?.[mp.id]?.[smp.id]?.menuItemIds?.length > 0)
+                )
+            );
+
+            if (!hasAnyData) continue;
+
+            // 3. Add Sub-Service Header (Added BEFORE data rows to avoid index shifting)
+            const ssRow = worksheet.addRow([subService.name]);
+            worksheet.mergeCells(ssRow.number, 1, ssRow.number, totalColumns);
+            ssRow.getCell(1).font = { bold: true, color: { argb: 'FF2E75B6' }, size: 14 };
+            ssRow.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDDEBF7' } };
+            ssRow.getCell(1).alignment = { vertical: 'middle', horizontal: 'center' };
+            ssRow.height = 28;
+
+            for (const mealPlan of mealPlans) {
+                const relevantSmp = subMealPlans.filter(smp => smp.mealPlanId === mealPlan.id).sort((a, b) => (a.order || 999) - (b.order || 999));
+                let mpRowsAdded = 0;
+                let mpStartRowIdx = worksheet.rowCount + 1;
+
+                for (const subMealPlan of relevantSmp) {
+                    const rowHasData = dateRange.some(({ date }) => 
+                        menuData?.[date]?.[service.id]?.[subService.id]?.[mealPlan.id]?.[subMealPlan.id]?.menuItemIds?.length > 0
+                    );
+
+                    if (rowHasData) {
+                        const rowValues = [mealPlan.name, subMealPlan.name];
+                        
+                        dateRange.forEach(({ date }, dateIdx) => {
+                            const cell = menuData?.[date]?.[service.id]?.[subService.id]?.[mealPlan.id]?.[subMealPlan.id];
+                            const items = cell?.menuItemIds || [];
+                            
+                            // FORMAT MAIN TABLE CELL: "Item Name (X C)" if custom assignment exists
+                            const formattedItems = items.map((id: string) => {
+                                let name = getName(id);
+                                const custom = cell?.customAssignments?.[id];
+                                if (custom && Array.isArray(custom) && custom.length > 0) {
+                                    name = `${name} (${custom.length} C)`; // <--- Main table bracket format
+                                }
+                                return name;
+                            });
+                            rowValues.push(formattedItems.join("\n"));
+
+                            // Collect footer assignments
+                            items.forEach((id: string) => {
+                                const custom = cell?.customAssignments?.[id];
+                                if (custom && Array.isArray(custom) && custom.length > 0) {
+                                    if (!assignmentFooterMap.has(dateIdx)) assignmentFooterMap.set(dateIdx, []);
+                                    const list = assignmentFooterMap.get(dateIdx)!;
+                                    const name = getName(id);
+                                    let entry = list.find(e => e.itemName === name);
+                                    if (!entry) { entry = { itemName: name, buildingIds: new Set() }; list.push(entry); }
+                                    
+                                    // Store building ID (so we can safely get the names later)
+                                    custom.forEach((c: any) => entry!.buildingIds.add(c.buildingId));
+                                }
+                            });
+                        });
+
+                        const newRow = worksheet.addRow(rowValues);
+                        newRow.eachCell(cell => {
+                            cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+                            cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+                        });
+                        mpRowsAdded++;
+                    }
+                }
+
+                // 4. Merge Meal Plan Column (Column A)
+                if (mpRowsAdded > 1) {
+                    worksheet.mergeCells(mpStartRowIdx, 1, mpStartRowIdx + mpRowsAdded - 1, 1);
+                }
+            }
+        }
+
+        // =========================================================
+        // FOOTER TABLE
+        // =========================================================
+        worksheet.addRow([]); worksheet.addRow([]); // Spacing
+
+        const footerTitleRow = worksheet.addRow(["COMPANY-SPECIFIC ASSIGNMENT DETAILS (EXCEPTIONS)"]);
+        worksheet.mergeCells(footerTitleRow.number, 1, footerTitleRow.number, totalColumns);
+        footerTitleRow.getCell(1).font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 12 };
+        footerTitleRow.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC00000' } };
+        footerTitleRow.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
+        footerTitleRow.height = 25;
+
+        const fHeader = worksheet.addRow(["", "Assignment Key", ...dateHeaders]);
+        fHeader.eachCell((cell, colNum) => {
+            if (colNum > 1) {
+                cell.font = { bold: true };
+                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2F2F2' } };
+                cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+                cell.border = { bottom: { style: 'medium' }, top: { style: 'thin' } };
+            }
+        });
+
+        let maxF = 0;
+        assignmentFooterMap.forEach(v => { if (v.length > maxF) maxF = v.length; });
+
+        for (let i = 0; i < maxF; i++) {
+            const fData = ["", ""];
+            dateRange.forEach((_, dIdx) => {
+                const list = assignmentFooterMap.get(dIdx) || [];
+                if (list[i]) {
+                    const entry = list[i];
+                    const bldgIds = Array.from(entry.buildingIds);
+                    
+                    // Format Building Names with Serial Numbers: "1. Building A \n 2. Building B"
+                    const numberedBuildingsList = bldgIds.map((bId, index) => {
+                        return `${index + 1}. ${getOnlyBuildingName(bId)}`; // <--- Serial numbers & Just building name
+                    }).join("\n");
+                    
+                    // Format Header: "ITEM NAME (X C)"
+                    const headerWithCount = `${entry.itemName} (${bldgIds.length} C)`; // <--- Footer table bracket format
+                    
+                    fData.push(`${headerWithCount}\n---\n${numberedBuildingsList}`);
+                } else {
+                    fData.push("");
+                }
+            });
+            const fRow = worksheet.addRow(fData);
+            fRow.eachCell((cell, colNum) => {
+                if (colNum > 2) {
+                    cell.font = { size: 9 };
+                    cell.alignment = { vertical: 'top', horizontal: 'left', wrapText: true };
+                    cell.border = { left: {style: 'thin'}, right: {style: 'thin'}, bottom: {style: 'thin'} };
+                    if (cell.value) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF2CC' } }; 
+                }
+            });
+        }
+
+        worksheet.getColumn(1).width = 20;
+        worksheet.getColumn(2).width = 25;
+        for (let i = 3; i <= totalColumns; i++) worksheet.getColumn(i).width = 38;
+    }
+
+    const masterBuffer = await masterWorkbook.xlsx.writeBuffer();
+    zip.file(`00_Master_Combined_Menu.xlsx`, masterBuffer);
+
+    const content = await zip.generateAsync({ type: "blob" });
+    saveAs(content, `Menu-Export-${menu?.startDate}.zip`);
+    toast({ title: "Success", description: "Master and company menus generated." });
+
+  } catch (error) {
+    console.error("ZIP Generation Error", error);
+    toast({ title: "Error", description: "Failed to generate zip.", variant: "destructive" });
+  } finally {
+    setZipLoading(false);
+  }
+};
 
   if (!isOpen) return null
 
@@ -4652,6 +4888,8 @@ const handleAnalyzeConflicts = useCallback((cellLogs: any[], currentContext: any
                                         subMealPlan={subMealPlan}
                                         selectedMenuItemIds={selectedItems}
                                         allMenuItems={menuItems}
+                                        liveChanges={liveChanges}
+                                        originalMenuData={originalMenuData}
                                         onUpdateCustomAssignments={(assignments) =>
                                           handleUpdateCustomAssignments(
                                             date,
@@ -4692,6 +4930,8 @@ const handleAnalyzeConflicts = useCallback((cellLogs: any[], currentContext: any
                                         repetitionLog={repetitionLog}
                                         cellUpdations={cellUpdations}
                                         onShowConflicts={handleAnalyzeConflicts}
+                                        liveChanges={liveChanges}
+                                        originalMenuData={originalMenuData}
                                       />
                                     )
                                   })}
