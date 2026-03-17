@@ -42,7 +42,6 @@ import {
   mealPlansService,
   subMealPlansService,
   mealPlanStructureAssignmentsService,
-  structureAssignmentsService,
   type Company,
   type Building,
   type Service,
@@ -105,6 +104,7 @@ export default function MealPlanStructurePage() {
 
   const [selectedCompany, setSelectedCompany] = useState<string>("")
   const [selectedBuilding, setSelectedBuilding] = useState<string>("")
+  const [currentAssignmentId, setCurrentAssignmentId] = useState<string | null>(null)
 
   const [companySearch, setCompanySearch] = useState("")
   const [buildingSearch, setBuildingSearch] = useState("")
@@ -131,6 +131,7 @@ export default function MealPlanStructurePage() {
   const [editingBuildingId, setEditingBuildingId] = useState<string | null>(null)
   const [editingBuildingStructure, setEditingBuildingStructure] = useState<WeeklyStructure>({})
 
+  // Initial Fetch of Base Data
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -172,6 +173,7 @@ export default function MealPlanStructurePage() {
     fetchData()
   }, [])
 
+  // Fetch Buildings when Company Changes
   useEffect(() => {
     const fetchBuildings = async () => {
       if (selectedCompany) {
@@ -192,7 +194,7 @@ export default function MealPlanStructurePage() {
     fetchBuildings()
   }, [selectedCompany])
 
-  // --- LIVE REAL-TIME LISTENER ---
+  // --- LIVE REAL-TIME LISTENER FOR MAIN EDITOR ---
   useEffect(() => {
     let unsubscribeBase: () => void
     let unsubscribeMealPlans: () => void
@@ -220,22 +222,23 @@ export default function MealPlanStructurePage() {
             variant: "destructive",
           })
         }
-      }, (error) => {
-        console.error("Error listening to base structure:", error)
-      })
+      }, (error) => console.error("Error listening to base structure:", error))
 
       // 2. Listen to Meal Plan Assignments (Grid Data)
       const mealPlanQuery = query(
         collection(db, "mealPlanStructureAssignments"),
         where("companyId", "==", selectedCompany),
-        where("buildingId", "==", selectedBuilding)
+        where("buildingId", "==", selectedBuilding),
+        where("status", "==", "active") 
       )
 
       unsubscribeMealPlans = onSnapshot(mealPlanQuery, (snapshot) => {
         if (!snapshot.empty) {
-          const data = snapshot.docs[0].data()
-          setWeeklyStructure(data.weekStructure || {})
+          const docSnap = snapshot.docs[0]
+          setCurrentAssignmentId(docSnap.id) 
+          setWeeklyStructure(docSnap.data().weekStructure || {})
         } else {
+          setCurrentAssignmentId(null)
           setWeeklyStructure({})
         }
         setLoading(false)
@@ -245,17 +248,78 @@ export default function MealPlanStructurePage() {
       })
 
     } else {
-      // Clear data if nothing selected
       setBaseStructure({})
       setWeeklyStructure({})
+      setCurrentAssignmentId(null)
     }
 
-    // Cleanup: Stop listening when leaving the page or changing building
     return () => {
       if (unsubscribeBase) unsubscribeBase()
       if (unsubscribeMealPlans) unsubscribeMealPlans()
     }
   }, [selectedCompany, selectedBuilding])
+
+  // --- LIVE REAL-TIME LISTENER FOR "VIEW ALL" MODAL ---
+  useEffect(() => {
+    let unsubscribeAssignments: () => void
+
+    const fetchAllLive = async () => {
+      if (!isViewAllModalOpen || companies.length === 0) return
+
+      setIsLoadingAllData(true)
+      try {
+        const allBuildingsList = await buildingsService.getAll()
+        const activeBuildings = allBuildingsList.filter(b => !b.status || b.status === "active")
+
+        const q = query(
+          collection(db, "mealPlanStructureAssignments"), 
+          where("status", "==", "active")
+        )
+
+        unsubscribeAssignments = onSnapshot(q, (snapshot) => {
+          const assignmentsData = snapshot.docs.map(doc => doc.data() as MealPlanStructureAssignment)
+          const data: Array<{ company: Company; buildings: Building[] }> = []
+          const weeklyData: Record<string, WeeklyStructure> = {}
+
+          for (const company of companies) {
+            const companyBuildings = activeBuildings
+              .filter((b) => b.companyId === company.id)
+              .sort((a, b) => (a.name || "").localeCompare(b.name || ""))
+
+            data.push({ company, buildings: companyBuildings })
+
+            for (const building of companyBuildings) {
+              const buildingId = building.id
+              weeklyData[buildingId] = {}
+
+              DAYS.forEach((day) => { weeklyData[buildingId][day] = [] })
+
+              const buildingMealPlanAssignment = assignmentsData.find(
+                (s) => s.companyId === company.id && s.buildingId === buildingId
+              )
+
+              if (buildingMealPlanAssignment && buildingMealPlanAssignment.weekStructure) {
+                weeklyData[buildingId] = buildingMealPlanAssignment.weekStructure
+              }
+            }
+          }
+
+          setAllCompaniesWithBuildings(data)
+          setAllBuildingsWeeklyStructure(weeklyData)
+          setIsLoadingAllData(false)
+        })
+      } catch (error) {
+        console.error("Error setting up View All live listener:", error)
+        setIsLoadingAllData(false)
+      }
+    }
+
+    fetchAllLive()
+
+    return () => {
+      if (unsubscribeAssignments) unsubscribeAssignments()
+    }
+  }, [isViewAllModalOpen, companies])
 
   const getServiceName = (id: string) => services.find((s) => s.id === id)?.name || "Unknown Service"
   const getSubServiceName = (id: string) => subServices.find((s) => s.id === id)?.name || "Unknown Sub Service"
@@ -361,13 +425,8 @@ export default function MealPlanStructurePage() {
         status: "active",
       }
 
-      const existingStructures = await mealPlanStructureAssignmentsService.getAll()
-      const existingStructure = existingStructures.find(
-        (s) => s.companyId === selectedCompany && s.buildingId === selectedBuilding,
-      )
-
-      if (existingStructure) {
-        await updateDoc(doc(db, "mealPlanStructureAssignments", existingStructure.id), {
+      if (currentAssignmentId) {
+        await updateDoc(doc(db, "mealPlanStructureAssignments", currentAssignmentId), {
           ...structureData,
           updatedAt: new Date(),
         })
@@ -378,6 +437,7 @@ export default function MealPlanStructurePage() {
           updatedAt: new Date(),
         })
       }
+
       toast({ title: "Success", description: "Structure saved successfully" })
       setIsModalOpen(false)
       setClipboard(null)
@@ -399,6 +459,7 @@ export default function MealPlanStructurePage() {
     try {
       const company = companies.find((c) => c.id === selectedCompany)
       const allStructures = await mealPlanStructureAssignmentsService.getAll()
+      const activeStructures = allStructures.filter(s => s.status === "active")
 
       for (const targetBuildingId of selectedTargetBuildings) {
         const targetBuilding = buildings.find((b) => b.id === targetBuildingId)
@@ -412,7 +473,7 @@ export default function MealPlanStructurePage() {
           status: "active",
         }
 
-        const existingStructure = allStructures.find(
+        const existingStructure = activeStructures.find(
           (s) => s.companyId === selectedCompany && s.buildingId === targetBuildingId,
         )
 
@@ -448,54 +509,6 @@ export default function MealPlanStructurePage() {
     setSelectedTargetBuildings((prev) =>
       prev.includes(buildingId) ? prev.filter((id) => id !== buildingId) : [...prev, buildingId],
     )
-  }
-
-  const handleViewAllCompaniesAndBuildings = async () => {
-    setIsLoadingAllData(true)
-    try {
-      const allBuildings = await buildingsService.getAll()
-      const mealPlanAssignments = await mealPlanStructureAssignmentsService.getAll()
-      
-      const data: Array<{ company: Company; buildings: Building[] }> = []
-      const weeklyData: Record<string, WeeklyStructure> = {}
-      
-      for (const company of companies) {
-        const companyBuildings = allBuildings
-          .filter((b) => b.companyId === company.id && (!b.status || b.status === "active"))
-          .sort((a, b) => (a.name || "").localeCompare(b.name || ""))
-        
-        data.push({ company, buildings: companyBuildings })
-
-        // Load structure for each building
-        for (const building of companyBuildings) {
-          const buildingId = building.id
-          weeklyData[buildingId] = {}
-
-          // Initialize daily structures
-          DAYS.forEach((day) => {
-            weeklyData[buildingId][day] = []
-          })
-
-          // Find meal plan assignments for this building
-          const buildingMealPlanAssignment = mealPlanAssignments.find(
-            (s) => s.companyId === company.id && s.buildingId === buildingId
-          )
-
-          if (buildingMealPlanAssignment && buildingMealPlanAssignment.weekStructure) {
-            weeklyData[buildingId] = buildingMealPlanAssignment.weekStructure
-          }
-        }
-      }
-      
-      setAllCompaniesWithBuildings(data)
-      setAllBuildingsWeeklyStructure(weeklyData)
-      setIsViewAllModalOpen(true)
-    } catch (error) {
-      console.error("Error loading companies and buildings:", error)
-      toast({ title: "Error", description: "Failed to load companies and buildings", variant: "destructive" })
-    } finally {
-      setIsLoadingAllData(false)
-    }
   }
 
   const handleRemoveSubService = (day: string, serviceId: string, subServiceId: string) => {
@@ -560,8 +573,10 @@ export default function MealPlanStructurePage() {
 
       const groupedByBuilding = new Map<string, MealPlanStructureAssignment>()
       allStructures.forEach((structure) => {
-        const key = `${structure.companyId}-${structure.buildingId}`
-        groupedByBuilding.set(key, structure)
+        if(structure.status === "active") {
+           const key = `${structure.companyId}-${structure.buildingId}`
+           groupedByBuilding.set(key, structure)
+        }
       })
 
       allCompaniesList.forEach((company) => {
@@ -613,7 +628,9 @@ export default function MealPlanStructurePage() {
                    const daySubService = dayService?.subServices?.find((ss: any) => ss.subServiceId === subServiceId)
                    daySubService?.mealPlans?.forEach((mp: any) => {
                        mp.subMealPlans?.forEach((smp: any) => {
-                           uniqueSubMealPlansInSubService.set(smp.subMealPlanId, smp.subMealPlanName)
+                           // DYNAMIC LOOKUP FOR ACCURATE EXCEL EXPORT
+                           const liveSubName = subMealPlans.find((s) => s.id === smp.subMealPlanId)?.name || smp.subMealPlanName
+                           uniqueSubMealPlansInSubService.set(smp.subMealPlanId, liveSubName || "")
                        })
                    })
                 })
@@ -670,7 +687,6 @@ export default function MealPlanStructurePage() {
       subServices: Map<string, { subServiceId: string; subServiceName: string; mealPlans: any[] }> 
     }>();
   
-    // Iterate through ALL days to find every possible service/sub-service
     DAYS.forEach((day) => {
       const dayServices = weeklyStructure[day] || [];
       dayServices.forEach((svc) => {
@@ -689,14 +705,13 @@ export default function MealPlanStructurePage() {
             serviceEntry.subServices.set(sub.subServiceId, {
               subServiceId: sub.subServiceId,
               subServiceName: sub.subServiceName || "Unknown",
-              mealPlans: [] // Placeholder
+              mealPlans: [] 
             });
           }
         });
       });
     });
   
-    // Convert Maps back to Array for rendering
     return Array.from(serviceMap.values()).map(svc => ({
       ...svc,
       subServices: Array.from(svc.subServices.values())
@@ -719,13 +734,13 @@ export default function MealPlanStructurePage() {
         </div>
         <div className="flex gap-2 flex-wrap">
           <Button
-            onClick={handleViewAllCompaniesAndBuildings}
-            disabled={isLoadingAllData || companies.length === 0}
+            onClick={() => setIsViewAllModalOpen(true)}
+            disabled={companies.length === 0}
             variant="outline"
             className="gap-2"
           >
-            {isLoadingAllData ? <Loader2 className="h-4 w-4 animate-spin" /> : <Eye className="h-4 w-4" />}
-            {isLoadingAllData ? "Loading..." : "View All Companies & Buildings"}
+            <Eye className="h-4 w-4" />
+            View All Companies & Buildings
           </Button>
           <Button
             onClick={handleExportAllStructures}
@@ -1150,14 +1165,14 @@ export default function MealPlanStructurePage() {
         </DialogContent>
       </Dialog>
 
-      {/* --- FULL SCREEN VIEW ALL COMPANIES & BUILDINGS EDITOR --- */}
+      {/* --- FULL SCREEN VIEW ALL COMPANIES & BUILDINGS OVERVIEW --- */}
       <Dialog open={isViewAllModalOpen} onOpenChange={setIsViewAllModalOpen}>
         <DialogContent className="!max-w-none !w-[100vw] !h-[100vh] !max-h-[100vh] !rounded-none !border-none !m-0 !p-0 flex flex-col bg-white shadow-none focus-visible:outline-none gap-0 !top-0 !left-0 !translate-x-0 !translate-y-0">
           <DialogHeader className="p-4 border-b shrink-0 flex flex-row items-center justify-between space-y-0 bg-white">
             <div>
-              <DialogTitle className="text-xl">All Companies & Buildings - Meal Plan Structure Editor</DialogTitle>
+              <DialogTitle className="text-xl">All Companies & Buildings - Meal Plan Structure Overview</DialogTitle>
               <DialogDescription className="mt-1">
-                View and edit meal plan structures for all companies and their buildings
+                Live overview of meal plan structures for all active companies and their buildings.
               </DialogDescription>
             </div>
             <Button
@@ -1232,7 +1247,7 @@ export default function MealPlanStructurePage() {
                                         }}
                                         className="self-start"
                                       >
-                                        Edit Structure
+                                        View Details
                                       </Button>
                                       <div className="overflow-x-auto">
                                         <Table className="border-collapse text-sm">
@@ -1288,7 +1303,7 @@ export default function MealPlanStructurePage() {
                                                     {DAYS.map((day) => {
                                                       const dayService = buildingWeeklyStructure[day]?.find(s => s.serviceId === svc.serviceId);
                                                       const daySubService = dayService?.subServices.find(ss => ss.subServiceId === subSvc.subServiceId);
-                                                      const mealPlans = daySubService?.mealPlans || [];
+                                                      const assignedPlans = daySubService?.mealPlans || [];
                                                       const existsOnDay = !!daySubService;
 
                                                       if (!existsOnDay) {
@@ -1302,23 +1317,31 @@ export default function MealPlanStructurePage() {
                                                       return (
                                                         <TableCell key={day} className="border-r border-b text-left p-2 text-xs align-top bg-white">
                                                           <div className="space-y-1">
-                                                            {mealPlans.length > 0 ? (
-                                                              mealPlans.map((plan: any) => (
-                                                                <div key={plan.mealPlanId} className="flex flex-col bg-blue-50 p-1 rounded border border-blue-200">
-                                                                  <span className="font-medium text-gray-800">
-                                                                    {plan.mealPlanName}
-                                                                  </span>
-                                                                  {plan.subMealPlans && plan.subMealPlans.length > 0 && (
-                                                                    <div className="ml-2 mt-1 space-y-0.5 border-l border-blue-300 pl-2">
-                                                                      {plan.subMealPlans.map((subPlan: any) => (
-                                                                        <div key={subPlan.subMealPlanId} className="text-gray-700 text-xs">
-                                                                          • {subPlan.subMealPlanName}
-                                                                        </div>
-                                                                      ))}
-                                                                    </div>
-                                                                  )}
-                                                                </div>
-                                                              ))
+                                                            {assignedPlans.length > 0 ? (
+                                                              assignedPlans.map((plan: any) => {
+                                                                // DYNAMIC LOOKUP
+                                                                const liveMpName = mealPlans.find(m => m.id === plan.mealPlanId)?.name || plan.mealPlanName;
+                                                                return (
+                                                                  <div key={plan.mealPlanId} className="flex flex-col bg-blue-50 p-1 rounded border border-blue-200">
+                                                                    <span className="font-medium text-gray-800">
+                                                                      {liveMpName}
+                                                                    </span>
+                                                                    {plan.subMealPlans && plan.subMealPlans.length > 0 && (
+                                                                      <div className="ml-2 mt-1 space-y-0.5 border-l border-blue-300 pl-2">
+                                                                        {plan.subMealPlans.map((subPlan: any) => {
+                                                                          // DYNAMIC LOOKUP
+                                                                          const liveSubName = subMealPlans.find(s => s.id === subPlan.subMealPlanId)?.name || subPlan.subMealPlanName;
+                                                                          return (
+                                                                            <div key={subPlan.subMealPlanId} className="text-gray-700 text-xs">
+                                                                              • {liveSubName}
+                                                                            </div>
+                                                                          )
+                                                                        })}
+                                                                      </div>
+                                                                    )}
+                                                                  </div>
+                                                                )
+                                                              })
                                                             ) : (
                                                               <span className="text-gray-400 italic">—</span>
                                                             )}
@@ -1358,7 +1381,7 @@ export default function MealPlanStructurePage() {
         </DialogContent>
       </Dialog>
 
-      {/* --- EDIT BUILDING STRUCTURE MODAL (from View All) --- */}
+      {/* --- VIEW BUILDING STRUCTURE DETAILS MODAL (Read-Only) --- */}
       <Dialog 
         open={editingBuildingId !== null} 
         onOpenChange={(open) => {
@@ -1372,12 +1395,12 @@ export default function MealPlanStructurePage() {
           <DialogHeader className="p-4 border-b shrink-0 flex flex-row items-center justify-between space-y-0 bg-white">
             <div>
               <DialogTitle className="text-xl">
-                Edit Meal Plan Structure - {
+                View Meal Plan Structure Details - {
                   allCompaniesWithBuildings.flatMap(c => c.buildings).find(b => b.id === editingBuildingId)?.name || "Building"
                 }
               </DialogTitle>
               <DialogDescription className="mt-1">
-                Assign Meal Plans to Services/Sub-Services for each day. Changes will be saved to this building only.
+                Read-only overview of assigned meal plans for this building.
               </DialogDescription>
             </div>
             <Button
@@ -1440,22 +1463,30 @@ export default function MealPlanStructurePage() {
                                 <TableCell key={day} className="border-r border-b p-2 align-top bg-white">
                                   <div className="space-y-1 text-xs">
                                     {subSvc.mealPlans && subSvc.mealPlans.length > 0 ? (
-                                      subSvc.mealPlans.map((plan: any) => (
-                                        <div key={plan.mealPlanId} className="flex flex-col bg-blue-50 p-2 rounded border border-blue-200">
-                                          <span className="font-medium text-gray-800">
-                                            {plan.mealPlanName}
-                                          </span>
-                                          {plan.subMealPlans && plan.subMealPlans.length > 0 && (
-                                            <div className="ml-2 mt-1 space-y-0.5 border-l border-blue-300 pl-2">
-                                              {plan.subMealPlans.map((subPlan: any) => (
-                                                <div key={subPlan.subMealPlanId} className="text-gray-700">
-                                                  • {subPlan.subMealPlanName}
-                                                </div>
-                                              ))}
-                                            </div>
-                                          )}
-                                        </div>
-                                      ))
+                                      subSvc.mealPlans.map((plan: any) => {
+                                        // DYNAMIC LOOKUP
+                                        const liveMpName = mealPlans.find(m => m.id === plan.mealPlanId)?.name || plan.mealPlanName;
+                                        return (
+                                          <div key={plan.mealPlanId} className="flex flex-col bg-blue-50 p-2 rounded border border-blue-200">
+                                            <span className="font-medium text-gray-800">
+                                              {liveMpName}
+                                            </span>
+                                            {plan.subMealPlans && plan.subMealPlans.length > 0 && (
+                                              <div className="ml-2 mt-1 space-y-0.5 border-l border-blue-300 pl-2">
+                                                {plan.subMealPlans.map((subPlan: any) => {
+                                                  // DYNAMIC LOOKUP
+                                                  const liveSubName = subMealPlans.find(s => s.id === subPlan.subMealPlanId)?.name || subPlan.subMealPlanName;
+                                                  return (
+                                                    <div key={subPlan.subMealPlanId} className="text-gray-700">
+                                                      • {liveSubName}
+                                                    </div>
+                                                  )
+                                                })}
+                                              </div>
+                                            )}
+                                          </div>
+                                        )
+                                      })
                                     ) : (
                                       <span className="text-gray-400 italic">—</span>
                                     )}
@@ -1476,7 +1507,7 @@ export default function MealPlanStructurePage() {
           </div>
 
           <DialogFooter className="p-4 border-t bg-white shrink-0 sm:justify-between">
-            <div className="hidden sm:block text-sm text-gray-500 self-center">Changes will be saved to this building structure.</div>
+            <div className="hidden sm:block text-sm text-gray-500 self-center">Detailed read-only view.</div>
             <div className="flex gap-2">
               <Button 
                 variant="outline" 
@@ -1579,16 +1610,24 @@ function MealPlanSelector({
           >
             <div className="flex flex-col gap-1 w-full overflow-hidden text-left">
               {hasSelection ? (
-                assignedMealPlans.map((mp) => (
-                  <div key={mp.mealPlanId} className="flex flex-col text-xs font-medium border-b border-blue-100 last:border-0 pb-1 last:pb-0 mb-1 last:mb-0">
-                    <span className="font-bold text-blue-900">{mp.mealPlanName}</span>
-                    {mp.subMealPlans.length > 0 && (
-                        <span className="text-[10px] text-blue-500 italic pl-2 text-left">
-                           ↳ {mp.subMealPlans.map(s => s.subMealPlanName).join(", ")}
-                        </span>
-                    )}
-                  </div>
-                ))
+                assignedMealPlans.map((mp) => {
+                  // DYNAMIC LOOKUP FOR DROPDOWN PREVIEW
+                  const liveMpName = availableMealPlans.find((p) => p.id === mp.mealPlanId)?.name || mp.mealPlanName;
+                  return (
+                    <div key={mp.mealPlanId} className="flex flex-col text-xs font-medium border-b border-blue-100 last:border-0 pb-1 last:pb-0 mb-1 last:mb-0">
+                      <span className="font-bold text-blue-900">{liveMpName}</span>
+                      {mp.subMealPlans.length > 0 && (
+                          <span className="text-[10px] text-blue-500 italic pl-2 text-left">
+                             ↳ {mp.subMealPlans.map(s => {
+                                 // DYNAMIC LOOKUP
+                                 const liveSubName = availableSubMealPlans.find(sub => sub.id === s.subMealPlanId)?.name || s.subMealPlanName;
+                                 return liveSubName;
+                             }).join(", ")}
+                          </span>
+                      )}
+                    </div>
+                  )
+                })
               ) : (
                 <span className="text-xs">Select Plans...</span>
               )}
