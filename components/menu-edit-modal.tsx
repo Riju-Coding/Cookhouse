@@ -22,7 +22,8 @@ import {
   CheckCircle,
   Minus,
   ArrowRightLeft,
-  FileArchive 
+  FileArchive,
+  Zap 
 } from 'lucide-react'
 import { toast } from "@/hooks/use-toast"
 import type { Service, MealPlan, SubMealPlan, MenuItem, SubService } from "@/lib/types"
@@ -39,9 +40,30 @@ import {
 import { collection, getDocs, doc, getDoc, updateDoc, addDoc, query, where, writeBatch, serverTimestamp } from "firebase/firestore"
 import { db } from "@/lib/firebase"
 import { detectMenuChanges, createChangeSummary } from "@/lib/change-detector"
+import { ChoiceSelectionModal } from "@/components/choice-selection-modal"
 
 // --- Local Services Definition ---
 // --- Types ---
+
+interface MealPlanChoice {
+  choiceId: string
+  quantity: number
+  mealPlans: Array<{
+    mealPlanId: string
+    mealPlanName?: string
+    subMealPlans: Array<{ subMealPlanId: string; subMealPlanName?: string }>
+  }>
+  createdAt?: string | Date
+}
+
+interface CompanyChoice {
+  companyId: string
+  companyName: string
+  buildingId: string
+  buildingName: string
+  choices: MealPlanChoice[]
+}
+
 interface MenuCell {
   menuItemIds: string[]
   selectedDescriptions?: Record<string, string>
@@ -1629,7 +1651,7 @@ const TimelineEntry = memo(function TimelineEntry({
           </button>
         )}
       </div>
-      <div className={`text-[11px] font-semibold mt-0.5 break-words ${action === "removed" ? "text-gray-400 line-through" : "text-gray-800"}`}>
+      <div className={`text-[11px] font-semibold mt-0.5 break-words ${action === "removed" ? "text-red-600 line-through" : "text-gray-800"}`}>
         {action === "null" ? "(Empty State)" : itemName}
       </div>
     </div>
@@ -1971,18 +1993,66 @@ const MenuGridCell = memo(function MenuGridCell({
         // Items currently saved in the menu data
         const activeIds = new Set(selectedMenuItemIds);
         
-        // Items that were removed OR replaced during this live session
-        const sessionRemovedIds = currentLiveChanges
-            .filter(c => c.action === "removed" || c.action === "replaced")
-            .map(c => c.oldItemId || c.itemId); // Get the ID of the item that was taken out
+        // Items that were removed OR replaced during this live session (tracking which items were removed)
+        const sessionRemovedIds = new Set(
+          currentLiveChanges
+            .filter(c => c.action === "removed" || (c.action === "replaced" && c.oldItemId))
+            .map(c => c.oldItemId || c.itemId) // Get the ID of the item that was taken out
+        );
+        
+        // Items that were ADDED in live session
+        const sessionAddedIds = new Set(
+          currentLiveChanges
+            .filter(c => c.action === "added")
+            .map(c => c.itemId)
+        );
             
         // Items that were in the cell at the start of the session (OG) but are now gone
         const ogIds = originalMenuData?.[date]?.[service.id]?.[subServiceId]?.[mealPlan.id]?.[subMealPlan.id]?.menuItemIds || [];
         const ogRemovedIds = ogIds.filter((id: string) => !activeIds.has(id));
 
-        // Combine all: [Current Items] + [Session Removals] + [Original Removals]
-        return Array.from(new Set([...selectedMenuItemIds, ...sessionRemovedIds, ...ogRemovedIds]));
-    }, [selectedMenuItemIds, currentLiveChanges, originalMenuData, date, service.id, subServiceId, mealPlan.id, subMealPlan.id]);
+        // FIXED: Filter out items that were replaced in any U-record
+        const replacedItemIds = new Set<string>();
+        if (cellUpdations && cellUpdations.length > 0) {
+          cellUpdations.forEach((upd: any) => {
+            const relevantCell = upd.changedCells?.find((c: any) => 
+              c.date === date && 
+              c.serviceId === service.id && 
+              c.mealPlanId === mealPlan.id && 
+              c.subMealPlanId === subMealPlan.id
+            );
+            
+            if (relevantCell && relevantCell.changes) {
+              relevantCell.changes.forEach((ch: any) => {
+                // If an item was replaced, add the OLD item to the replaced set
+                if (ch.action === "replaced" && ch.itemId) {
+                  replacedItemIds.add(ch.itemId);
+                }
+              });
+            }
+          });
+        }
+
+        // Current items should be: [Items currently selected and NOT removed in session] + [Session added items] + [Session removed items]
+        // EXCLUDE items that were replaced in U-records
+        const filteredSelected = selectedMenuItemIds.filter(id => !replacedItemIds.has(id) && !sessionRemovedIds.has(id));
+        // Also include items that were added in live session (even if not yet in selectedMenuItemIds due to state lag)
+        // Also include items that were removed in live session (to show L-remove tag)
+        const allToShow = [...new Set([...filteredSelected, ...Array.from(sessionAddedIds), ...Array.from(sessionRemovedIds)])];
+        
+        // Sort by most recent action (latest first)
+        const sorted = allToShow.sort((a, b) => {
+          const aChanges = currentLiveChanges.filter(c => c.itemId === a || c.oldItemId === a);
+          const bChanges = currentLiveChanges.filter(c => c.itemId === b || c.oldItemId === b);
+          
+          const aLastIdx = aChanges.length > 0 ? currentLiveChanges.lastIndexOf(aChanges[aChanges.length - 1]) : -1;
+          const bLastIdx = bChanges.length > 0 ? currentLiveChanges.lastIndexOf(bChanges[bChanges.length - 1]) : -1;
+          
+          return bLastIdx - aLastIdx; // Descending order (latest first)
+        });
+        
+        return sorted;
+    }, [selectedMenuItemIds, currentLiveChanges, originalMenuData, cellUpdations, date, service.id, subServiceId, mealPlan.id, subMealPlan.id]);
 
     // 2. Red State Logic: Cell turns red if it is currently EMPTY but has a session history
     const isRedState = selectedMenuItemIds.length === 0 && currentLiveChanges.length > 0;
@@ -2033,6 +2103,7 @@ const MenuGridCell = memo(function MenuGridCell({
         })}
       </div>
     )}
+{/* First show items that are currently active */}
 {itemsToRender.map((itemId) => {
     const isCurrentlyActive = selectedMenuItemIds.includes(itemId);
     const item = allMenuItems.find((i) => i.id === itemId);
@@ -2083,26 +2154,48 @@ const MenuGridCell = memo(function MenuGridCell({
           );
           
           if (itemInThisRecord) {
-            itemURecord = i + 1; // U-record index
+            // FIXED: Use global updation number for continuous counting across all cells
+            itemURecord = upd.updationNumber || (i + 1);
             break;
           }
         }
       }
     }
     
-    // Priority: If currently active with U-record, show U-label; otherwise show L+aded for live adds; L-removed for removals
-    if (isCurrentlyActive && itemURecord !== null) {
+    // Priority: If currently active with U-record, show U-label; otherwise show L+aded for live adds; L-remove for removals
+    if (isRemovedInSession && !isCurrentlyActive) {
+      // Item is removed and NOT currently active - show L-remove (check this FIRST)
+      liveAction = "L-remove";
+      liveActionBg = "bg-red-50 text-red-700 border-red-200";
+    } else if (isCurrentlyActive && itemURecord !== null) {
       // Item is currently selected and came from a saved U-record
       liveAction = `U${itemURecord}+added`;
       liveActionBg = "bg-blue-50 text-blue-700 border-blue-200";
-    } else if (isCurrentlyActive && itemChanges.length > 0) {
-      // Item is currently selected and has live changes - show L+aded
-      liveAction = "L+aded";
-      liveActionBg = "bg-green-50 text-green-700 border-green-200";
-    } else if (isRemovedInSession && !isCurrentlyActive) {
-      // Item is removed and NOT currently active - show L-removed
-      liveAction = "L-removed";
-      liveActionBg = "bg-red-50 text-red-700 border-red-200";
+    } else if (isCurrentlyActive && (itemChanges.length > 0 || isAddedInSession)) {
+      // Check if this item was removed and then re-added in live session
+      const removeIdx = currentLiveChanges.findIndex(c => c.action === "removed" && c.oldItemId === itemId);
+      const reAddIdx = currentLiveChanges.findIndex(c => c.action === "added" && c.itemId === itemId);
+      
+      if (removeIdx !== -1 && reAddIdx !== -1 && reAddIdx > removeIdx) {
+        // Item was removed and then re-added (in that order) - show L+add
+        liveAction = "L+add";
+        liveActionBg = "bg-green-50 text-green-700 border-green-200";
+      } else {
+        // Check if ANY item was removed in the session
+        const anyRemoveInSession = currentLiveChanges.some(c => 
+          c.action === "removed" || c.action === "replaced"
+        );
+        
+        if (anyRemoveInSession) {
+          // Any item was removed in session - show L+add for this item
+          liveAction = "L+add";
+          liveActionBg = "bg-green-50 text-green-700 border-green-200";
+        } else if (reAddIdx !== -1) {
+          // Item was added without any prior removes in session - show L+aded
+          liveAction = "L+aded";
+          liveActionBg = "bg-green-50 text-green-700 border-green-200";
+        }
+      }
     }
 
     // Get removed companies for removed items
@@ -2185,36 +2278,52 @@ const MenuGridCell = memo(function MenuGridCell({
         </div>
     );
 })}
+{/* Then show items that were removed in live session */}
+{currentLiveChanges
+  .filter(c => c.action === "removed" && c.oldItemId)
+  .map((change) => {
+    const itemId = change.oldItemId;
+    const item = allMenuItems.find((i) => i.id === itemId);
+    if (!item) return null;
+    
+    // Check if this removed item was re-added later
+    const wasReAdded = currentLiveChanges.some(c => c.action === "added" && c.itemId === itemId && currentLiveChanges.indexOf(c) > currentLiveChanges.indexOf(change));
+    
+    // Skip if it was re-added (already shown in active items)
+    if (wasReAdded) return null;
+    
+    return (
+      <div key={`removed-${itemId}`} className="space-y-1">
+        <div
+          className="group relative flex items-center justify-between border px-1.5 py-0.5 rounded text-xs transition-colors bg-red-50 border-red-200 text-red-400 line-through opacity-70"
+        >
+          <div className="flex items-center gap-2 truncate">
+            <span className="bg-red-600 text-white px-1 py-0 rounded-[2px] text-[8px] font-black uppercase flex-shrink-0 border">
+              L-remove
+            </span>
+            <span className="truncate font-medium leading-tight">{item.name}</span>
+          </div>
+        </div>
+      </div>
+    );
+  })}
             </div>
 
             {/* ===== ENHANCED UPDATE TIMELINE ===== */}
-           {/* ===== REDESIGNED UPDATION TIMELINE ===== */}
+           {/* ===== REDESIGNED UPDATION TIMELINE (in chronological order: OG first, then U-records, then live changes) ===== */}
 {hasTimeline && (
   <div className="mt-4 space-y-2 border-t pt-3 ml-1">
     
-    {/* 0. NULL STATE (if no original items) */}
+    {/* === TIMELINE ENTRIES IN CHRONOLOGICAL ORDER (oldest to newest) === */}
     {(() => {
-      const ogIds = originalMenuData?.[date]?.[service.id]?.[subServiceId]?.[mealPlan.id]?.[subMealPlan.id]?.menuItemIds || [];
-      if (ogIds.length === 0) {
-        return (
-          <TimelineEntry 
-            key="null-state" 
-            label="NULL" 
-            labelBg="bg-gray-600" 
-            itemName="" 
-            action="null" 
-          />
-        );
-      }
-      return null;
-    })()}
-
-    {/* 1. OG (Original Items) - Items that exist from original and not added in any U-record */}
-    {(() => {
+      const timelineEntries: any[] = [];
+      
       const ogIds = originalMenuData?.[date]?.[service.id]?.[subServiceId]?.[mealPlan.id]?.[subMealPlan.id]?.menuItemIds || [];
       
-      // Collect ALL items that were added/replaced in ANY U-record
-      const itemsAddedInURecords = new Set<string>();
+      // Build a Set of items that were replaced/removed across ALL sources (U-records + live changes)
+      const allReplacedInUpdations = new Set<string>();
+      const allRemovedInLiveChanges = new Set<string>();
+      
       if (cellUpdations && cellUpdations.length > 0) {
         cellUpdations.forEach((upd: any) => {
           const relevantCell = upd.changedCells?.find((c: any) => 
@@ -2223,110 +2332,119 @@ const MenuGridCell = memo(function MenuGridCell({
             c.mealPlanId === mealPlan.id && 
             c.subMealPlanId === subMealPlan.id
           );
-          
           if (relevantCell) {
             relevantCell.changes.forEach((ch: any) => {
-              // If item was added, it's not OG
-              if (ch.action === "added") {
-                itemsAddedInURecords.add(ch.itemId);
-              }
-              // If item is the NEW item in a replacement, it's not OG
-              if (ch.action === "replaced" && ch.replacedWith) {
-                itemsAddedInURecords.add(ch.replacedWith);
+              if ((ch.action === "removed" || ch.action === "replaced") && ch.itemId) {
+                allReplacedInUpdations.add(ch.itemId);
               }
             });
           }
         });
       }
       
-      // OG items are those that were never added in any U-record
-      const trueOGIds = ogIds.filter((id: string) => !itemsAddedInURecords.has(id));
-      
-      if (trueOGIds.length === 0) return null;
-      
-      return trueOGIds.map((id: string) => (
-        <TimelineEntry 
-          key={`og-${id}`} 
-          label="OG" 
-          labelBg="bg-gray-900" 
-          itemName={allMenuItems.find(m => m.id === id)?.name || id} 
-          action="og" 
-        />
-      ));
-    })()}
-
-    {/* 2. U-Records (Historical Saved Checkpoints) with Separate Counters - REVERSE ORDER (Latest First) */}
-    {cellUpdations && [...cellUpdations].reverse().map((upd, reverseIdx) => {
-      const uIdx = cellUpdations.length - reverseIdx - 1;
-      // Find the change record for this specific cell in the historical updation
-      const relevantCell = upd.changedCells?.find((c: any) => 
-        c.date === date && 
-        c.serviceId === service.id && 
-        c.mealPlanId === mealPlan.id && 
-        c.subMealPlanId === subMealPlan.id
-      );
-
-      if (!relevantCell) return null;
-
-      // Use separate counters based on type
-      const isCompanyWiseChange = upd.menuType === "company" || upd.isCompanyWiseChange;
-      const updationKey = isCompanyWiseChange ? "U" : "U";
-      const updationIndex = uIdx + 1;
-
-      // FIXED: Deduplicate timeline entries
-      // Build a Set of items that are already shown in the "Current Items" section with their U-record label
-      const itemsShownWithULabel = new Set<string>();
-      itemsToRender.forEach((itemId) => {
-        const isCurrentlyActive = selectedMenuItemIds.includes(itemId);
-        const itemChanges = currentLiveChanges.filter(c => c.itemId === itemId || c.oldItemId === itemId);
-        
-        // Check if this item has a U-record in cellUpdations
-        if (isCurrentlyActive && cellUpdations && cellUpdations.length > 0) {
-          for (let i = cellUpdations.length - 1; i >= 0; i--) {
-            const upd = cellUpdations[i];
-            const relevantCell = upd.changedCells?.find((c: any) => 
-              c.date === date && 
-              c.serviceId === service.id && 
-              c.mealPlanId === mealPlan.id && 
-              c.subMealPlanId === subMealPlan.id
-            );
-            
-            if (relevantCell) {
-              const itemInThisRecord = relevantCell.changes.some((ch: any) => 
-                ch.itemId === itemId || ch.replacedWith === itemId
-              );
-              
-              if (itemInThisRecord) {
-                // This item will be shown with a U-label in the current items section
-                itemsShownWithULabel.add(`${itemId}|U${i + 1}`);
-                break;
-              }
-            }
-          }
+      // Track live removals
+      currentLiveChanges.forEach((ch: any) => {
+        if (ch.action === "removed" && ch.oldItemId) {
+          allRemovedInLiveChanges.add(ch.oldItemId);
         }
       });
+      
 
-      return relevantCell.changes.map((ch: any, cIdx: number) => {
-        const itemIdToCheck = ch.itemId || ch.replacedWith;
-        const timelineKey = `${itemIdToCheck}|U${updationIndex}`;
+      // 1. Add U-Records (saved checkpoints) - in reverse chronological order (latest first)
+      if (cellUpdations && cellUpdations.length > 0) {
+        const finalStatePerItem = new Map<string, {upd: any, change: any, updationIndex: number, action: string}>();
         
-        // Skip if this item is already shown in the current items section with a U-label
-        if (itemsShownWithULabel.has(timelineKey)) return null;
+        cellUpdations.forEach((upd: any, idx: number) => {
+          const relevantCell = upd.changedCells?.find((c: any) => 
+            c.date === date && 
+            c.serviceId === service.id && 
+            c.mealPlanId === mealPlan.id && 
+            c.subMealPlanId === subMealPlan.id
+          );
+
+          if (relevantCell) {
+            const updationIndex = upd.updationNumber || (idx + 1);
+            relevantCell.changes.forEach((ch: any) => {
+              const itemId = ch.action === "removed" || ch.action === "replaced" ? ch.itemId : (ch.replacedWith || ch.itemId);
+              if (itemId) {
+                finalStatePerItem.set(itemId, {
+                  upd, 
+                  change: ch, 
+                  updationIndex,
+                  action: ch.action
+                });
+              }
+            });
+          }
+        });
         
-        // Resolve item names from the saved record or current items map
-        const resolvedName = ch.itemName || ch.replacedWithName || allMenuItems.find(m => m.id === (ch.replacedWith || ch.itemId))?.name || ch.itemId;
-        
-        return (
+        const itemsCurrentlyActive = new Set<string>();
+        itemsToRender.forEach((itemId) => {
+          if (selectedMenuItemIds.includes(itemId)) {
+            itemsCurrentlyActive.add(itemId);
+          }
+        });
+
+        Array.from(finalStatePerItem.entries())
+          .filter(([itemId, {action}]) => {
+            if (action === "removed") return true;
+            if (action === "replaced") return !itemsCurrentlyActive.has(itemId);
+            return !itemsCurrentlyActive.has(itemId);
+          })
+          .forEach(([itemId, {upd, change, updationIndex, action}]) => {
+            const isCompanyWiseChange = upd.menuType === "company" || upd.isCompanyWiseChange;
+            const resolvedName = change.itemName || change.replacedWithName || allMenuItems.find(m => m.id === (change.replacedWith || change.itemId))?.name || change.itemId;
+            
+            let displayAction = action;
+            if (action === "replaced" && itemsCurrentlyActive.has(itemId)) {
+              displayAction = "added";
+            }
+            
+            timelineEntries.push(
+              <TimelineEntry 
+                key={`u-${upd.id}-${itemId}`} 
+                label={`U${updationIndex}`} 
+                labelBg={isCompanyWiseChange ? "bg-purple-600" : "bg-blue-600"} 
+                itemName={resolvedName} 
+                action={displayAction} 
+              />
+            );
+          });
+      }
+      
+      // 2. Add OG items (if any remain)
+      if (ogIds.length > 0) {
+        ogIds
+          .filter((id: string) => !allReplacedInUpdations.has(id) && !allRemovedInLiveChanges.has(id))
+          .forEach((id: string) => {
+            timelineEntries.push(
+              <TimelineEntry 
+                key={`og-${id}`} 
+                label="OG" 
+                labelBg="bg-gray-900" 
+                itemName={allMenuItems.find(m => m.id === id)?.name || id} 
+                action="og" 
+              />
+            );
+          });
+      }
+      
+      // 3. Add OG NULL if applicable (LAST - baseline state)
+      const remainingOgItems = ogIds.filter((id: string) => !allReplacedInUpdations.has(id) && !allRemovedInLiveChanges.has(id));
+      if (ogIds.length === 0 || remainingOgItems.length === 0) {
+        timelineEntries.push(
           <TimelineEntry 
-            key={`u-${upd.id}-${cIdx}`} 
-            label={`${updationKey}${updationIndex}`} 
-            labelBg={isCompanyWiseChange ? "bg-purple-600" : "bg-blue-600"} 
-            itemName={resolvedName} 
-            action={ch.action} 
+            key="og-null-state" 
+            label="OG NULL" 
+            labelBg="bg-gray-900" 
+            itemName="" 
+            action="og-null" 
           />
         );
-      });
-    })}
+      }
+      
+      return timelineEntries;
+    })()}
 
 
 
@@ -2650,6 +2768,137 @@ const LoadingProgress = ({ progress, message }: { progress: number; message: str
   </div>
 )
 
+// --- Choice Selection Modal Component ---
+// const ChoiceSelectionModal = memo(function ChoiceSelectionModal({
+//   isOpen,
+//   onClose,
+//   companies,
+//   onConfirm,
+//   loading = false,
+// }: {
+//   isOpen: boolean
+//   onClose: () => void
+//   companies: CompanyChoice[]
+//   onConfirm: (selections: Record<string, string>) => Promise<void>
+//   loading?: boolean
+// }) {
+//   const [selections, setSelections] = useState<Record<string, string>>({})
+//   const [confirming, setConfirming] = useState(false)
+
+//   useEffect(() => {
+//     if (isOpen) {
+//       setSelections({})
+//       setConfirming(false)
+//     }
+//   }, [isOpen])
+
+//   const handleSelectChoice = (companyId: string, choiceId: string) => {
+//     setSelections((prev) => ({
+//       ...prev,
+//       [companyId]: choiceId,
+//     }))
+//   }
+
+//   const handleConfirm = async () => {
+//     const hasAllSelections = companies.every((c) => selections[c.companyId])
+//     if (!hasAllSelections) {
+//       toast({ title: "Error", description: "Please select a choice for each company", variant: "destructive" })
+//       return
+//     }
+
+//     setConfirming(true)
+//     try {
+//       await onConfirm(selections)
+//       onClose()
+//     } finally {
+//       setConfirming(false)
+//     }
+//   }
+
+//   if (!isOpen) return null
+
+//   return (
+//     <div className="fixed inset-0 bg-black bg-opacity-50 z-[200] flex items-center justify-center p-4">
+//       <div className="bg-white rounded-lg max-w-2xl w-full max-h-[80vh] overflow-auto">
+//         <div className="sticky top-0 bg-gradient-to-r from-amber-50 to-white border-b p-4 flex items-center justify-between">
+//           <div>
+//             <h3 className="font-semibold text-lg flex items-center gap-2">
+//               <Zap className="h-5 w-5 text-amber-600" />
+//               Select Choices for Companies
+//             </h3>
+//             <p className="text-sm text-gray-600">
+//               {companies.length} company{companies.length !== 1 ? "ies" : ""} have choices available
+//             </p>
+//           </div>
+//           <button onClick={onClose} className="text-gray-500 hover:text-gray-700" type="button">
+//             <X className="h-5 w-5" />
+//           </button>
+//         </div>
+
+//         <div className="p-4 space-y-6">
+//           {companies.map((company) => (
+//             <div key={company.companyId} className="border rounded-lg p-4 bg-gradient-to-r from-amber-50 to-white">
+//               <div className="mb-4">
+//                 <h4 className="font-semibold text-gray-900 flex items-center gap-2">
+//                   <Building2 className="h-4 w-4 text-amber-600" />
+//                   {company.companyName}
+//                 </h4>
+//                 <p className="text-xs text-gray-500 pl-6">{company.buildingName}</p>
+//               </div>
+
+//               <div className="space-y-2 pl-6">
+//                 {company.choices.map((choice) => (
+//                   <label
+//                     key={choice.choiceId}
+//                     className="flex items-start gap-3 p-3 border border-amber-200 rounded hover:bg-amber-100 transition-colors cursor-pointer"
+//                   >
+//                     <input
+//                       type="radio"
+//                       name={`choice-${company.companyId}`}
+//                       checked={selections[company.companyId] === choice.choiceId}
+//                       onChange={() => handleSelectChoice(company.companyId, choice.choiceId)}
+//                       className="mt-1 cursor-pointer"
+//                     />
+//                     <div className="flex-1 min-w-0">
+//                       <div className="font-medium text-amber-900">
+//                         {choice.quantity}x - {choice.mealPlans.length} meal plan{choice.mealPlans.length !== 1 ? "s" : ""}
+//                       </div>
+//                       <div className="text-xs text-amber-700 mt-1 space-y-1">
+//                         {choice.mealPlans.map((mp) => (
+//                           <div key={mp.mealPlanId} className="flex items-start gap-2">
+//                             <span className="font-medium">{mp.mealPlanName}:</span>
+//                             <span className="text-amber-600">
+//                               {mp.subMealPlans.map((smp) => smp.subMealPlanName).join(", ")}
+//                             </span>
+//                           </div>
+//                         ))}
+//                       </div>
+//                     </div>
+//                   </label>
+//                 ))}
+//               </div>
+//             </div>
+//           ))}
+//         </div>
+
+//         <div className="border-t p-4 flex items-center justify-end gap-2 bg-gray-50">
+//           <Button variant="outline" onClick={onClose} disabled={confirming || loading}>
+//             Cancel
+//           </Button>
+//           <Button
+//             onClick={handleConfirm}
+//             disabled={confirming || loading || companies.some((c) => !selections[c.companyId])}
+//             className="bg-amber-600 hover:bg-amber-700 text-white"
+//           >
+//             {confirming || loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+//             Confirm Selections
+//           </Button>
+//         </div>
+//       </div>
+//     </div>
+//   )
+// })
+
 // --- Main Modal Component ---
 export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, preloadedMenuItems }: MenuEditModalProps) {
   const [loading, setLoading] = useState(true)
@@ -2662,6 +2911,9 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
   const [menu, setMenu] = useState<MenuData | null>(null)
   const [menuData, setMenuData] = useState<any>({})
   const [originalMenuData, setOriginalMenuData] = useState<any>({})
+  // FIXED: Separate state for the TRUE original (OG) baseline that is locked forever
+  // This is set ONCE on initial load and NEVER updated, ensuring OG items always remain the same
+  const [ogMenuData, setOgMenuData] = useState<any>({})
   const [dateRange, setDateRange] = useState<Array<{ date: string; day: string }>>([])
   const [services, setServices] = useState<Service[]>([])
   const [subServices, setSubServices] = useState<Map<string, SubService[]>>(new Map())
@@ -2697,6 +2949,11 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
   // CONFIRMATION MODAL STATE
   const [showConfirmationModal, setShowConfirmationModal] = useState(false)
   const [pendingSaveAction, setPendingSaveAction] = useState<{ isDraft: boolean } | null>(null)
+
+  // CHOICE SELECTION MODAL STATE
+  const [showChoiceModal, setShowChoiceModal] = useState(false)
+  const [companiesWithChoices, setCompaniesWithChoices] = useState<CompanyChoice[]>([])
+  const [choiceSelections, setChoiceSelections] = useState<Record<string, string>>({})
 
   const [updations, setUpdations] = useState<UpdationRecord[]>([])
 
@@ -2791,6 +3048,7 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
       setMenu(null)
       setMenuData({})
       setOriginalMenuData({})
+      setOgMenuData({})  // FIXED: Reset OG data on close
       setSelectedService(null)
       setSelectedSubService(null)
       setRepetitionLog([])
@@ -2917,6 +3175,81 @@ const menuDoc = { id: docSnap.id, ...(docSnap.data() as any) } as MenuData
 
         const originalData = menuDoc.menuData || {}
         setOriginalMenuData(JSON.parse(JSON.stringify(originalData)))
+        
+        // FIXED: Reconstruct the TRUE original (OG) baseline by reversing all updations
+        // OG is the state BEFORE any U-records were created
+        let ogData = JSON.parse(JSON.stringify(originalData))
+        
+        // Load updations FIRST to reconstruct original
+        try {
+          const q = query(collection(db, "updations"), where("menuId", "in", [menuId, menuDoc.combinedMenuId || ""].filter(Boolean)))
+          const snapshot = await getDocs(q)
+          const updationsData = snapshot.docs
+            .map(doc => ({
+              id: doc.id,
+              ...doc.data(),
+              createdAt: doc.data().createdAt?.toDate?.() || new Date(doc.data().createdAt),
+            }))
+            .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+          
+          if (updationsData.length > 0) {
+            // FIXED: If updations exist, reconstruct OG by reversing changes from the oldest updation
+            // For each change in the first updation, reverse it to get back to OG state
+            const firstUpdation = updationsData[0]
+            ogData = JSON.parse(JSON.stringify(originalData))
+            
+            // Process ALL updations to reconstruct original state
+            for (const upd of updationsData) {
+              if (upd.changedCells && Array.isArray(upd.changedCells)) {
+                for (const cell of upd.changedCells) {
+                  const { date, serviceId, subServiceId, mealPlanId, subMealPlanId, changes } = cell
+                  
+                  // Initialize the cell if it doesn't exist
+                  if (!ogData[date]) ogData[date] = {}
+                  if (!ogData[date][serviceId]) ogData[date][serviceId] = {}
+                  if (!ogData[date][serviceId][subServiceId]) ogData[date][serviceId][subServiceId] = {}
+                  if (!ogData[date][serviceId][subServiceId][mealPlanId]) ogData[date][serviceId][subServiceId][mealPlanId] = {}
+                  if (!ogData[date][serviceId][subServiceId][mealPlanId][subMealPlanId]) {
+                    ogData[date][serviceId][subServiceId][mealPlanId][subMealPlanId] = { menuItemIds: [] }
+                  }
+                  
+                  // Reverse each change to get back to OG
+                  if (changes && Array.isArray(changes)) {
+                    for (const change of changes) {
+                      if (change.action === "added") {
+                        // If it was added, remove it from OG
+                        ogData[date][serviceId][subServiceId][mealPlanId][subMealPlanId].menuItemIds = 
+                          ogData[date][serviceId][subServiceId][mealPlanId][subMealPlanId].menuItemIds.filter((id: string) => id !== change.itemId)
+                      } else if (change.action === "removed") {
+                        // If it was removed, add it back to OG
+                        const ids = ogData[date][serviceId][subServiceId][mealPlanId][subMealPlanId].menuItemIds
+                        if (!ids.includes(change.itemId)) {
+                          ids.push(change.itemId)
+                        }
+                      } else if (change.action === "replaced") {
+                        // If it was replaced, restore the old item
+                        const ids = ogData[date][serviceId][subServiceId][mealPlanId][subMealPlanId].menuItemIds
+                        if (change.replacedWith) {
+                          const idx = ids.indexOf(change.replacedWith)
+                          if (idx !== -1) ids.splice(idx, 1)
+                        }
+                        if (change.itemId && !ids.includes(change.itemId)) {
+                          ids.push(change.itemId)
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        } catch (e) {
+          console.error("Error reconstructing OG state:", e)
+          // If error, use current state as OG
+          ogData = JSON.parse(JSON.stringify(originalData))
+        }
+        
+        setOgMenuData(ogData)
 
         setMenu(menuDoc)
         setMenuData(originalData)
@@ -2989,7 +3322,8 @@ const menuDoc = { id: docSnap.id, ...(docSnap.data() as any) } as MenuData
           }
         }
 
-        // Load updations for showing history
+        // Updations have been loaded for OG reconstruction above
+        // Now set them with proper updation numbers for display
         try {
           const q = query(collection(db, "updations"), where("menuId", "in", [menuId, menuDoc.combinedMenuId || ""].filter(Boolean)))
           const snapshot = await getDocs(q)
@@ -3002,7 +3336,8 @@ const menuDoc = { id: docSnap.id, ...(docSnap.data() as any) } as MenuData
             .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
             .map((upd, idx) => ({
               ...upd,
-              updationNumber: idx + 1,
+              // FIXED: Use updationNumber from DB if available (for global continuous counting), otherwise use idx + 1
+              updationNumber: upd.updationNumber || (idx + 1),
             }))
           setUpdations(updationsData)
         } catch (e) {
@@ -3210,7 +3545,7 @@ const handleAddItem = useCallback(
                 action: "replaced", 
                 itemId: itemId, 
                 oldItemId: lastAction.itemId, 
-                itemName: `${lastAction.itemName} → ${itemName}`, // Formats as: Old -> New
+                itemName: `${lastAction.itemName} ��� ${itemName}`, // Formats as: Old -> New
                 time: Date.now() 
               }
             ]
@@ -3714,8 +4049,158 @@ const handleAddItem = useCallback(
     return showConfirmation && hasItems
   }
 
+  const detectCompaniesWithChoices = async (): Promise<CompanyChoice[]> => {
+    try {
+      console.log("[v0] Starting choice detection from mealPlanStructureAssignments collection...")
+      console.log("[v0] Menu:", { id: menu?.id, type: menuType, companyId: menu?.companyId, buildingId: menu?.buildingId })
+      
+      const companiesWithChoicesData: CompanyChoice[] = []
+      const processedChoices = new Set<string>()
+      const buildingsMap = new Map(buildings.map((b) => [b.id, b]))
+
+      // Query the mealPlanStructureAssignments collection for structures with choices
+      let q: any
+      
+      // For company-wise menus, filter by the specific company/building
+      if (menuType === 'company' && menu?.companyId && menu?.buildingId) {
+        q = query(
+          collection(db, 'mealPlanStructureAssignments'),
+          where('companyId', '==', menu.companyId),
+          where('buildingId', '==', menu.buildingId)
+        )
+        console.log("[v0] Company-wise menu detected, querying specific company:", menu.companyId, "building:", menu.buildingId)
+      } else if (menuType === 'combined') {
+        // For combined menus, get all structures (no filters)
+        q = collection(db, 'mealPlanStructureAssignments')
+        console.log("[v0] Combined menu detected, querying all structures in mealPlanStructureAssignments")
+      } else {
+        console.log("[v0] Unable to determine menu type")
+        return []
+      }
+
+      try {
+        const structures = await getDocs(q)
+        console.log("[v0] Found", structures.docs.length, "total structures to check for choices")
+        
+        // Log first few structures to debug
+        if (structures.docs.length === 0) {
+          console.log("[v0] WARNING: No documents found in mealPlanStructureAssignments collection!")
+          console.log("[v0] Attempting to verify collection exists by getting all docs without filter...")
+          const allDocsQuery = await getDocs(collection(db, 'mealPlanStructureAssignments'))
+          console.log("[v0] Total documents in collection (no filter):", allDocsQuery.docs.length)
+          if (allDocsQuery.docs.length > 0) {
+            console.log("[v0] First document sample:", allDocsQuery.docs[0].data())
+          }
+          return []
+        } else {
+          structures.docs.slice(0, 3).forEach((doc, idx) => {
+            const data = doc.data()
+            console.log("[v0] Structure", idx, ":", { companyId: data.companyId, buildingId: data.buildingId, companyName: data.companyName, hasWeekStructure: !!data.weekStructure })
+          })
+        }
+
+        // Process each structure document
+        for (const structureDoc of structures.docs) {
+        const structure = structureDoc.data() as any
+        const weekStructure = structure.weekStructure || {}
+        console.log("[v0] Processing structure for company:", structure.companyName, "building:", structure.buildingName)
+
+        // Iterate through all days in weekStructure
+        for (const [day, services] of Object.entries(weekStructure)) {
+          if (!Array.isArray(services)) {
+            console.log("[v0] Day", day, "is not an array, skipping")
+            continue
+          }
+          
+          console.log("[v0] Checking day:", day, "with", services.length, "service(s)")
+
+          for (const service of services as any[]) {
+            if (!service.subServices || !Array.isArray(service.subServices)) continue
+
+            for (const subService of service.subServices) {
+              // Check if subService has choices object
+              if (!subService.choices || typeof subService.choices !== 'object') continue
+              
+              console.log("[v0] Found choices object in subService:", subService.subServiceName, "keys:", Object.keys(subService.choices))
+
+              // choices is keyed by day, each containing an array of MealPlanChoice
+              for (const [choiceDay, choicesArray] of Object.entries(subService.choices)) {
+                if (!Array.isArray(choicesArray)) {
+                  console.log("[v0] choices[" + choiceDay + "] is not an array")
+                  continue
+                }
+
+                if (choicesArray.length === 0) {
+                  console.log("[v0] choices[" + choiceDay + "] is empty")
+                  continue
+                }
+
+                console.log("[v0] Found " + choicesArray.length + " choice(s) for day: " + choiceDay + " in " + structure.companyName)
+
+                for (const choice of choicesArray) {
+                  // Skip if already processed for this company
+                  const choiceKey = `${structure.companyId}-${choice.choiceId}`
+                  if (processedChoices.has(choiceKey)) continue
+                  processedChoices.add(choiceKey)
+
+                  const existing = companiesWithChoicesData.find(
+                    (c) => c.companyId === structure.companyId && c.buildingId === structure.buildingId
+                  )
+
+                  if (!existing) {
+                    console.log("[v0] Creating new company choice entry for " + structure.companyName + " with choice: " + choice.choiceId)
+                    companiesWithChoicesData.push({
+                      companyId: structure.companyId,
+                      companyName: structure.companyName,
+                      buildingId: structure.buildingId,
+                      buildingName: structure.buildingName,
+                      choices: [choice as MealPlanChoice],
+                    })
+                  } else {
+                    if (!existing.choices.find((c) => c.choiceId === choice.choiceId)) {
+                      console.log("[v0] Adding choice to existing company entry for " + structure.companyName + ": " + choice.choiceId)
+                      existing.choices.push(choice as MealPlanChoice)
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+        }
+      } catch (collectionError) {
+        console.error("[v0] Error querying mealPlanStructureAssignments collection:", collectionError)
+        return []
+      }
+
+      console.log("[v0] Final companies with choices detected: ", companiesWithChoicesData)
+      return companiesWithChoicesData
+    } catch (error) {
+      console.error("[v0] Error detecting companies with choices: ", error)
+      return []
+    }
+  }
+
   const handleSave = async (isDraft = false) => {
     if (!menu) return
+    console.log("[v0] handleSave called, isDraft:", isDraft)
+
+    // For non-draft saves, check for companies with choices
+    if (!isDraft) {
+      console.log("[v0] Checking for companies with choices...")
+      const companiesWithChoicesData = await detectCompaniesWithChoices()
+      console.log("[v0] Companies with choices result:", companiesWithChoicesData)
+      if (companiesWithChoicesData.length > 0) {
+        console.log("[v0] Found companies with choices, showing modal")
+        setCompaniesWithChoices(companiesWithChoicesData)
+        setChoiceSelections({})
+        setShowChoiceModal(true)
+        setPendingSaveAction({ isDraft: false })
+        return
+      } else {
+        console.log("[v0] No companies with choices found, proceeding with regular save")
+      }
+    }
     
     // Check if confirmation is needed before proceeding
     const needsConfirmation = checkForConfirmationNeeded()
@@ -3730,7 +4215,16 @@ const handleAddItem = useCallback(
     await executeSave(isDraft)
   }
 
-  const executeSave = async (isDraft = false) => {
+  const handleChoiceConfirm = async (selections: Record<string, string>) => {
+    // Store selections and proceed with save
+    setChoiceSelections(selections)
+    setShowChoiceModal(false)
+    
+    // Proceed with actual save
+    await executeSave(false, selections)
+  }
+
+  const executeSave = async (isDraft = false, choiceSelectionsData: Record<string, string> = {}) => {
     if (!menu) return
     const isFirstTimeSave = !updations || updations.length === 0;
     try {
@@ -3746,6 +4240,24 @@ const handleAddItem = useCallback(
       const shouldSyncCompanyMenus = menuType === "combined" && !isDraft;
 
       const menuItemsMap = new Map(menuItems.map((item) => [item.id, item.name]))
+      
+      // Process choices if any were selected
+      if (!isDraft && Object.keys(choiceSelectionsData).length > 0) {
+        console.log("[v0] Processing choice selections:", choiceSelectionsData)
+        // Update menu data with selected choices
+        const updatedMenuData = JSON.parse(JSON.stringify(menuData))
+        
+        for (const [companyId, choiceId] of Object.entries(choiceSelectionsData)) {
+          const company = companiesWithChoices.find((c) => c.companyId === companyId)
+          const choice = company?.choices.find((c) => c.choiceId === choiceId)
+          
+          if (choice) {
+            console.log(`[v0] Applying choice ${choiceId} for company ${companyId}:`, choice)
+            // You can add logic here to update menu data based on selected choice
+            // This might involve adding the selected meal plan/sub-meal plan items to the menu
+          }
+        }
+      }
   
   // Redesign Logic: Detect changes against the Original (OG) baseline
   const changedCells = detectMenuChanges(originalMenuData, menuData, menuItemsMap)
@@ -3767,13 +4279,10 @@ const handleAddItem = useCallback(
 
       // ===== HARD COMMIT LOGIC =====
       // If NOT a draft (isDraft === false), commit changes and update baseline
-      // FIXED: Only update OG baseline on FIRST save, not on subsequent updates
+      // FIXED: OG baseline is LOCKED from initial load and should NEVER change
       if (!isDraft && changedCells.length > 0) {
-        // 1. Only set originalMenuData on FIRST save (isFirstTimeSave = true)
-        // For subsequent saves, OG baseline stays locked to original state
-        if (isFirstTimeSave) {
-          setOriginalMenuData(JSON.parse(JSON.stringify(menuData)));
-        }
+        // 1. DO NOT update originalMenuData - it's locked from the initial load (line 2921)
+        // OG represents the baseline from the database, which should never change
         
         // 2. CLEAR the liveChanges state completely so LIVE tags disappear
         setLiveChanges({});
@@ -3816,7 +4325,12 @@ const handleAddItem = useCallback(
         const changeSummary = createChangeSummary(changedCells)
         
         if (menuType === "company" && menu.combinedMenuId) {
+          // FIXED: Get the actual latest number across BOTH combined and company menus for true global counting
           const combinedLatestNumber = await updationService.getLatestUpdationNumber(menu.combinedMenuId) || 0
+          const companyLatestNumber = await updationService.getLatestUpdationNumber(menuId) || 0
+          const globalLatestNumber = Math.max(combinedLatestNumber, companyLatestNumber)
+          const nextGlobalNumber = globalLatestNumber + 1
+          
           const appliedBuildingIds = [menu.buildingId]
           const appliedBuildingNames = [menu.buildingName]
           
@@ -3845,6 +4359,12 @@ const handleAddItem = useCallback(
               console.error("[v0] Error fetching other buildings:", error)
             }
           }
+          
+          // FIXED: Re-fetch the actual latest number just before saving (in case another save happened in parallel)
+          const combinedLatestBeforeSave = await updationService.getLatestUpdationNumber(menu.combinedMenuId) || 0
+          const companyLatestBeforeSave = await updationService.getLatestUpdationNumber(menuId) || 0
+          const globalLatestBeforeSave = Math.max(combinedLatestBeforeSave, companyLatestBeforeSave)
+          const finalGlobalNumber = globalLatestBeforeSave + 1
 
           // 2. Update combined menu document with company-specific change tracking
           try {
@@ -3855,6 +4375,7 @@ const handleAddItem = useCallback(
               companyName: menu.companyName,
               buildingId: menu.buildingId, 
               buildingName: menu.buildingName,
+              updationNumber: finalGlobalNumber,  // FIXED: Use global updation number
               changes: changedCells.map((cell: any) => ({
                 date: cell.date,
                 serviceId: cell.serviceId,
@@ -4086,7 +4607,7 @@ const handleAddItem = useCallback(
             menuId: menu.combinedMenuId,
             menuType: "combined",
             menuName: "Combined Menu",
-            updationNumber: combinedLatestNumber + 1,
+            updationNumber: finalGlobalNumber,  // FIXED: Use global updation number
             changedCells: enrichedChangedCells,
             totalChanges: changeSummary.totalChanges,
             menuStartDate: menu.startDate,
@@ -4110,7 +4631,7 @@ const handleAddItem = useCallback(
 
           // FIXED: Only create separate company record if it has relevant changes
           // This prevents duplicate u1 entries when the same item is added
-          const companyLatestNumber = await updationService.getLatestUpdationNumber(menuId) || 0
+          // Note: finalGlobalNumber already calculated above for global continuous counting
           
           // Deduplicate: Only save company record if it differs from combined record
           // (i.e., if there are checkbox-specific changes not in the combined record)
@@ -4121,7 +4642,7 @@ const handleAddItem = useCallback(
               menuId: menuId,
               menuType: "company",
               menuName: menu.companyName ? `${menu.companyName} - ${menu.buildingName}` : "Company Menu",
-              updationNumber: companyLatestNumber + 1,
+              updationNumber: finalGlobalNumber,  // FIXED: Use global updation number
               changedCells: enrichedChangedCells,
               totalChanges: changeSummary.totalChanges,
               menuStartDate: menu.startDate,
@@ -4288,14 +4809,17 @@ const handleAddItem = useCallback(
           const changeSummary = createChangeSummary(changedCells)
           
           if (changedCells.length > 0) {
-            const latestNumber = await updationService.getLatestUpdationNumber(menuId) || 0
+            // FIXED: Get global updation number for combined menu
+            const combinedLatestBeforeSaveForCombined = await updationService.getLatestUpdationNumber(menuId) || 0
+            const globalLatestBeforeSaveForCombined = combinedLatestBeforeSaveForCombined
+            const finalGlobalNumberForCombined = globalLatestBeforeSaveForCombined + 1
 
             // 1. SAVE COMBINED MENU RECORD
             const updationRecord: any = {
               menuId,
               menuType,
               menuName: menu.name || `${menuType} Menu`,
-              updationNumber: latestNumber + 1,
+              updationNumber: finalGlobalNumberForCombined,  // FIXED: Use global updation number
               changedCells,
               totalChanges: changeSummary.totalChanges,
               menuStartDate: menu.startDate,
@@ -4315,7 +4839,7 @@ const handleAddItem = useCallback(
                     menuId: menuId, 
                     menuType: "company",
                     menuName: `${companyObj.name} - ${buildingObj.name}`,
-                    updationNumber: latestNumber + 1,
+                    updationNumber: finalGlobalNumberForCombined,  // FIXED: Use global updation number
                     changedCells: updateData.changedCells,
                     totalChanges: updateData.changedCells.reduce((acc: number, c: any) => acc + c.changes.length, 0),
                     menuStartDate: menu.startDate,
@@ -4345,18 +4869,14 @@ const handleAddItem = useCallback(
            The current 'Live' session is now finished. 
         */
 
-        // FIXED: Only update OG baseline on FIRST save
-        // After first save, the OG baseline is LOCKED and should not change
-        if (isFirstTimeSave) {
-          // 1. Move current state to Original (This becomes the NEW OG baseline)
-          setOriginalMenuData(JSON.parse(JSON.stringify(menuData)));
-        }
-
+        // FIXED: OG baseline is LOCKED from initial load and should NEVER change
+        // Do not update originalMenuData - it represents the baseline from database
+        
         // 2. Clear the Live Trail (Remove the Green labels from the UI)
         setLiveChanges({});
 
         toast({
-          title: isFirstTimeSave ? "Original (OG) Created" : `Updation U${updations.length + 1} Generated`,
+          title: `Updation U${updations.length + 1} Generated`,
           description: "Live trails have been moved to the historical log.",
         });
       } else {
@@ -4460,15 +4980,7 @@ const handleDownloadZIP = async () => {
     
     const getName = (id: string) => menuItems.find(i => i.id === id)?.name || id;
 
-    // Helper for Company Files (Keep original for Part A if needed)
-    const getCompanyBuildingName = (cId: string, bId: string) => {
-       const company = companies.find((c: any) => c.id === cId);
-       const building = buildings.find((b: any) => b.id === bId);
-       if (company && building) return `${company.name} - ${building.name}`;
-       return `${cId} - ${bId}`;
-    };
-
-    // NEW HELPER: Just get the building name for the footer table
+    // Helper: Get just the building name for the footer table
     const getOnlyBuildingName = (bId: string) => {
        const building = buildings.find((b: any) => b.id === bId);
        return building ? building.name : bId;
@@ -4482,6 +4994,9 @@ const handleDownloadZIP = async () => {
       const weekday = date.toLocaleString('default', { weekday: 'short' });
       return `${day}${daySuffix} ${month}\n(${weekday})`;
     };
+
+    const dateHeaders = dateRange.map(d => formatDateForExcelHeader(d.date));
+    const totalColumns = dateHeaders.length + 2;
 
     // =========================================================
     // PART A: Generate Individual Company Files
@@ -4503,39 +5018,111 @@ const handleDownloadZIP = async () => {
           const worksheet = workbook.addWorksheet(sheetName);
           hasSheets = true;
           
-          worksheet.addRow([`Menu - ${companyName}`]);
-          worksheet.addRow([`Building: ${buildingMenu.buildingName}`]);
-          worksheet.addRow([`Period: ${menu?.startDate} to ${menu?.endDate}`]);
-          worksheet.addRow([]);
-          
-          const headers = ["Meal Plan", "Sub Meal Plan", ...dateRange.map(d => d.date)];
-          worksheet.addRow(headers);
+          // 1. Title Row
+          const titleRow = worksheet.addRow([`MENU - ${companyName.toUpperCase()} (${buildingMenu.buildingName})`]);
+          worksheet.mergeCells(titleRow.number, 1, titleRow.number, totalColumns);
+          titleRow.getCell(1).font = { size: 16, bold: true, color: { argb: 'FF2F5496' } };
+          titleRow.getCell(1).alignment = { vertical: 'middle', horizontal: 'center' };
+          titleRow.height = 35;
 
-          services.forEach(service => {
-            const serviceSubServices = (subServices.get(service.id) || []).sort((a, b) => (a.order || 999) - (b.order || 999));
-            serviceSubServices.forEach(subService => {
-              const rows: any[] = [];
-              mealPlans.forEach(mp => {
-                subMealPlans.filter(smp => smp.mealPlanId === mp.id).sort((a, b) => (a.order || 999) - (b.order || 999)).forEach(smp => {
-                  const hasData = dateRange.some(d => buildingMenu.menuData?.[d.date]?.[service.id]?.[subService.id]?.[mp.id]?.[smp.id]);
-                  if (hasData) {
-                    const r = [mp.name, smp.name];
-                    dateRange.forEach(d => {
-                      const items = buildingMenu.menuData?.[d.date]?.[service.id]?.[subService.id]?.[mp.id]?.[smp.id]?.menuItemIds || [];
-                      r.push(items.map((id: string) => getName(id)).join(", "));
-                    });
-                    rows.push(r);
-                  }
-                });
-              });
-              if (rows.length > 0) {
-                worksheet.addRow([`--- ${service.name} : ${subService.name} ---`]).font = { bold: true };
-                rows.forEach(r => worksheet.addRow(r));
-              }
-            });
+          // 2. Global Header Row
+          const headerRow = worksheet.addRow(["Meal Plan", "Sub Meal Plan", ...dateHeaders]);
+          headerRow.height = 40;
+          headerRow.eachCell((cell) => {
+              cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+              cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4472C4' } };
+              cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+              cell.border = { top: { style: 'medium' }, left: { style: 'medium' }, bottom: { style: 'medium' }, right: { style: 'medium' } };
           });
-          worksheet.columns.forEach(col => col.width = 25);
+
+          // 3. Loop through Services
+          services.sort((a, b) => (a.order || 999) - (b.order || 999)).forEach(service => {
+            
+            // First, find all sub-services for this service that actually have menu data for this specific building.
+            const potentialSubServices = (subServices.get(service.id) || []).sort((a, b) => (a.order || 999) - (b.order || 999));
+            
+            const validSubServices = potentialSubServices.filter(subService => {
+              // A sub-service is valid if, for any date, it has at least one menu item in any meal plan/sub-meal plan.
+              return dateRange.some(d => {
+                const dayMenuForSubService = buildingMenu.menuData?.[d.date]?.[service.id]?.[subService.id];
+                if (!dayMenuForSubService) return false;
+                
+                // Check deep inside for any array of menu items with length > 0
+                return Object.values(dayMenuForSubService).some((mealPlan: any) =>
+                  Object.values(mealPlan).some((subMealPlan: any) => subMealPlan.menuItemIds?.length > 0)
+                );
+              });
+            });
+
+            // If no sub-services under this service have any data, skip rendering this service entirely to avoid empty headers.
+            if (validSubServices.length === 0) return;
+
+            // Now that we know there's data, render the Service Header
+            const sRow = worksheet.addRow([`SERVICE: ${service.name.toUpperCase()}`]);
+            worksheet.mergeCells(sRow.number, 1, sRow.number, totalColumns);
+            sRow.getCell(1).font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 14 };
+            sRow.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF305496' } };
+            sRow.getCell(1).alignment = { vertical: 'middle', horizontal: 'center' };
+            sRow.height = 30;
+
+            // Loop through ONLY the pre-validated sub-services
+            for (const subService of validSubServices) {
+              
+              // PRE-CALCULATE ROWS: Find exactly which meal plans have data.
+              // This is still needed for grouping and merging the Meal Plan column correctly.
+              const validMealPlans: any[] = [];
+              for (const mp of mealPlans) {
+                  const relevantSmp = subMealPlans.filter(smp => smp.mealPlanId === mp.id);
+                  const validSmp = relevantSmp.filter(smp => 
+                      dateRange.some(d => buildingMenu.menuData?.[d.date]?.[service.id]?.[subService.id]?.[mp.id]?.[smp.id]?.menuItemIds?.length > 0)
+                  );
+                  if (validSmp.length > 0) validMealPlans.push({ mealPlan: mp, subMealPlans: validSmp });
+              }
+
+              // This check is now a safeguard; it should not be triggered due to the pre-filtering of validSubServices.
+              if (validMealPlans.length === 0) continue;
+
+              // Sub-Service Header (Light Blue)
+              const ssRow = worksheet.addRow([subService.name]);
+              worksheet.mergeCells(ssRow.number, 1, ssRow.number, totalColumns);
+              ssRow.getCell(1).font = { bold: true, color: { argb: 'FF2E75B6' }, size: 12 };
+              ssRow.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDDEBF7' } };
+              ssRow.getCell(1).alignment = { vertical: 'middle', horizontal: 'center' };
+              ssRow.height = 25;
+
+              // Write Rows and Merge Meal Plan
+              for (const { mealPlan, subMealPlans: smpList } of validMealPlans) {
+                  let mpStartRowIdx = worksheet.rowCount + 1;
+                  let mpRowsAdded = 0;
+
+                  for (const smp of smpList) {
+                      const rowValues = [mealPlan.name, smp.name];
+                      dateRange.forEach(d => {
+                          const items = buildingMenu.menuData?.[d.date]?.[service.id]?.[subService.id]?.[mealPlan.id]?.[smp.id]?.menuItemIds || [];
+                          // NO Custom Assignment logic here, just names
+                          rowValues.push(items.map((id: string) => getName(id)).join("\n"));
+                      });
+
+                      const newRow = worksheet.addRow(rowValues);
+                      newRow.eachCell(cell => {
+                          cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+                          cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+                      });
+                      mpRowsAdded++;
+                  }
+
+                  if (mpRowsAdded > 1) {
+                      worksheet.mergeCells(mpStartRowIdx, 1, mpStartRowIdx + mpRowsAdded - 1, 1);
+                  }
+              }
+            }
+          });
+
+          worksheet.getColumn(1).width = 20;
+          worksheet.getColumn(2).width = 25;
+          for (let i = 3; i <= totalColumns; i++) worksheet.getColumn(i).width = 38;
         }
+
         if (hasSheets) {
           const buffer = await workbook.xlsx.writeBuffer();
           zip.file(`${companyName}.xlsx`, buffer);
@@ -4544,17 +5131,14 @@ const handleDownloadZIP = async () => {
     }
 
     // =========================================================
-    // PART B: Generate Master Combined File (Fixed Merge Logic)
+    // PART B: Generate Master Combined File
     // =========================================================
     const masterWorkbook = new ExcelJS.Workbook();
     
     for (const service of services) {
         const sheetName = service.name.substring(0, 31).replace(/[\\/?*[\]]/g, "");
         const worksheet = masterWorkbook.addWorksheet(sheetName);
-        const dateHeaders = dateRange.map(d => formatDateForExcelHeader(d.date));
-        const totalColumns = dateHeaders.length + 2; 
-
-        // We store building IDs here to prevent identical building names from overwriting each other in a Set
+        
         const assignmentFooterMap = new Map<number, Array<{itemName: string, buildingIds: Set<string>}>>();
 
         // 1. Title
@@ -4577,16 +5161,21 @@ const handleDownloadZIP = async () => {
         const serviceSubServices = (subServices.get(service.id) || []).sort((a, b) => (a.order || 999) - (b.order || 999));
 
         for (const subService of serviceSubServices) {
-            // PRE-CHECK: Does this sub-service have any data?
-            const hasAnyData = mealPlans.some(mp => 
-                subMealPlans.filter(smp => smp.mealPlanId === mp.id).some(smp =>
+            
+            // PRE-CALCULATE ROWS: Find exactly which meal plans have data
+            const validMealPlans: any[] = [];
+            for (const mp of mealPlans) {
+                const relevantSmp = subMealPlans.filter(smp => smp.mealPlanId === mp.id);
+                const validSmp = relevantSmp.filter(smp => 
                     dateRange.some(d => menuData?.[d.date]?.[service.id]?.[subService.id]?.[mp.id]?.[smp.id]?.menuItemIds?.length > 0)
-                )
-            );
+                );
+                if (validSmp.length > 0) validMealPlans.push({ mealPlan: mp, subMealPlans: validSmp });
+            }
 
-            if (!hasAnyData) continue;
+            // If this SubService has NO data anywhere, skip it.
+            if (validMealPlans.length === 0) continue;
 
-            // 3. Add Sub-Service Header (Added BEFORE data rows to avoid index shifting)
+            // 3. Sub-Service Header
             const ssRow = worksheet.addRow([subService.name]);
             worksheet.mergeCells(ssRow.number, 1, ssRow.number, totalColumns);
             ssRow.getCell(1).font = { bold: true, color: { argb: 'FF2E75B6' }, size: 14 };
@@ -4594,60 +5183,46 @@ const handleDownloadZIP = async () => {
             ssRow.getCell(1).alignment = { vertical: 'middle', horizontal: 'center' };
             ssRow.height = 28;
 
-            for (const mealPlan of mealPlans) {
-                const relevantSmp = subMealPlans.filter(smp => smp.mealPlanId === mealPlan.id).sort((a, b) => (a.order || 999) - (b.order || 999));
-                let mpRowsAdded = 0;
+            // 4. Write Data Rows
+            for (const { mealPlan, subMealPlans: smpList } of validMealPlans) {
                 let mpStartRowIdx = worksheet.rowCount + 1;
+                let mpRowsAdded = 0;
 
-                for (const subMealPlan of relevantSmp) {
-                    const rowHasData = dateRange.some(({ date }) => 
-                        menuData?.[date]?.[service.id]?.[subService.id]?.[mealPlan.id]?.[subMealPlan.id]?.menuItemIds?.length > 0
-                    );
-
-                    if (rowHasData) {
-                        const rowValues = [mealPlan.name, subMealPlan.name];
+                for (const smp of smpList) {
+                    const rowValues = [mealPlan.name, smp.name];
+                    
+                    dateRange.forEach(({ date }, dateIdx) => {
+                        const cell = menuData?.[date]?.[service.id]?.[subService.id]?.[mealPlan.id]?.[smp.id];
+                        const items = cell?.menuItemIds || [];
                         
-                        dateRange.forEach(({ date }, dateIdx) => {
-                            const cell = menuData?.[date]?.[service.id]?.[subService.id]?.[mealPlan.id]?.[subMealPlan.id];
-                            const items = cell?.menuItemIds || [];
-                            
-                            // FORMAT MAIN TABLE CELL: "Item Name (X C)" if custom assignment exists
-                            const formattedItems = items.map((id: string) => {
-                                let name = getName(id);
-                                const custom = cell?.customAssignments?.[id];
-                                if (custom && Array.isArray(custom) && custom.length > 0) {
-                                    name = `${name} (${custom.length} C)`; // <--- Main table bracket format
-                                }
-                                return name;
-                            });
-                            rowValues.push(formattedItems.join("\n"));
-
-                            // Collect footer assignments
-                            items.forEach((id: string) => {
-                                const custom = cell?.customAssignments?.[id];
-                                if (custom && Array.isArray(custom) && custom.length > 0) {
-                                    if (!assignmentFooterMap.has(dateIdx)) assignmentFooterMap.set(dateIdx, []);
-                                    const list = assignmentFooterMap.get(dateIdx)!;
-                                    const name = getName(id);
-                                    let entry = list.find(e => e.itemName === name);
-                                    if (!entry) { entry = { itemName: name, buildingIds: new Set() }; list.push(entry); }
-                                    
-                                    // Store building ID (so we can safely get the names later)
-                                    custom.forEach((c: any) => entry!.buildingIds.add(c.buildingId));
-                                }
-                            });
+                        // FORMAT MAIN TABLE CELL: "Item Name (X C)"
+                        const formattedItems = items.map((id: string) => {
+                            let name = getName(id);
+                            const custom = cell?.customAssignments?.[id];
+                            if (custom && Array.isArray(custom) && custom.length > 0) {
+                                name = `${name} (${custom.length} C)`; // Main table bracket format
+                                
+                                // Collect footer assignments
+                                if (!assignmentFooterMap.has(dateIdx)) assignmentFooterMap.set(dateIdx, []);
+                                const list = assignmentFooterMap.get(dateIdx)!;
+                                let entry = list.find(e => e.itemName === getName(id));
+                                if (!entry) { entry = { itemName: getName(id), buildingIds: new Set() }; list.push(entry); }
+                                custom.forEach((c: any) => entry!.buildingIds.add(c.buildingId));
+                            }
+                            return name;
                         });
+                        rowValues.push(formattedItems.join("\n"));
+                    });
 
-                        const newRow = worksheet.addRow(rowValues);
-                        newRow.eachCell(cell => {
-                            cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
-                            cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
-                        });
-                        mpRowsAdded++;
-                    }
+                    const newRow = worksheet.addRow(rowValues);
+                    newRow.eachCell(cell => {
+                        cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+                        cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+                    });
+                    mpRowsAdded++;
                 }
 
-                // 4. Merge Meal Plan Column (Column A)
+                // Merge Meal Plan Column (Column A)
                 if (mpRowsAdded > 1) {
                     worksheet.mergeCells(mpStartRowIdx, 1, mpStartRowIdx + mpRowsAdded - 1, 1);
                 }
@@ -4655,7 +5230,7 @@ const handleDownloadZIP = async () => {
         }
 
         // =========================================================
-        // FOOTER TABLE
+        // FOOTER TABLE (Combined Menu Only)
         // =========================================================
         worksheet.addRow([]); worksheet.addRow([]); // Spacing
 
@@ -4689,11 +5264,11 @@ const handleDownloadZIP = async () => {
                     
                     // Format Building Names with Serial Numbers: "1. Building A \n 2. Building B"
                     const numberedBuildingsList = bldgIds.map((bId, index) => {
-                        return `${index + 1}. ${getOnlyBuildingName(bId)}`; // <--- Serial numbers & Just building name
+                        return `${index + 1}. ${getOnlyBuildingName(bId)}`; // Serial numbers & building name
                     }).join("\n");
                     
                     // Format Header: "ITEM NAME (X C)"
-                    const headerWithCount = `${entry.itemName} (${bldgIds.length} C)`; // <--- Footer table bracket format
+                    const headerWithCount = `${entry.itemName} (${bldgIds.length} C)`; 
                     
                     fData.push(`${headerWithCount}\n---\n${numberedBuildingsList}`);
                 } else {
@@ -4730,7 +5305,6 @@ const handleDownloadZIP = async () => {
     setZipLoading(false);
   }
 };
-
   if (!isOpen) return null
 
   return (
@@ -4889,7 +5463,8 @@ const handleDownloadZIP = async () => {
                                         selectedMenuItemIds={selectedItems}
                                         allMenuItems={menuItems}
                                         liveChanges={liveChanges}
-                                        originalMenuData={originalMenuData}
+                                        // FIXED: Pass ogMenuData (locked OG baseline) instead of originalMenuData
+                                        originalMenuData={ogMenuData}
                                         onUpdateCustomAssignments={(assignments) =>
                                           handleUpdateCustomAssignments(
                                             date,
@@ -4931,7 +5506,8 @@ const handleDownloadZIP = async () => {
                                         cellUpdations={cellUpdations}
                                         onShowConflicts={handleAnalyzeConflicts}
                                         liveChanges={liveChanges}
-                                        originalMenuData={originalMenuData}
+                                        // FIXED: Pass ogMenuData (locked OG baseline) instead of originalMenuData
+                                        originalMenuData={ogMenuData}
                                       />
                                     )
                                   })}
@@ -5103,6 +5679,22 @@ const handleDownloadZIP = async () => {
             menuItems={menuItems}
           />
 
+          {/* Choice Selection Modal */}
+          <ChoiceSelectionModal
+            isOpen={showChoiceModal}
+            onClose={() => {
+              setShowChoiceModal(false)
+              setPendingSaveAction(null)
+              setCompaniesWithChoices([])
+            }}
+            companies={companiesWithChoices}
+            onConfirm={handleChoiceConfirm}
+            loading={saving}
+            menuData={menuData}
+            allMenuItems={menuItems}
+            dateRange={dateRange}
+            mealPlanStructure={mealPlanAssignments}
+          />
       </div>
     </div>
   )

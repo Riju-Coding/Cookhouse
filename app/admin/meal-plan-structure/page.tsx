@@ -68,10 +68,22 @@ interface MealPlanStructureData {
   }[]
 }
 
+interface MealPlanChoice {
+  choiceId: string
+  quantity: number
+  mealPlans: MealPlanStructureData[]
+  createdAt?: string | Date
+}
+
+interface DayChoices {
+  [key: string]: MealPlanChoice[] // day -> array of choices
+}
+
 interface SubServiceStructure {
   subServiceId: string
   subServiceName?: string
   mealPlans: MealPlanStructureData[]
+  choices?: DayChoices
 }
 
 interface ServiceStructure {
@@ -122,6 +134,14 @@ export default function MealPlanStructurePage() {
   const [isDataLoading, setIsDataLoading] = useState(true)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isExporting, setIsExporting] = useState(false)
+  
+  // Choice management states
+  const [isChoiceModalOpen, setIsChoiceModalOpen] = useState(false)
+  const [choiceContext, setChoiceContext] = useState<{ day: string; serviceId: string; subServiceId: string } | null>(null)
+  const [choiceQuantity, setChoiceQuantity] = useState(1)
+  const [choiceStep, setChoiceStep] = useState<'quantity' | 'selection'>("quantity")
+  const [choiceSelections, setChoiceSelections] = useState<MealPlanStructureData[]>([])
+  const [choiceSearchQuery, setChoiceSearchQuery] = useState("")
   
   // New states for View All Companies - Full Screen Editor
   const [isViewAllModalOpen, setIsViewAllModalOpen] = useState(false)
@@ -328,6 +348,101 @@ export default function MealPlanStructurePage() {
       updateMealPlansForSubService(day, serviceId, subServiceId, clipboard)
       toast({ title: "Pasted!", duration: 1000 })
     }
+  }
+
+  const handleOpenChoiceModal = (day: string, serviceId: string, subServiceId: string) => {
+    setChoiceContext({ day, serviceId, subServiceId })
+    setChoiceQuantity(1)
+    setChoiceStep("quantity")
+    setChoiceSelections([])
+    setChoiceSearchQuery("")
+    setIsChoiceModalOpen(true)
+  }
+
+  const handleCreateChoice = () => {
+    if (!choiceContext || choiceSelections.length === 0) {
+      toast({ title: "Error", description: "Please select at least one meal plan", variant: "destructive" })
+      return
+    }
+
+    // Validate that all selected meal plans have at least one sub-meal plan selected
+    const hasInvalidMealPlan = choiceSelections.some((mp) => {
+      const hasSubMealPlans = mp.subMealPlans && mp.subMealPlans.length > 0
+      return !hasSubMealPlans
+    })
+
+    if (hasInvalidMealPlan) {
+      toast({ title: "Error", description: "Please select sub meal plan, it's mandatory for each meal plan", variant: "destructive" })
+      return
+    }
+
+    const { day, serviceId, subServiceId } = choiceContext
+    const choiceId = `choice-${Date.now()}-${Math.random().toString(36).substring(7)}`
+    
+    const newChoice: MealPlanChoice = {
+      choiceId,
+      quantity: choiceQuantity,
+      mealPlans: JSON.parse(JSON.stringify(choiceSelections)),
+      createdAt: new Date(),
+    }
+
+    setWeeklyStructure((prev) => {
+      const dayServices = prev[day] ? [...prev[day]] : []
+      let serviceIndex = dayServices.findIndex((s) => s.serviceId === serviceId)
+
+      if (serviceIndex === -1) {
+        dayServices.push({ serviceId, serviceName: getServiceName(serviceId), subServices: [] })
+        serviceIndex = dayServices.length - 1
+      }
+
+      const service = { ...dayServices[serviceIndex] }
+      const subServicesList = [...service.subServices]
+      const subIndex = subServicesList.findIndex((s) => s.subServiceId === subServiceId)
+
+      if (subIndex !== -1) {
+        const subService = { ...subServicesList[subIndex] }
+        subService.choices = subService.choices || {}
+        subService.choices[day] = subService.choices[day] ? [...subService.choices[day], newChoice] : [newChoice]
+        subServicesList[subIndex] = subService
+      }
+
+      service.subServices = subServicesList
+      dayServices[serviceIndex] = service
+      return { ...prev, [day]: dayServices }
+    })
+
+    toast({ title: "Success", description: `Choice created: ${choiceQuantity}x items` })
+    setIsChoiceModalOpen(false)
+    setChoiceContext(null)
+    setChoiceSelections([])
+  }
+
+  const handleDeleteChoice = (day: string, serviceId: string, subServiceId: string, choiceId: string) => {
+    setWeeklyStructure((prev) => {
+      const dayServices = prev[day] ? [...prev[day]] : []
+      const serviceIndex = dayServices.findIndex((s) => s.serviceId === serviceId)
+
+      if (serviceIndex !== -1) {
+        const service = { ...dayServices[serviceIndex] }
+        const subServicesList = [...service.subServices]
+        const subIndex = subServicesList.findIndex((s) => s.subServiceId === subServiceId)
+
+        if (subIndex !== -1) {
+          const subService = { ...subServicesList[subIndex] }
+          if (subService.choices && subService.choices[day]) {
+            subService.choices[day] = subService.choices[day].filter((c) => c.choiceId !== choiceId)
+          }
+          subServicesList[subIndex] = subService
+        }
+
+        service.subServices = subServicesList
+        dayServices[serviceIndex] = service
+      }
+
+      return { ...prev, [day]: dayServices }
+    })
+
+    toast({ title: "Deleted", description: "Choice removed" })
   }
 
   const getFilteredCompanies = () => {
@@ -933,6 +1048,157 @@ export default function MealPlanStructurePage() {
         </DialogContent>
       </Dialog>
 
+      {/* --- CHOICE CREATION MODAL --- */}
+      <Dialog open={isChoiceModalOpen} onOpenChange={setIsChoiceModalOpen}>
+        <DialogContent className="sm:max-w-md max-h-[80vh] flex flex-col z-[99999]">
+          <DialogHeader>
+            <DialogTitle>
+              {choiceStep === 'quantity' ? 'Select Quantity' : 'Select Meal Plans for Choice'}
+            </DialogTitle>
+            <DialogDescription>
+              {choiceStep === 'quantity' 
+                ? 'How many items do you want in this choice?'
+                : 'Choose meal plans and sub-plans for this choice.'}
+            </DialogDescription>
+          </DialogHeader>
+
+          {choiceStep === 'quantity' ? (
+            // STEP 1: Select Quantity
+            <div className="px-1 py-4 space-y-4">
+              <div className="flex items-center gap-4">
+                <Label htmlFor="quantity" className="w-24">Quantity:</Label>
+                <Input
+                  id="quantity"
+                  type="number"
+                  min="1"
+                  max="100"
+                  value={choiceQuantity}
+                  onChange={(e) => setChoiceQuantity(Math.max(1, parseInt(e.target.value) || 1))}
+                  className="flex-1"
+                />
+              </div>
+              <div className="text-sm text-gray-600 bg-blue-50 p-3 rounded">
+                Selected: <strong>{choiceQuantity}</strong> item{choiceQuantity !== 1 ? 's' : ''}
+              </div>
+            </div>
+          ) : (
+            // STEP 2: Select Meal Plans
+            <div className="px-1 flex-1 overflow-hidden flex flex-col">
+              <div className="relative mb-2">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-500" />
+                <Input
+                  type="search"
+                  placeholder="Search meal plans..."
+                  className="pl-9"
+                  value={choiceSearchQuery}
+                  onChange={(e) => setChoiceSearchQuery(e.target.value)}
+                />
+              </div>
+
+              <div className="flex-1 overflow-hidden border rounded-md">
+                <ScrollArea className="h-[300px] p-4">
+                  <div className="space-y-3">
+                    {mealPlans.length === 0 && (
+                      <div className="flex flex-col items-center justify-center py-6 text-center text-gray-500 gap-2">
+                        <AlertCircle className="h-8 w-8 text-yellow-500" />
+                        <p className="text-sm font-medium">No Meal Plans Available</p>
+                      </div>
+                    )}
+                    {mealPlans
+                      .filter((mp) => 
+                        !choiceSearchQuery.trim() || mp.name?.toLowerCase().includes(choiceSearchQuery.toLowerCase())
+                      )
+                      .map((mp) => {
+                        const isSelected = choiceSelections.some((a) => a.mealPlanId === mp.id)
+                        const currentAssignment = choiceSelections.find((a) => a.mealPlanId === mp.id)
+                        const subMealsForPlan = subMealPlans.filter((smp) => smp.mealPlanId === mp.id)
+
+                        return (
+                          <div key={mp.id} className="space-y-1">
+                            <div className="flex items-center space-x-2 py-2 bg-gray-50 rounded px-2">
+                              <Checkbox 
+                                id={`choice-mp-${mp.id}`} 
+                                checked={isSelected} 
+                                onCheckedChange={(checked) => {
+                                  if (checked) {
+                                    setChoiceSelections([...choiceSelections, { mealPlanId: mp.id, mealPlanName: mp.name || "", subMealPlans: [] }])
+                                  } else {
+                                    setChoiceSelections(choiceSelections.filter((a) => a.mealPlanId !== mp.id))
+                                  }
+                                }}
+                              />
+                              <label htmlFor={`choice-mp-${mp.id}`} className="text-sm font-medium cursor-pointer flex-1">
+                                {mp.name}
+                              </label>
+                            </div>
+                            {isSelected && subMealsForPlan.length > 0 && (
+                              <div className="ml-6 space-y-1">
+                                {subMealsForPlan.map((smp) => (
+                                  <div key={smp.id} className="flex items-center space-x-2">
+                                    <Checkbox 
+                                      id={`choice-smp-${smp.id}`} 
+                                      checked={currentAssignment?.subMealPlans?.some(s => s.subMealPlanId === smp.id) || false}
+                                      onCheckedChange={(checked) => {
+                                        setChoiceSelections(choiceSelections.map((a) => {
+                                          if (a.mealPlanId !== mp.id) return a
+                                          const currentSubs = [...(a.subMealPlans || [])]
+                                          if (checked) {
+                                            if (!currentSubs.some((s) => s.subMealPlanId === smp.id)) {
+                                              currentSubs.push({ subMealPlanId: smp.id, subMealPlanName: smp.name || "" })
+                                            }
+                                          } else {
+                                            return { ...a, subMealPlans: currentSubs.filter((s) => s.subMealPlanId !== smp.id) }
+                                          }
+                                          return { ...a, subMealPlans: currentSubs }
+                                        }))
+                                      }}
+                                    />
+                                    <label htmlFor={`choice-smp-${smp.id}`} className="text-xs text-gray-600 cursor-pointer">
+                                      {smp.name}
+                                    </label>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                  </div>
+                </ScrollArea>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="pt-2 border-t">
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                if (choiceStep === 'selection') {
+                  setChoiceStep('quantity')
+                } else {
+                  setIsChoiceModalOpen(false)
+                }
+              }}
+            >
+              {choiceStep === 'quantity' ? 'Cancel' : 'Back'}
+            </Button>
+            <Button 
+              onClick={() => {
+                if (choiceStep === 'quantity') {
+                  setChoiceStep('selection')
+                  setChoiceSearchQuery('')
+                } else {
+                  handleCreateChoice()
+                }
+              }}
+              disabled={choiceStep === 'selection' && choiceSelections.length === 0}
+            >
+              {choiceStep === 'quantity' ? 'Next' : 'Create Choice'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* --- FULL SCREEN MODAL --- */}
       <Dialog
         open={isModalOpen}
@@ -1085,6 +1351,7 @@ export default function MealPlanStructurePage() {
                                 (ss) => ss.subServiceId === subSvc.subServiceId,
                               )
                               const assignedMealPlans = currentSub?.mealPlans || []
+                              const savedChoices = (currentSub?.choices && currentSub.choices[day]) || []
 
                               return (
                                 <TableCell
@@ -1101,6 +1368,12 @@ export default function MealPlanStructurePage() {
                                     clipboardMode={!!clipboard}
                                     onCopy={() => handleCopy(assignedMealPlans)}
                                     onPaste={() => handlePaste(day, svc.serviceId, subSvc.subServiceId)}
+                                    day={day}
+                                    serviceId={svc.serviceId}
+                                    subServiceId={subSvc.subServiceId}
+                                    onOpenChoiceModal={handleOpenChoiceModal}
+                                    savedChoices={savedChoices}
+                                    onDeleteChoice={(choiceId) => handleDeleteChoice(day, svc.serviceId, subSvc.subServiceId, choiceId)}
                                   />
                                 </TableCell>
                               )
@@ -1504,6 +1777,12 @@ interface MealPlanSelectorProps {
   clipboardMode: boolean
   onCopy: () => void
   onPaste: () => void
+  day?: string
+  serviceId?: string
+  subServiceId?: string
+  onOpenChoiceModal?: (day: string, serviceId: string, subServiceId: string) => void
+  savedChoices?: MealPlanChoice[]
+  onDeleteChoice?: (choiceId: string) => void
 }
 
 function MealPlanSelector({
@@ -1514,6 +1793,12 @@ function MealPlanSelector({
   clipboardMode,
   onCopy,
   onPaste,
+  day,
+  serviceId,
+  subServiceId,
+  onOpenChoiceModal,
+  savedChoices = [],
+  onDeleteChoice,
 }: MealPlanSelectorProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
@@ -1571,6 +1856,7 @@ function MealPlanSelector({
 
   return (
     <div className="flex flex-col gap-1.5 w-full group">
+      {/* Main Meal Plans Section */}
       <Dialog open={isOpen} onOpenChange={(open) => { setIsOpen(open); if (!open) setSearchQuery(""); }}>
         <DialogTrigger asChild>
           <Button
@@ -1660,6 +1946,20 @@ function MealPlanSelector({
             <Button variant="ghost" size="sm" onClick={onPaste} disabled={!clipboardMode} className="flex-1">
               <ClipboardPaste className="h-3 w-3 mr-1" /> Paste
             </Button>
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              onClick={() => {
+                if (day && serviceId && subServiceId && onOpenChoiceModal) {
+                  onOpenChoiceModal(day, serviceId, subServiceId)
+                  setIsOpen(false)
+                }
+              }} 
+              disabled={!hasSelection || !day || !serviceId || !subServiceId}
+              className="flex-1"
+            >
+              <Plus className="h-3 w-3 mr-1" /> Create Choice
+            </Button>
           </div>
 
           <DialogFooter>
@@ -1667,6 +1967,38 @@ function MealPlanSelector({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Saved Choices Section */}
+      {savedChoices && savedChoices.length > 0 && (
+        <div className="mt-2 p-2 border border-amber-200 bg-amber-50/50 rounded space-y-1.5">
+          <div className="flex items-center gap-1.5 text-xs font-semibold text-amber-900 mb-1">
+            <span className="text-amber-600">◆</span> Choices
+          </div>
+          {savedChoices.map((choice) => (
+            <div key={choice.choiceId} className="flex items-start justify-between gap-1 p-1.5 bg-white rounded border border-amber-100 text-xs">
+              <div className="flex-1 min-w-0">
+                <div className="font-medium text-amber-900">
+                  {choice.quantity}x {choice.mealPlans.length > 0 ? `[${choice.mealPlans[0]?.mealPlanName}${choice.mealPlans.length > 1 ? `, +${choice.mealPlans.length - 1}` : ''}]` : "Choice"}
+                </div>
+                {choice.mealPlans.length > 0 && (
+                  <div className="text-[10px] text-amber-700 italic mt-0.5 truncate">
+                    {choice.mealPlans.map((mp) => `${mp.mealPlanName}${mp.subMealPlans.length > 0 ? ` (${mp.subMealPlans.length})` : ''}`).join(', ')}
+                  </div>
+                )}
+              </div>
+              <button
+                onClick={() => {
+                  if (onDeleteChoice) onDeleteChoice(choice.choiceId)
+                }}
+                className="flex-shrink-0 text-red-500 hover:text-red-700 hover:bg-red-50 p-1 rounded"
+                title="Delete choice"
+              >
+                <Trash2 className="h-3 w-3" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
