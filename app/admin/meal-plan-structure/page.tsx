@@ -446,6 +446,9 @@ export default function MealPlanStructurePage() {
     const newChoice: MealPlanChoice = {
       choiceId,
       quantity: choiceQuantity,
+      choiceDay: day,
+      serviceId, // Store service ID so we know which service this choice belongs to
+      subServiceId, // Store sub-service ID so we know which sub-service this choice belongs to
       mealPlans: JSON.parse(JSON.stringify(choiceSelections)),
       createdAt: new Date(),
     }
@@ -466,7 +469,21 @@ export default function MealPlanStructurePage() {
       if (subIndex !== -1) {
         const subService = { ...subServicesList[subIndex] }
         subService.choices = subService.choices || {}
-        subService.choices[day] = subService.choices[day] ? [...subService.choices[day], newChoice] : [newChoice]
+        
+        // Check if a choice with identical meal plans already exists for this day
+        const existingChoiceIndex = subService.choices[day]?.findIndex((c) =>
+          JSON.stringify(c.mealPlans) === JSON.stringify(newChoice.mealPlans) &&
+          c.quantity === newChoice.quantity
+        ) ?? -1
+        
+        if (existingChoiceIndex !== -1) {
+          // Replace existing choice instead of creating duplicate
+          subService.choices[day][existingChoiceIndex] = newChoice
+        } else {
+          // Only add new choice if it doesn't already exist
+          subService.choices[day] = subService.choices[day] ? [...subService.choices[day], newChoice] : [newChoice]
+        }
+        
         subServicesList[subIndex] = subService
       }
 

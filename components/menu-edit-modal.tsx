@@ -48,6 +48,7 @@ import { ChoiceSelectionModal } from "@/components/choice-selection-modal"
 interface MealPlanChoice {
   choiceId: string
   quantity: number
+  choiceDay?: string
   mealPlans: Array<{
     mealPlanId: string
     mealPlanName?: string
@@ -4051,95 +4052,45 @@ const handleAddItem = useCallback(
 
   const detectCompaniesWithChoices = async (): Promise<CompanyChoice[]> => {
     try {
-      console.log("[v0] Starting choice detection from mealPlanStructureAssignments collection...")
-      console.log("[v0] Menu:", { id: menu?.id, type: menuType, companyId: menu?.companyId, buildingId: menu?.buildingId })
-      
       const companiesWithChoicesData: CompanyChoice[] = []
       const processedChoices = new Set<string>()
       const buildingsMap = new Map(buildings.map((b) => [b.id, b]))
 
-      // Query the mealPlanStructureAssignments collection for structures with choices
       let q: any
-      
-      // For company-wise menus, filter by the specific company/building
       if (menuType === 'company' && menu?.companyId && menu?.buildingId) {
         q = query(
           collection(db, 'mealPlanStructureAssignments'),
           where('companyId', '==', menu.companyId),
           where('buildingId', '==', menu.buildingId)
         )
-        console.log("[v0] Company-wise menu detected, querying specific company:", menu.companyId, "building:", menu.buildingId)
       } else if (menuType === 'combined') {
-        // For combined menus, get all structures (no filters)
         q = collection(db, 'mealPlanStructureAssignments')
-        console.log("[v0] Combined menu detected, querying all structures in mealPlanStructureAssignments")
       } else {
-        console.log("[v0] Unable to determine menu type")
         return []
       }
 
-      try {
-        const structures = await getDocs(q)
-        console.log("[v0] Found", structures.docs.length, "total structures to check for choices")
-        
-        // Log first few structures to debug
-        if (structures.docs.length === 0) {
-          console.log("[v0] WARNING: No documents found in mealPlanStructureAssignments collection!")
-          console.log("[v0] Attempting to verify collection exists by getting all docs without filter...")
-          const allDocsQuery = await getDocs(collection(db, 'mealPlanStructureAssignments'))
-          console.log("[v0] Total documents in collection (no filter):", allDocsQuery.docs.length)
-          if (allDocsQuery.docs.length > 0) {
-            console.log("[v0] First document sample:", allDocsQuery.docs[0].data())
-          }
-          return []
-        } else {
-          structures.docs.slice(0, 3).forEach((doc, idx) => {
-            const data = doc.data()
-            console.log("[v0] Structure", idx, ":", { companyId: data.companyId, buildingId: data.buildingId, companyName: data.companyName, hasWeekStructure: !!data.weekStructure })
-          })
-        }
+      const structures = await getDocs(q)
 
-        // Process each structure document
-        for (const structureDoc of structures.docs) {
+      for (const structureDoc of structures.docs) {
         const structure = structureDoc.data() as any
         const weekStructure = structure.weekStructure || {}
-        console.log("[v0] Processing structure for company:", structure.companyName, "building:", structure.buildingName)
 
-        // Iterate through all days in weekStructure
         for (const [day, services] of Object.entries(weekStructure)) {
-          if (!Array.isArray(services)) {
-            console.log("[v0] Day", day, "is not an array, skipping")
-            continue
-          }
+          if (!Array.isArray(services)) continue
           
-          console.log("[v0] Checking day:", day, "with", services.length, "service(s)")
-
           for (const service of services as any[]) {
             if (!service.subServices || !Array.isArray(service.subServices)) continue
 
             for (const subService of service.subServices) {
-              // Check if subService has choices object
               if (!subService.choices || typeof subService.choices !== 'object') continue
               
-              console.log("[v0] Found choices object in subService:", subService.subServiceName, "keys:", Object.keys(subService.choices))
-
-              // choices is keyed by day, each containing an array of MealPlanChoice
               for (const [choiceDay, choicesArray] of Object.entries(subService.choices)) {
-                if (!Array.isArray(choicesArray)) {
-                  console.log("[v0] choices[" + choiceDay + "] is not an array")
-                  continue
-                }
-
-                if (choicesArray.length === 0) {
-                  console.log("[v0] choices[" + choiceDay + "] is empty")
-                  continue
-                }
-
-                console.log("[v0] Found " + choicesArray.length + " choice(s) for day: " + choiceDay + " in " + structure.companyName)
+                if (!Array.isArray(choicesArray) || choicesArray.length === 0) continue
 
                 for (const choice of choicesArray) {
-                  // Skip if already processed for this company
-                  const choiceKey = `${structure.companyId}-${choice.choiceId}`
+                  // --- THIS IS THE FIX ---
+                  // The key MUST include the buildingId to be unique
+                  const choiceKey = `${structure.companyId}-${structure.buildingId}-${choice.choiceId}`
                   if (processedChoices.has(choiceKey)) continue
                   processedChoices.add(choiceKey)
 
@@ -4147,19 +4098,19 @@ const handleAddItem = useCallback(
                     (c) => c.companyId === structure.companyId && c.buildingId === structure.buildingId
                   )
 
+                  const choiceWithDay = { ...choice, choiceDay } as MealPlanChoice
+
                   if (!existing) {
-                    console.log("[v0] Creating new company choice entry for " + structure.companyName + " with choice: " + choice.choiceId)
                     companiesWithChoicesData.push({
                       companyId: structure.companyId,
                       companyName: structure.companyName,
                       buildingId: structure.buildingId,
                       buildingName: structure.buildingName,
-                      choices: [choice as MealPlanChoice],
+                      choices: [choiceWithDay],
                     })
                   } else {
                     if (!existing.choices.find((c) => c.choiceId === choice.choiceId)) {
-                      console.log("[v0] Adding choice to existing company entry for " + structure.companyName + ": " + choice.choiceId)
-                      existing.choices.push(choice as MealPlanChoice)
+                      existing.choices.push(choiceWithDay)
                     }
                   }
                 }
@@ -4167,16 +4118,11 @@ const handleAddItem = useCallback(
             }
           }
         }
-        }
-      } catch (collectionError) {
-        console.error("[v0] Error querying mealPlanStructureAssignments collection:", collectionError)
-        return []
       }
 
-      console.log("[v0] Final companies with choices detected: ", companiesWithChoicesData)
       return companiesWithChoicesData
     } catch (error) {
-      console.error("[v0] Error detecting companies with choices: ", error)
+      console.error("Error detecting companies with choices: ", error)
       return []
     }
   }
@@ -5680,6 +5626,7 @@ const handleDownloadZIP = async () => {
           />
 
           {/* Choice Selection Modal */}
+          {/* Choice Selection Modal */}
           <ChoiceSelectionModal
             isOpen={showChoiceModal}
             onClose={() => {
@@ -5693,7 +5640,8 @@ const handleDownloadZIP = async () => {
             menuData={menuData}
             allMenuItems={menuItems}
             dateRange={dateRange}
-            mealPlanStructure={mealPlanAssignments}
+            // --- THIS IS THE NEW PROP ---
+            mealPlanAssignments={mealPlanAssignments}
           />
       </div>
     </div>
