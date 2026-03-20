@@ -2,11 +2,11 @@
 
 import React, { useState, useEffect } from "react"
 import { mealPlansService, subMealPlansService, vendorsService, type MealPlan, type Vendor } from "@/lib/firestore"
-// (Assuming you have type SubMealPlan, if not, it will fall back to 'any' for now)
 import { useToast } from "@/hooks/use-toast"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { GripVertical, Edit, Trash2, Loader2, UserPlus, Plus, FolderPlus, UtensilsCrossed } from "lucide-react"
+// NEW: Search icon import kiya
+import { GripVertical, Edit, Trash2, Loader2, UserPlus, Plus, FolderPlus, UtensilsCrossed, Search } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
@@ -34,9 +34,12 @@ export default function MealPlansPage() {
   
   // --- DATA STATES ---
   const [mealPlans, setMealPlans] = useState<MealPlan[]>([])
-  const [subMealPlans, setSubMealPlans] = useState<any[]>([]) // Nested Items (Bread 1, 2)
+  const [subMealPlans, setSubMealPlans] = useState<any[]>([]) 
   const [vendors, setVendors] = useState<Vendor[]>([])
   const [loading, setLoading] = useState(true)
+
+  // NEW: Search State
+  const [searchQuery, setSearchQuery] = useState("")
 
   // --- VENDOR ASSIGNMENT STATES ---
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
@@ -72,28 +75,26 @@ export default function MealPlansPage() {
       setLoading(true)
       const [mpData, subMpData, vData] = await Promise.all([
         mealPlansService.getAll(),
-        subMealPlansService.getAll(), // Fetch nested items
+        subMealPlansService.getAll(),
         vendorsService.getAll()
       ])
       
       const sortedMp = mpData.sort((a, b) => (a.order || 999) - (b.order || 999))
       
-      // Sort sub meal plans
       const mpOrderMap = new Map<string, number>()
       sortedMp.forEach((m) => mpOrderMap.set(m.id, m.order || 999))
-const sortedSubMp = subMpData.sort((a: any, b: any) => {
-  const parentOrderA = mpOrderMap.get(a.mealPlanId) || 999
-  const parentOrderB = mpOrderMap.get(b.mealPlanId) || 999
-  
-  if (parentOrderA !== parentOrderB) return parentOrderA - parentOrderB
-  
-  const orderDiff = (a.order || 999) - (b.order || 999)
-  if (orderDiff !== 0) return orderDiff
-  
-  // MAGIC FIX: Natural sorting fallback
-  // Ye computer ko batayega ki numbers ko actual numbers ki tarah treat kare, strings ki tarah nahi.
-  return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
-})
+      
+      const sortedSubMp = subMpData.sort((a: any, b: any) => {
+        const parentOrderA = mpOrderMap.get(a.mealPlanId) || 999
+        const parentOrderB = mpOrderMap.get(b.mealPlanId) || 999
+        
+        if (parentOrderA !== parentOrderB) return parentOrderA - parentOrderB
+        
+        const orderDiff = (a.order || 999) - (b.order || 999)
+        if (orderDiff !== 0) return orderDiff
+        
+        return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
+      })
 
       setMealPlans(sortedMp)
       setSubMealPlans(sortedSubMp)
@@ -181,7 +182,6 @@ const sortedSubMp = subMpData.sort((a: any, b: any) => {
         ...itemsInTargetGroup.slice(targetIndex),
       ]
 
-      // Optimistic UI Update
       const newSubMealPlans = subMealPlans.map((s) => {
         const reorderedItem = reordered.find((r) => r.id === s.id)
         if (reorderedItem) {
@@ -193,7 +193,6 @@ const sortedSubMp = subMpData.sort((a: any, b: any) => {
       setSubMealPlans(newSubMealPlans)
       setDraggedSubId(null)
 
-      // DB Update
       const batchUpdates = reordered.map((item, index) =>
         subMealPlansService.update(item.id, {
           order: index + 1,
@@ -245,7 +244,7 @@ const sortedSubMp = subMpData.sort((a: any, b: any) => {
   }
 
   // ==========================================
-  //        CRUD: SUB MEAL PLANS (Bread 1)
+  //        CRUD: SUB MEAL PLANS
   // ==========================================
   const openAddSubModal = () => {
     setEditingSubId(null)
@@ -277,6 +276,23 @@ const sortedSubMp = subMpData.sort((a: any, b: any) => {
   }
 
   // ==========================================
+  //         NEW: SEARCH & FILTER LOGIC
+  // ==========================================
+  const filteredMealPlans = mealPlans.filter((mp) => {
+    if (!searchQuery.trim()) return true
+    
+    const query = searchQuery.toLowerCase().trim()
+    const matchesParent = mp.name?.toLowerCase().includes(query)
+    
+    // Check if any nested item inside this parent matches the query
+    const hasMatchingChild = subMealPlans.some(
+      (sub) => sub.mealPlanId === mp.id && sub.name?.toLowerCase().includes(query)
+    )
+    
+    return matchesParent || hasMatchingChild
+  })
+
+  // ==========================================
   //                 RENDER
   // ==========================================
   if (loading) return <div className="flex justify-center items-center h-[50vh]"><Loader2 className="animate-spin h-8 w-8 text-gray-400" /></div>
@@ -285,7 +301,7 @@ const sortedSubMp = subMpData.sort((a: any, b: any) => {
     <div className="p-6 max-w-[1400px] mx-auto space-y-6">
       
       {/* HEADER & ACTION BAR */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-2">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-900">Meal Plans & Nested Items</h1>
           <p className="text-sm text-slate-500 mt-1">Manage main categories (Breads, Salads) and drag-and-drop their nested items.</p>
@@ -306,138 +322,161 @@ const sortedSubMp = subMpData.sort((a: any, b: any) => {
         </div>
       </div>
 
+      {/* NEW: SEARCH BAR COMPONENT */}
+      <div className="relative max-w-md w-full mb-6">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+        <Input
+          placeholder="Search by meal plan or nested item..."
+          className="pl-9 bg-white shadow-sm border-slate-200"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+        />
+      </div>
+
       {/* RENDER GROUPED CARDS */}
       <div className="space-y-8">
-        {mealPlans.map((mp) => {
-          const groupSubItems = subMealPlans.filter((s) => s.mealPlanId === mp.id)
-          const assignedVendors = vendors.filter(v => (mp as any).vendorIds?.includes(v.id))
+        {filteredMealPlans.length === 0 ? (
+          <div className="text-center py-12 text-slate-500 bg-white rounded-lg border border-dashed">
+            No results found for "{searchQuery}"
+          </div>
+        ) : (
+          filteredMealPlans.map((mp) => {
+            // Updated filtering logic for nested items
+            const query = searchQuery.toLowerCase().trim()
+            const parentMatches = mp.name?.toLowerCase().includes(query)
 
-          return (
-            <Card key={mp.id} className={`overflow-hidden border-slate-200 shadow-sm transition-all ${selectedIds.has(mp.id) ? 'ring-2 ring-blue-500' : ''}`}>
-              
-              {/* Card Header (Parent Meal Plan) */}
-              <div className="bg-slate-50 border-b px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div className="flex items-center gap-4">
-                  
-                  {/* Vendor Selection Checkbox */}
-                  <Checkbox 
-                    checked={selectedIds.has(mp.id)} 
-                    onCheckedChange={() => toggleSelectId(mp.id)}
-                    className="w-5 h-5"
-                  />
-                  
-                  <div className="p-2 bg-white rounded-md border shadow-sm">
-                    <UtensilsCrossed className="h-5 w-5 text-slate-500" />
+            let groupSubItems = subMealPlans.filter((s) => s.mealPlanId === mp.id)
+
+            // Agar user ne kuch search kiya h aur parent ka naam match nahi kar raha (yani child search kiya h), 
+            // toh sirf wahi child dikhao jo search se match karte hain.
+            if (query && !parentMatches) {
+              groupSubItems = groupSubItems.filter(s => s.name?.toLowerCase().includes(query))
+            }
+
+            const assignedVendors = vendors.filter(v => (mp as any).vendorIds?.includes(v.id))
+
+            return (
+              <Card key={mp.id} className={`overflow-hidden border-slate-200 shadow-sm transition-all ${selectedIds.has(mp.id) ? 'ring-2 ring-blue-500' : ''}`}>
+                
+                {/* Card Header (Parent Meal Plan) */}
+                <div className="bg-slate-50 border-b px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="flex items-center gap-4">
+                    
+                    <Checkbox 
+                      checked={selectedIds.has(mp.id)} 
+                      onCheckedChange={() => toggleSelectId(mp.id)}
+                      className="w-5 h-5"
+                    />
+                    
+                    <div className="p-2 bg-white rounded-md border shadow-sm">
+                      <UtensilsCrossed className="h-5 w-5 text-slate-500" />
+                    </div>
+                    
+                    <div>
+                      <h2 className="text-lg font-semibold text-slate-800">{mp.name}</h2>
+                      <div className="flex items-center gap-3 mt-1 text-sm text-slate-500">
+                        <span>Order: {mp.order}</span>
+                        <span className="w-1 h-1 bg-slate-300 rounded-full"></span>
+                        <span>{groupSubItems.length} nested items</span>
+                      </div>
+                    </div>
                   </div>
-                  
-                  <div>
-                    <h2 className="text-lg font-semibold text-slate-800">{mp.name}</h2>
-                    <div className="flex items-center gap-3 mt-1 text-sm text-slate-500">
-                      <span>Order: {mp.order}</span>
-                      <span className="w-1 h-1 bg-slate-300 rounded-full"></span>
-                      <span>{groupSubItems.length} nested items</span>
+
+                  <div className="flex items-center gap-4">
+                    <div className="hidden md:flex gap-1">
+                      {assignedVendors.map(v => (
+                          <Badge key={v.id} variant="outline" className="text-[10px] bg-green-50 text-green-700 border-green-200">
+                              {v.name}
+                          </Badge>
+                      ))}
+                    </div>
+
+                    <Badge variant={mp.status === "active" ? "default" : "secondary"} className="capitalize">
+                      {mp.status}
+                    </Badge>
+
+                    <div className="flex items-center gap-1 border-l pl-4 border-slate-200">
+                      <Button size="icon" variant="ghost" className="h-8 w-8 text-slate-400 hover:text-blue-600" onClick={() => openEditMpModal(mp)}>
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                      <Button size="icon" variant="ghost" className="h-8 w-8 text-slate-400 hover:text-red-600" onClick={() => handleDeleteMp(mp.id, groupSubItems.length)}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
                     </div>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-4">
-                  {/* Vendors Assigned to this Meal Plan */}
-                  <div className="hidden md:flex gap-1">
-                     {assignedVendors.map(v => (
-                        <Badge key={v.id} variant="outline" className="text-[10px] bg-green-50 text-green-700 border-green-200">
-                            {v.name}
-                        </Badge>
-                     ))}
-                  </div>
-
-                  <Badge variant={mp.status === "active" ? "default" : "secondary"} className="capitalize">
-                    {mp.status}
-                  </Badge>
-
-                  <div className="flex items-center gap-1 border-l pl-4 border-slate-200">
-                    <Button size="icon" variant="ghost" className="h-8 w-8 text-slate-400 hover:text-blue-600" onClick={() => openEditMpModal(mp)}>
-                      <Edit className="h-4 w-4" />
-                    </Button>
-                    <Button size="icon" variant="ghost" className="h-8 w-8 text-slate-400 hover:text-red-600" onClick={() => handleDeleteMp(mp.id, groupSubItems.length)}>
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-              </div>
-
-              {/* Nested Items Table (Sub Meal Plans) */}
-              <div className="overflow-x-auto">
-                {groupSubItems.length === 0 ? (
-                  <div className="p-8 text-center text-slate-400 text-sm">
-                    No nested items (like Bread 1, Bread 2) inside {mp.name}. <br/> Click "Add Nested Item" to create one.
-                  </div>
-                ) : (
-                  <table className="w-full text-sm text-left">
-                    <thead className="bg-white border-b border-slate-100 text-slate-500">
-                      <tr>
-                        <th className="px-6 py-3 font-medium w-16 text-center">Drag</th>
-                        <th className="px-6 py-3 font-medium w-16 text-center">Order</th>
-                        <th className="px-6 py-3 font-medium w-[30%]">Name</th>
-                        <th className="px-6 py-3 font-medium w-[30%]">Description</th>
-                        <th className="px-6 py-3 font-medium w-24">Status</th>
-                        <th className="px-6 py-3 font-medium text-right w-24">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {groupSubItems.map((item) => (
-                        <tr 
-                            key={item.id} 
-                            draggable={!isUpdatingOrder}
-                            onDragStart={(e) => handleDragStart(e, item.id)}
-                            onDragOver={handleDragOver}
-                            onDrop={(e) => handleDrop(e, item.id)}
-                            className={`bg-white transition-colors ${draggedSubId === item.id ? 'bg-blue-50/50 opacity-50' : 'hover:bg-slate-50'}`}
-                        >
-                          {/* Drag Handle */}
-                          <td className="px-6 py-3 text-center">
-                             <GripVertical className="h-4 w-4 text-slate-300 hover:text-slate-600 cursor-grab mx-auto" />
-                          </td>
-
-                          {/* Order */}
-                          <td className="px-6 py-3 text-center">
-                            <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-slate-100 text-xs font-medium text-slate-600">
-                              {item.order}
-                            </span>
-                          </td>
-
-                          <td className="px-6 py-3 font-medium text-slate-900">{item.name}</td>
-                          <td className="px-6 py-3 text-slate-500"><span className="line-clamp-1">{item.description || "-"}</span></td>
-                          
-                          <td className="px-6 py-3">
-                            <Badge variant={item.status === "active" ? "outline" : "secondary"} className="capitalize font-normal text-xs">
-                              {item.status}
-                            </Badge>
-                          </td>
-
-                          {/* Actions */}
-                          <td className="px-6 py-3 text-right">
-                            <div className="flex items-center justify-end gap-1">
-                              <Button size="icon" variant="ghost" className="h-8 w-8 hover:bg-blue-50 hover:text-blue-600 text-slate-400" onClick={() => openEditSubModal(item)}>
-                                <Edit className="h-4 w-4" />
-                              </Button>
-                              <Button size="icon" variant="ghost" className="h-8 w-8 hover:bg-red-50 hover:text-red-600 text-slate-400" onClick={() => handleDeleteSub(item.id)}>
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </div>
-                          </td>
+                {/* Nested Items Table (Sub Meal Plans) */}
+                <div className="overflow-x-auto">
+                  {groupSubItems.length === 0 ? (
+                    <div className="p-8 text-center text-slate-400 text-sm">
+                      No nested items found.
+                    </div>
+                  ) : (
+                    <table className="w-full text-sm text-left">
+                      <thead className="bg-white border-b border-slate-100 text-slate-500">
+                        <tr>
+                          <th className="px-6 py-3 font-medium w-16 text-center">Drag</th>
+                          <th className="px-6 py-3 font-medium w-16 text-center">Order</th>
+                          <th className="px-6 py-3 font-medium w-[30%]">Name</th>
+                          <th className="px-6 py-3 font-medium w-[30%]">Description</th>
+                          <th className="px-6 py-3 font-medium w-24">Status</th>
+                          <th className="px-6 py-3 font-medium text-right w-24">Actions</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-              </div>
-            </Card>
-          )
-        })}
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {groupSubItems.map((item) => (
+                          <tr 
+                              key={item.id} 
+                              draggable={!isUpdatingOrder && !searchQuery} // Disable drag while searching to avoid bugs
+                              onDragStart={(e) => handleDragStart(e, item.id)}
+                              onDragOver={handleDragOver}
+                              onDrop={(e) => handleDrop(e, item.id)}
+                              className={`bg-white transition-colors ${draggedSubId === item.id ? 'bg-blue-50/50 opacity-50' : 'hover:bg-slate-50'}`}
+                          >
+                            <td className="px-6 py-3 text-center">
+                              <GripVertical className={`h-4 w-4 mx-auto ${searchQuery ? 'text-slate-200 cursor-not-allowed' : 'text-slate-300 hover:text-slate-600 cursor-grab'}`} />
+                            </td>
+
+                            <td className="px-6 py-3 text-center">
+                              <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-slate-100 text-xs font-medium text-slate-600">
+                                {item.order}
+                              </span>
+                            </td>
+
+                            <td className="px-6 py-3 font-medium text-slate-900">{item.name}</td>
+                            <td className="px-6 py-3 text-slate-500"><span className="line-clamp-1">{item.description || "-"}</span></td>
+                            
+                            <td className="px-6 py-3">
+                              <Badge variant={item.status === "active" ? "outline" : "secondary"} className="capitalize font-normal text-xs">
+                                {item.status}
+                              </Badge>
+                            </td>
+
+                            <td className="px-6 py-3 text-right">
+                              <div className="flex items-center justify-end gap-1">
+                                <Button size="icon" variant="ghost" className="h-8 w-8 hover:bg-blue-50 hover:text-blue-600 text-slate-400" onClick={() => openEditSubModal(item)}>
+                                  <Edit className="h-4 w-4" />
+                                </Button>
+                                <Button size="icon" variant="ghost" className="h-8 w-8 hover:bg-red-50 hover:text-red-600 text-slate-400" onClick={() => handleDeleteSub(item.id)}>
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              </Card>
+            )
+          })
+        )}
       </div>
 
       {/* ========================================================= */}
-      {/*                    ASSIGN VENDORS DIALOG                    */}
+      {/*                    MODALS BELLOW HERE                       */}
       {/* ========================================================= */}
       <Dialog open={isAssignModalOpen} onOpenChange={setIsAssignModalOpen}>
         <DialogContent className="sm:max-w-[425px]">
@@ -473,9 +512,6 @@ const sortedSubMp = subMpData.sort((a: any, b: any) => {
         </DialogContent>
       </Dialog>
 
-      {/* ========================================================= */}
-      {/*                 ADD / EDIT MEAL PLAN DIALOG                 */}
-      {/* ========================================================= */}
       <Dialog open={isMpModalOpen} onOpenChange={setIsMpModalOpen}>
         <DialogContent>
           <DialogHeader><DialogTitle>{editingMpId ? "Edit Meal Plan" : "Add Meal Plan"}</DialogTitle></DialogHeader>
@@ -499,9 +535,6 @@ const sortedSubMp = subMpData.sort((a: any, b: any) => {
         </DialogContent>
       </Dialog>
 
-      {/* ========================================================= */}
-      {/*               ADD / EDIT NESTED ITEM DIALOG                 */}
-      {/* ========================================================= */}
       <Dialog open={isSubModalOpen} onOpenChange={setIsSubModalOpen}>
         <DialogContent>
           <DialogHeader><DialogTitle>{editingSubId ? "Edit Nested Item" : "Add Nested Item"}</DialogTitle></DialogHeader>
@@ -532,7 +565,6 @@ const sortedSubMp = subMpData.sort((a: any, b: any) => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
     </div>
   )
 }
