@@ -10,6 +10,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog"
 import { Badge } from "@/components/ui/badge"
+import { ArrowDown } from "lucide-react"
 import {
   CheckCircle2,
   X,
@@ -92,70 +93,123 @@ interface ChoiceSelectionModalProps {
    ═══════════════════════════════════════════════════════════ */
 const CHOICE_PALETTE = [
   {
-    cellBg:    "bg-sky-50/60",
-    borderL:   "border-l-sky-500",
-    idle:      "border-sky-300",
-    idleHover: "hover:border-sky-500 hover:bg-sky-50",
-    sel:       "bg-sky-600 border-sky-700",
-    ring:      "ring-sky-400/40",
+    /* BOLD SKY BLUE */
+    cellBg:    "bg-sky-100/80",
+    borderL:   "border-l-sky-700",
+    line:      "bg-sky-700",
+    icon:      "text-sky-800",
+    idle:      "border-sky-500",
+    idleHover: "hover:border-sky-700 hover:bg-sky-50",
+    sel:       "bg-sky-800 border-sky-900",
+    ring:      "ring-sky-500/40",
   },
   {
-    cellBg:    "bg-violet-50/60",
-    borderL:   "border-l-violet-500",
-    idle:      "border-violet-300",
-    idleHover: "hover:border-violet-500 hover:bg-violet-50",
-    sel:       "bg-violet-600 border-violet-700",
-    ring:      "ring-violet-400/40",
+    /* DEEP PURPLE */
+    cellBg:    "bg-purple-100/80", 
+    borderL:   "border-l-purple-700", 
+    line:      "bg-purple-700",       
+    icon:      "text-purple-800",     
+    idle:      "border-purple-500",
+    idleHover: "hover:border-purple-700 hover:bg-purple-50",
+    sel:       "bg-purple-800 border-purple-900",
+    ring:      "ring-purple-500/40",
   },
   {
-    cellBg:    "bg-emerald-50/60",
-    borderL:   "border-l-emerald-500",
-    idle:      "border-emerald-300",
-    idleHover: "hover:border-emerald-500 hover:bg-emerald-50",
-    sel:       "bg-emerald-600 border-emerald-700",
-    ring:      "ring-emerald-400/40",
+    /* FOREST GREEN */
+    cellBg:    "bg-emerald-100/80",
+    borderL:   "border-l-emerald-700",
+    line:      "bg-emerald-700",
+    icon:      "text-emerald-800",
+    idle:      "border-emerald-500",
+    idleHover: "hover:border-emerald-700 hover:bg-emerald-50",
+    sel:       "bg-emerald-800 border-emerald-900",
+    ring:      "ring-emerald-500/40",
   },
   {
-    cellBg:    "bg-rose-50/60",
-    borderL:   "border-l-rose-500",
-    idle:      "border-rose-300",
-    idleHover: "hover:border-rose-500 hover:bg-rose-50",
-    sel:       "bg-rose-600 border-rose-700",
-    ring:      "ring-rose-400/40",
+    /* CRIMSON RED */
+    cellBg:    "bg-rose-100/80",
+    borderL:   "border-l-rose-700",
+    line:      "bg-rose-700",
+    icon:      "text-rose-800",
+    idle:      "border-rose-500",
+    idleHover: "hover:border-rose-700 hover:bg-rose-50",
+    sel:       "bg-rose-800 border-rose-900",
+    ring:      "ring-rose-500/40",
   },
   {
-    cellBg:    "bg-amber-50/60",
-    borderL:   "border-l-amber-500",
-    idle:      "border-amber-300",
-    idleHover: "hover:border-amber-500 hover:bg-amber-50",
-    sel:       "bg-amber-600 border-amber-700",
-    ring:      "ring-amber-400/40",
+    /* DARK BURNT ORANGE */
+    cellBg:    "bg-amber-100/80",
+    borderL:   "border-l-amber-700",
+    line:      "bg-amber-700",
+    icon:      "text-amber-800",
+    idle:      "border-amber-500",
+    idleHover: "hover:border-amber-700 hover:bg-amber-50",
+    sel:       "bg-amber-800 border-amber-900",
+    ring:      "ring-amber-500/40",
   },
   {
-    cellBg:    "bg-indigo-50/60",
-    borderL:   "border-l-indigo-500",
-    idle:      "border-indigo-300",
-    idleHover: "hover:border-indigo-500 hover:bg-indigo-50",
-    sel:       "bg-indigo-600 border-indigo-700",
-    ring:      "ring-indigo-400/40",
+    /* ROYAL INDIGO */
+    cellBg:    "bg-indigo-100/80",
+    borderL:   "border-l-indigo-700",
+    line:      "bg-indigo-700",
+    icon:      "text-indigo-800",
+    idle:      "border-indigo-500",
+    idleHover: "hover:border-indigo-700 hover:bg-indigo-50",
+    sel:       "bg-indigo-800 border-indigo-900",
+    ring:      "ring-indigo-500/40",
   },
   {
-    cellBg:    "bg-teal-50/60",
-    borderL:   "border-l-teal-500",
-    idle:      "border-teal-300",
-    idleHover: "hover:border-teal-500 hover:bg-teal-50",
-    sel:       "bg-teal-600 border-teal-700",
-    ring:      "ring-teal-400/40",
+    /* DARK TEAL */
+    cellBg:    "bg-teal-100/80",
+    borderL:   "border-l-teal-700",
+    line:      "bg-teal-700",
+    icon:      "text-teal-800",
+    idle:      "border-teal-500",
+    idleHover: "hover:border-teal-700 hover:bg-teal-50",
+    sel:       "bg-teal-800 border-teal-900",
+    ring:      "ring-teal-500/40",
   },
-  {
-    cellBg:    "bg-fuchsia-50/60",
-    borderL:   "border-l-fuchsia-500",
-    idle:      "border-fuchsia-300",
-    idleHover: "hover:border-fuchsia-500 hover:bg-fuchsia-50",
-    sel:       "bg-fuchsia-600 border-fuchsia-700",
-    ring:      "ring-fuchsia-400/40",
-  },
-]
+] 
+
+// function FlowConnector({ position, colorConfig }: { position: 'start' | 'middle' | 'end' | 'single', colorConfig: any }) {
+//   if (!colorConfig) return null;
+
+//   return (
+//     <div className="absolute left-0 top-0 bottom-0 w-[4px] z-10 overflow-hidden">
+//       <div
+//         className={`absolute left-0 w-full ${colorConfig.line} transition-all duration-300
+//         ${position === 'start' ? 'top-2 bottom-0 rounded-t-full' : ''}
+//         ${position === 'middle' ? 'top-0 bottom-0' : ''}
+//         ${position === 'end' ? 'top-0 bottom-2 rounded-b-full' : ''}
+//         ${position === 'single' ? 'top-2 bottom-2 rounded-full' : ''}
+//       `}
+//       />
+//     </div>
+//   );
+// }
+
+function TreeConnector({ position, colorConfig }: { position: 'start' | 'middle' | 'end' | 'single', colorConfig: any }) {
+  if (!colorConfig) return null;
+
+  return (
+    <div className="absolute left-0 top-0 bottom-0 w-[30px] z-10 flex justify-center">
+      {/* 1. Vertical Trunk (Connecting line) */}
+      <div className={`absolute w-[2px] ${colorConfig.line} opacity-70
+        ${position === 'start' ? 'top-1/2 bottom-0' : ''}
+        ${position === 'middle' ? 'top-0 bottom-0' : ''}
+        ${position === 'end' ? 'top-0 bottom-1/2' : ''}
+        ${position === 'single' ? 'hidden' : ''}
+      `} />
+
+      {/* 2. Horizontal Branch (The "L" shape) ╰──── */}
+      <div className={`absolute left-1/2 top-1/2 -translate-y-px h-[2px] w-[10px] ${colorConfig.line} opacity-70`} />
+
+      {/* 3. The Node Circle (Dot) */}
+      <div className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[8px] h-[8px] rounded-full border-2 bg-white ${colorConfig.borderL} z-20 shadow-sm`} />
+    </div>
+  );
+}
+
 
 export function ChoiceSelectionModal({
   isOpen,
@@ -421,6 +475,10 @@ interface ServiceGroup {
     order: number
   }>
 }
+
+
+
+
 
 function BuildingMenuGrid({
   building,
@@ -823,119 +881,66 @@ function BuildingMenuGrid({
                         {/* ═══════════════════════════════════════
                             ✦ MODIFIED — Date cells with choice colors
                             ═══════════════════════════════════════ */}
-                        {dateRange.map((d: any) => {
-                          const items = getCellItems(
-                            d.date,
-                            group.serviceId,
-                            group.subServiceId,
-                            row.mealPlanId,
-                            row.subMealPlanId
-                          )
-                          const choice = getChoiceForCell(
-                            d.date,
-                            row.mealPlanId,
-                            row.subMealPlanId,
-                            group.serviceId,
-                            group.subServiceId
-                          )
-                          const selKey = choice
-                            ? `${building.companyId}-${building.buildingId}-${choice.choiceId}`
-                            : null
-                          const selected = selKey
-                            ? (selections[selKey] || []).find(
-                                (s: any) =>
-                                  s.subMealPlanId === row.subMealPlanId
-                              )
-                            : null
+              {dateRange.map((d: any) => {
+  const items = getCellItems(d.date, group.serviceId, group.subServiceId, row.mealPlanId, row.subMealPlanId)
+  const choice = getChoiceForCell(d.date, row.mealPlanId, row.subMealPlanId, group.serviceId, group.subServiceId)
+  
+  // --- NAYA LOGIC: CONNECT SALAD TO RAITA ---
+  let flowPos: 'start' | 'middle' | 'end' | 'single' = 'single'
+  if (choice) {
+    // Check all rows in this group for the SAME choiceId on this day
+    const rowsWithSameChoice = group.rows.filter((r: any) => 
+      getChoiceForCell(d.date, r.mealPlanId, r.subMealPlanId, group.serviceId, group.subServiceId)?.choiceId === choice.choiceId
+    )
+    
+    // Find where THIS row sits in that list
+    const myIndex = rowsWithSameChoice.findIndex((r: any) => r.mealPlanId === row.mealPlanId && r.subMealPlanId === row.subMealPlanId)
 
-                          const isChoice = !!choice
+    if (rowsWithSameChoice.length > 1) {
+      if (myIndex === 0) flowPos = 'start'
+      else if (myIndex === rowsWithSameChoice.length - 1) flowPos = 'end'
+      else flowPos = 'middle'
+    } else {
+      flowPos = 'single'
+    }
+  }
+  // ------------------------------------------
 
-                          /* ✦ NEW — resolve the color for this choice */
-                          const cc = choice
-                            ? choiceColorMap.get(choice.choiceId)
-                            : null
+  const cc = choice ? choiceColorMap.get(choice.choiceId) : null
+  const isSelected = choice ? (selections[`${building.companyId}-${building.buildingId}-${choice.choiceId}`] || []).some((s: any) => s.subMealPlanId === row.subMealPlanId) : false
 
-                          return (
-                            <td
-                              key={d.date}
-                              className={`
-                                px-3 py-2.5 align-top min-w-[200px]
-                                border-r border-gray-200
-                                ${!isLast ? "border-b border-gray-200" : ""}
-                                ${cc
-                                  ? `${cc.cellBg} border-l-4 ${cc.borderL}`
-                                  : ""
-                                }
-                              `}
-                            >
-                              {items.length > 0 ? (
-                                <div className="space-y-1.5">
-                                  {items.map((item: any) => {
-                                    if (!isChoice) {
-                                      // ── Plain menu item (unchanged) ──
-                                      return (
-                                        <div
-                                          key={item.id}
-                                          className="text-[11px] text-gray-600 bg-gray-100 border border-gray-200 px-2.5 py-1.5 rounded-md"
-                                        >
-                                          {item.name}
-                                        </div>
-                                      )
-                                    }
+  return (
+    <td
+      key={d.date}
+      className={`px-3 py-3 align-top min-w-[200px] relative border-r border-gray-200 border-b border-gray-100 ${cc ? cc.cellBg : ""}`}
+    >
+      {/* SYNTAX FIX: TreeConnector TD ke andar pehle aayega */}
+      {choice && <TreeConnector position={flowPos} colorConfig={cc} />}
 
-                                    // ── Choice item ──
-                                    const isSelected =
-                                      selected?.selectedItemId === item.id
-
-                                    return (
-                                      <button
-                                        key={item.id}
-                                        onClick={() =>
-                                          isSelected
-                                            ? clearSelection(
-                                                choice.choiceId,
-                                                row.subMealPlanId
-                                              )
-                                            : handleSelect(
-                                                choice.choiceId,
-                                                row,
-                                                item
-                                              )
-                                        }
-                                        /* ✦ MODIFIED — choice-colored button states */
-                                        className={`
-                                          w-full text-left px-2.5 py-2 rounded-lg text-xs
-                                          transition-all duration-150 border
-                                          ${
-                                            isSelected
-                                              ? `${cc!.sel} text-white shadow-md font-bold ring-2 ${cc!.ring}`
-                                              : selected
-                                              ? "bg-white border-gray-200 text-gray-400 hover:border-gray-300 hover:text-gray-600 hover:bg-gray-50/50"
-                                              : `bg-white ${cc!.idle} text-gray-700 ${cc!.idleHover} hover:text-gray-900 shadow-sm`
-                                          }
-                                        `}
-                                      >
-                                        <span className="flex items-center gap-1.5">
-                                          {isSelected && (
-                                            <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
-                                          )}
-                                          <span className="leading-tight">
-                                            {item.name}
-                                          </span>
-                                        </span>
-                                      </button>
-                                    )
-                                  })}
-                                </div>
-                              ) : (
-                                <div className="text-[10px] text-gray-300 text-center py-3">
-                                  —
-                                </div>
-                              )}
-                            </td>
-                          )
-                        })}
-                      </tr>
+      <div className={`space-y-1.5 ${choice ? 'pl-8' : ''}`}>
+        {items.length > 0 ? (
+          items.map((item: any) => (
+            choice ? (
+              <button
+                key={item.id}
+                onClick={() => handleSelect(choice.choiceId, row, item)}
+                className={`w-full text-left px-2.5 py-2 rounded-lg text-xs transition-all border ${isSelected ? `${cc!.sel} text-white` : `bg-white ${cc!.idle}`}`}
+              >
+                {item.name}
+              </button>
+            ) : (
+              <div key={item.id} className="text-[11px] text-gray-500 bg-gray-50 border p-2 rounded-md">
+                {item.name}
+              </div>
+            )
+          ))
+        ) : (
+          <div className="text-[10px] text-gray-300 text-center">—</div>
+        )}
+      </div>
+    </td>
+  )
+})}                     </tr>
                     )
                   })}
                 </tbody>
