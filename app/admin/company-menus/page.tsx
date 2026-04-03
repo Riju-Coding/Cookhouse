@@ -3,49 +3,27 @@
 import { useState, useEffect, useCallback, useMemo } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { 
-  Eye, 
-  Search, 
-  Loader2, 
-  Download, 
-  ArrowLeft, 
-  Edit, 
-  Trash2, 
-  ChevronRight,
-  X 
+  Eye, Search, Loader2, ArrowLeft, Edit, Trash2, ChevronRight, X, Building2, MousePointer2 
 } from 'lucide-react'
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
+  Dialog, DialogContent, DialogTitle,
 } from "@/components/ui/dialog"
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { toast } from "@/hooks/use-toast"
 import { collection, getDocs, query, where, writeBatch, doc } from "firebase/firestore"
 import { db } from "@/lib/firebase"
 import Link from "next/link"
-import { useSearchParams } from 'next/navigation'
+import { useSearchParams, useRouter, usePathname } from 'next/navigation'
 import { MenuViewModal } from "@/components/menu-view-modal"
 import { MenuEditModal } from "@/components/menu-edit-modal"
 import type { MenuItem } from "@/lib/types"
 import { menuItemsService } from "@/lib/services"
 import React from "react" 
 
-// --- Types ---
 interface CompanyMenu {
   id: string
   companyId: string
@@ -66,56 +44,48 @@ interface MenuGroup {
 }
 
 export default function CompanyMenusPage() {
+  const router = useRouter()
+  const pathname = usePathname()
   const searchParams = useSearchParams()
+  
+  // URL se states nikalna (TL ki back navigation requirement ke liye)
   const combinedMenuIdParam = searchParams.get("combinedMenuId")
+  const selectedMenuId = searchParams.get("mid") || ""
+  const rightView = (searchParams.get("v") as 'preview' | 'view' | 'edit') || 'preview'
 
-  // --- State ---
   const [menus, setMenus] = useState<CompanyMenu[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState("")
-  
-  // Modal Search State
   const [modalSearchTerm, setModalSearchTerm] = useState("")
 
-  // Modals state
-  const [viewModalOpen, setViewModalOpen] = useState(false)
-  const [editModalOpen, setEditModalOpen] = useState(false)
   const [detailsModalOpen, setDetailsModalOpen] = useState(false)
-  
-  // Selection state
-  const [selectedMenuId, setSelectedMenuId] = useState<string>("")
   const [selectedGroup, setSelectedGroup] = useState<MenuGroup | null>(null)
   
-  // Deletion state
   const [deleteAlertOpen, setDeleteAlertOpen] = useState(false)
   const [groupToDelete, setGroupToDelete] = useState<MenuGroup | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
 
-  // Data state
   const [menuItems, setMenuItems] = useState<MenuItem[]>([])
   const [menuItemsLoading, setMenuItemsLoading] = useState(false)
 
-  // --- Effects ---
-  useEffect(() => {
-    loadCompanyMenus()
-  }, [combinedMenuIdParam])
+  useEffect(() => { loadCompanyMenus() }, [combinedMenuIdParam])
+  useEffect(() => { preloadMenuItems() }, [])
 
-  useEffect(() => {
-    preloadMenuItems()
-  }, [])
+  // Navigation update function (Browser history stack maintain karne ke liye)
+  const navigateTo = (view: 'preview' | 'view' | 'edit', mid?: string) => {
+    const params = new URLSearchParams(searchParams.toString())
+    params.set("v", view)
+    if (mid) params.set("mid", mid)
+    router.push(`${pathname}?${params.toString()}`)
+  }
 
-  // --- Data Loading ---
   const preloadMenuItems = useCallback(async () => {
     if (menuItems.length > 0 || menuItemsLoading) return
     try {
       setMenuItemsLoading(true)
       const items = await menuItemsService.getAll()
       setMenuItems(items)
-    } catch (error) {
-      console.error("Error preloading menu items:", error)
-    } finally {
-      setMenuItemsLoading(false)
-    }
+    } catch (error) { console.error(error) } finally { setMenuItemsLoading(false) }
   }, [menuItems.length, menuItemsLoading])
 
   const loadCompanyMenus = async () => {
@@ -123,64 +93,26 @@ export default function CompanyMenusPage() {
       setLoading(true)
       const { clearCacheKey } = await import("@/lib/services")
       clearCacheKey("companyMenus-")
-      
-      let q
-      if (combinedMenuIdParam) {
-        q = query(collection(db, "companyMenus"), where("combinedMenuId", "==", combinedMenuIdParam))
-      } else {
-        q = collection(db, "companyMenus")
-      }
-
+      let q = combinedMenuIdParam ? query(collection(db, "companyMenus"), where("combinedMenuId", "==", combinedMenuIdParam)) : collection(db, "companyMenus")
       const snapshot = await getDocs(q)
-      const menusData = snapshot.docs
-        .map((doc) => ({ id: doc.id, ...doc.data() }) as CompanyMenu)
+      const menusData = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }) as CompanyMenu)
         .sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime())
-
       setMenus(menusData)
-    } catch (error) {
-      console.error("Error loading company menus:", error)
-      toast({
-        title: "Error",
-        description: "Failed to load company menus",
-        variant: "destructive",
-      })
-    } finally {
-      setLoading(false)
-    }
+    } finally { setLoading(false) }
   }
 
-  // --- Main Page Grouping Logic ---
   const groupedMenus = useMemo(() => {
     const groups: { [key: string]: MenuGroup } = {}
-
     menus.forEach(menu => {
       const key = menu.combinedMenuId || `${menu.startDate}_${menu.endDate}`
-      
-      if (!groups[key]) {
-        groups[key] = {
-          id: key,
-          startDate: menu.startDate,
-          endDate: menu.endDate,
-          menus: []
-        }
-      }
+      if (!groups[key]) groups[key] = { id: key, startDate: menu.startDate, endDate: menu.endDate, menus: [] }
       groups[key].menus.push(menu)
     })
-
-    let groupArray = Object.values(groups).sort((a, b) => 
-      new Date(b.startDate).getTime() - new Date(a.startDate).getTime()
-    )
-
+    let groupArray = Object.values(groups).sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime())
     if (searchTerm) {
       const lowerSearch = searchTerm.toLowerCase()
-      groupArray = groupArray.filter(group => 
-        group.menus.some(m => 
-          m.companyName.toLowerCase().includes(lowerSearch) || 
-          m.buildingName.toLowerCase().includes(lowerSearch)
-        )
-      )
+      groupArray = groupArray.filter(g => g.menus.some(m => m.companyName.toLowerCase().includes(lowerSearch) || m.buildingName.toLowerCase().includes(lowerSearch)))
     }
-
     return groupArray
   }, [menus, searchTerm])
 
@@ -188,217 +120,52 @@ export default function CompanyMenusPage() {
     const companies = new Set(menus.map((m) => m.companyId))
     return Array.from(companies).map((companyId) => {
       const menu = menus.find((m) => m.companyId === companyId)
-      return {
-        id: companyId,
-        name: menu?.companyName || "Unknown",
-        count: menus.filter((m) => m.companyId === companyId).length,
-      }
+      return { id: companyId, name: menu?.companyName || "Unknown", count: menus.filter((m) => m.companyId === companyId).length }
     }).sort((a, b) => a.name.localeCompare(b.name))
   }, [menus])
 
-  // --- Modal Grouping & Sorting Logic ---
-  // 1. First, create the grouped structure from selected group
-  const groupedModalData = useMemo(() => {
-    if (!selectedGroup) return []
-
-    const groups: { [key: string]: CompanyMenu[] } = {}
-
-    // Group by companyName
-    selectedGroup.menus.forEach(menu => {
-        if (!groups[menu.companyName]) {
-            groups[menu.companyName] = []
-        }
-        groups[menu.companyName].push(menu)
-    })
-
-    // Create array, sort companies alphabetically
-    const sortedCompanies = Object.keys(groups).sort()
-
-    // Map to final structure, sorting buildings alphabetically within each company
-    return sortedCompanies.map(companyName => ({
-        companyName,
-        menus: groups[companyName].sort((a, b) => a.buildingName.localeCompare(b.buildingName))
-    }))
-  }, [selectedGroup])
-
-  // 2. Then, filter that structure based on the search term
-  // This MUST come after groupedModalData is defined
   const filteredModalData = useMemo(() => {
-    if (!modalSearchTerm) return groupedModalData
-
-    const lowerSearch = modalSearchTerm.toLowerCase()
-    
-    return groupedModalData.map(group => {
-      // If company name matches, return the whole group
-      if (group.companyName.toLowerCase().includes(lowerSearch)) {
-        return group
-      }
-      // Otherwise, filter the buildings inside
-      const matchingMenus = group.menus.filter(menu => 
-        menu.buildingName.toLowerCase().includes(lowerSearch)
-      )
-      // Return group only if it has matching buildings
-      return { ...group, menus: matchingMenus }
-    }).filter(group => group.menus.length > 0)
-  }, [groupedModalData, modalSearchTerm])
-
-
-  // --- Actions ---
-
-   const handleOpenGroupDetails = (group: MenuGroup) => {
-    setSelectedGroup(group)
-    setModalSearchTerm("") // Reset search
-    setDetailsModalOpen(true)
-  }
-
-  const handleOpenEditModal = useCallback(
-    (menuId: string) => {
-       setDetailsModalOpen(false) 
-
-      if (menuItems.length === 0 && !menuItemsLoading) {
-        preloadMenuItems()
-      }
-      setSelectedMenuId(menuId)
-      setEditModalOpen(true)
-    },
-    [menuItems.length, menuItemsLoading, preloadMenuItems],
-  )
-
-  const handleOpenViewModal = useCallback((menuId: string) => {
-    
-     setDetailsModalOpen(false)   
-  setSelectedMenuId(menuId)
-    setViewModalOpen(true)
-  }, [])
-
-  const handleDeleteGroupClick = (group: MenuGroup, e: React.MouseEvent) => {
-    e.stopPropagation()
-    setGroupToDelete(group)
-    setDeleteAlertOpen(true)
-  }
-
-  const confirmDeleteGroup = async () => {
-    if (!groupToDelete) return
-    setIsDeleting(true)
-
-    try {
-      const batch = writeBatch(db)
-
-      groupToDelete.menus.forEach(menu => {
-        const menuRef = doc(db, "companyMenus", menu.id)
-        batch.delete(menuRef)
-      })
-
-      if (!groupToDelete.id.includes("_")) {
-         const combinedRef = doc(db, "combinedMenus", groupToDelete.id)
-         batch.delete(combinedRef)
-      }
-
-      await batch.commit()
-
-      toast({
-        title: "Success",
-        description: `Deleted menu group and ${groupToDelete.menus.length} company menus.`,
-      })
-
-      loadCompanyMenus()
-      setDeleteAlertOpen(false)
-      setDetailsModalOpen(false) 
-
-    } catch (error) {
-      console.error("Error deleting group:", error)
-      toast({
-        title: "Error",
-        description: "Failed to delete menus.",
-        variant: "destructive",
-      })
-    } finally {
-      setIsDeleting(false)
-      setGroupToDelete(null)
-    }
-  }
-
-  const handleDownload = (menu: CompanyMenu) => {
-    const csvContent = [
-      ["Company Menu Details"],
-      ["Company", menu.companyName],
-      ["Building", menu.buildingName],
-      ["Start Date", menu.startDate],
-      ["End Date", menu.endDate],
-      ["Status", menu.status],
-    ]
-      .map((row) => row.join(","))
-      .join("\n")
-
-    const blob = new Blob([csvContent], { type: "text/csv" })
-    const url = window.URL.createObjectURL(blob)
-    const a = document.createElement("a")
-    a.href = url
-    a.download = `${menu.companyName}-${menu.startDate}.csv`
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    window.URL.revokeObjectURL(url)
-  }
-
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
+    if (!selectedGroup) return []
+    const groups: { [key: string]: CompanyMenu[] } = {}
+    selectedGroup.menus.forEach(m => {
+        if (!groups[m.companyName]) groups[m.companyName] = []
+        groups[m.companyName].push(m)
     })
-  }
+    const lowerSearch = modalSearchTerm.toLowerCase()
+    return Object.keys(groups).sort().map(name => ({
+        companyName: name,
+        menus: groups[name].filter(m => !modalSearchTerm || m.buildingName.toLowerCase().includes(lowerSearch) || m.companyName.toLowerCase().includes(lowerSearch))
+          .sort((a, b) => a.buildingName.localeCompare(b.buildingName))
+    })).filter(g => g.menus.length > 0)
+  }, [selectedGroup, modalSearchTerm])
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="flex flex-col items-center gap-3">
-          <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
-          <div className="text-lg font-medium">Loading menus...</div>
-        </div>
-      </div>
-    )
-  }
+  const formatDate = (dateString: string) => new Date(dateString).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })
+
+  if (loading) return <div className="flex items-center justify-center h-64"><Loader2 className="h-8 w-8 animate-spin text-blue-600" /></div>
 
   return (
     <div className="space-y-6 p-6">
-      {/* Header */}
+      {/* --- PAGE UI --- */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <Link href="/combined-menus">
-            <Button variant="outline" size="sm">
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              Back
-            </Button>
-          </Link>
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Company-wise Menus</h1>
-            <p className="text-gray-600">Manage generated menus grouped by date range</p>
-          </div>
+          <Link href="/combined-menus"><Button variant="outline" size="sm"><ArrowLeft className="h-4 w-4 mr-2" />Back</Button></Link>
+          <h1 className="text-2xl font-bold text-gray-900">Company-wise Menus</h1>
         </div>
       </div>
 
-      {/* Stats Grid */}
       <Card className="bg-slate-50 border-slate-200">
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-medium text-slate-500 uppercase">
-            Menu Distribution by Company ({uniqueCompanies.length})
+          <CardTitle className="text-xs font-bold text-slate-500 uppercase">
+            MENU DISTRIBUTION BY COMPANY ({uniqueCompanies.length})
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="max-h-40 overflow-y-auto pr-2 custom-scrollbar">
+          <div className="max-h-44 overflow-y-auto pr-2 custom-scrollbar">
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
               {uniqueCompanies.map((company) => (
-                <div 
-                  key={company.id} 
-                  className="bg-white p-3 rounded-md border shadow-sm flex justify-between items-center"
-                >
-                  <span className="text-sm font-medium truncate w-3/4" title={company.name}>
-                    {company.name}
-                  </span>
-                  <span className="bg-blue-100 text-blue-700 text-xs font-bold px-2 py-1 rounded-full">
-                    {company.count}
-                  </span>
+                <div key={company.id} className="bg-white p-3 rounded-xl border shadow-sm flex justify-between items-center">
+                  <span className="text-sm font-semibold truncate text-gray-700">{company.name}</span>
+                  <span className="bg-blue-100 text-blue-700 text-[10px] font-bold px-2 py-0.5 rounded-full">{company.count}</span>
                 </div>
               ))}
             </div>
@@ -406,305 +173,235 @@ export default function CompanyMenusPage() {
         </CardContent>
       </Card>
 
-      {/* Main Content Area */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
-          <CardTitle>Generated Menu Groups</CardTitle>
+          <CardTitle className="text-base font-bold">Generated Menu Groups</CardTitle>
           <div className="relative w-72">
             <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
-            <Input
-              placeholder="Search company or building..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10"
-            />
+            <Input placeholder="Search company or building..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-10 h-9" />
           </div>
         </CardHeader>
-        <CardContent>
-          {groupedMenus.length === 0 ? (
-            <div className="text-center py-12 border-2 border-dashed rounded-lg">
-              <p className="text-gray-500">No menus found matching your criteria</p>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              <div className="rounded-md border">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="bg-slate-50">
-                      <TableHead>Start Date</TableHead>
-                      <TableHead>End Date</TableHead>
-                      <TableHead>Duration</TableHead>
-                      <TableHead>Total Menus</TableHead>
-                      <TableHead>Companies Included</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {groupedMenus.map((group) => {
-                      const duration = Math.ceil((new Date(group.endDate).getTime() - new Date(group.startDate).getTime()) / (1000 * 60 * 60 * 24)) + 1
-                      const previewNames = group.menus.slice(0, 3).map(m => m.companyName).join(", ")
-                      const remainingCount = group.menus.length - 3
-
-                      return (
-                        <TableRow 
-                          key={group.id} 
-                          className="cursor-pointer hover:bg-blue-50/50 transition-colors"
-                          onClick={() => handleOpenGroupDetails(group)}
-                        >
-                          <TableCell className="font-medium text-blue-600">
-                            {formatDate(group.startDate)}
-                          </TableCell>
-                          <TableCell>{formatDate(group.endDate)}</TableCell>
-                          <TableCell>{duration} days</TableCell>
-                          <TableCell>
-                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                              {group.menus.length} Menus
-                            </span>
-                          </TableCell>
-                          <TableCell className="text-gray-500 text-sm max-w-md truncate">
-                             {previewNames}{remainingCount > 0 && ` +${remainingCount} more`}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <div className="flex justify-end items-center gap-2">
-                              <Button 
-                                variant="ghost" 
-                                size="sm" 
-                                className="text-gray-500 hover:text-blue-600"
-                              >
-                                View Details <ChevronRight className="ml-1 h-4 w-4" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="text-red-400 hover:text-red-600 hover:bg-red-50"
-                                onClick={(e) => handleDeleteGroupClick(group, e)}
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      )
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
-            </div>
-          )}
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-slate-50">
+                <TableHead className="pl-6">Start Date</TableHead>
+                <TableHead>End Date</TableHead>
+                <TableHead>Duration</TableHead>
+                <TableHead>Total Menus</TableHead>
+                <TableHead>Companies Included</TableHead>
+                <TableHead className="text-right pr-6">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {groupedMenus.map((group) => (
+                <TableRow key={group.id} className="cursor-pointer hover:bg-slate-50" onClick={() => { setSelectedGroup(group); navigateTo('preview', ""); setDetailsModalOpen(true); }}>
+                  <TableCell className="pl-6 font-medium text-blue-600">{formatDate(group.startDate)}</TableCell>
+                  <TableCell>{formatDate(group.endDate)}</TableCell>
+                  <TableCell>7 days</TableCell>
+                  <TableCell><span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-700">{group.menus.length} Menus</span></TableCell>
+                  <TableCell className="text-gray-500 text-sm">{group.menus.slice(0, 3).map(m => m.companyName).join(", ")} +{group.menus.length - 3} more</TableCell>
+                  <TableCell className="text-right pr-6">
+                    <div className="flex justify-end items-center gap-4">
+                      <Button variant="ghost" size="sm" className="text-gray-400 hover:text-blue-600">View Details <ChevronRight className="ml-1 h-4 w-4" /></Button>
+                      <Trash2 className="h-4 w-4 text-red-300 hover:text-red-500" onClick={(e) => { e.stopPropagation(); setGroupToDelete(group); setDeleteAlertOpen(true); }} />
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
         </CardContent>
       </Card>
 
-      {/* 
-        MODAL: Full Screen Group Details 
-      */}
+      {/* --- SPLIT-SCREEN MAIN UI --- */}
       <Dialog open={detailsModalOpen} onOpenChange={setDetailsModalOpen}>
-        <DialogContent className="fixed left-0 top-0 z-50 flex h-screen w-screen !max-w-none flex-col gap-0 border-none bg-white p-0 shadow-none sm:max-w-none translate-x-0 translate-y-0 data-[state=open]:slide-in-from-left-0 data-[state=open]:slide-in-from-top-0">
+        <DialogContent className="fixed inset-0 z-[60] flex h-screen w-screen !max-w-none flex-col gap-0 border-none bg-white p-0 shadow-none translate-x-0 translate-y-0 overflow-hidden">
           
-          {/* Header */}
-          <div className="border-b px-6 py-4 flex items-center justify-between bg-white shadow-sm z-10 shrink-0">
+          {/* Top Header */}
+          <div className="px-8 py-4 flex items-center justify-between border-b bg-white shrink-0 z-10">
             <div className="flex items-center gap-8">
-              <div>
-                <DialogTitle className="text-xl font-bold">Company Menus Detail</DialogTitle>
-                <DialogDescription className="mt-1">
-                  {selectedGroup && (
-                    <span className="flex items-center gap-2 text-sm">
-                      <span className="bg-blue-100 text-blue-800 px-2 py-0.5 rounded text-xs font-medium">
-                          {formatDate(selectedGroup.startDate)} - {formatDate(selectedGroup.endDate)}
-                      </span>
-                      <span className="text-gray-400">|</span>
-                      <span>{groupedModalData.length} Companies</span>
-                    </span>
-                  )}
-                </DialogDescription>
+              <div onClick={() => navigateTo('preview')} className="cursor-pointer">
+                <DialogTitle className="text-xl font-black text-slate-900 tracking-tight">Company Menus Detail</DialogTitle>
+                {selectedGroup && (
+                  <p className="text-blue-600 font-bold text-[10px] uppercase tracking-widest mt-0.5">
+                    {formatDate(selectedGroup.startDate)} — {formatDate(selectedGroup.endDate)}
+                  </p>
+                )}
               </div>
-
-              {/* SEARCH BOX */}
-              <div className="relative w-80">
-                <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
-                <Input
-                  placeholder="Search company or building..."
-                  value={modalSearchTerm}
-                  onChange={(e) => setModalSearchTerm(e.target.value)}
-                  className="pl-10 h-9 bg-gray-50 border-gray-300 focus:bg-white transition-colors"
+              
+              <div className="relative w-[320px]">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                <Input 
+                  placeholder="Filter buildings..." 
+                  value={modalSearchTerm} 
+                  onChange={(e) => setModalSearchTerm(e.target.value)} 
+                  className="pl-9 h-9 text-sm rounded-lg bg-slate-100 border-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-all" 
                 />
               </div>
             </div>
-
-            <Button variant="ghost" size="icon" onClick={() => setDetailsModalOpen(false)}>
-                <X className="h-6 w-6 text-gray-500" />
+            
+            <Button variant="ghost" size="icon" onClick={() => setDetailsModalOpen(false)} className="rounded-full h-10 w-10 hover:bg-slate-100">
+              <X className="h-5 w-5 text-slate-400" />
             </Button>
           </div>
 
-          {/* Scrollable Content */}
-          <div className="flex-1 overflow-auto bg-gray-50/50 p-6">
-             <div className="max-w-7xl mx-auto space-y-6">
-                <Card className="border shadow-sm">
-                    <Table>
-                    <TableHeader className="bg-white sticky top-0 z-10">
-                        <TableRow>
-                        <TableHead className="w-[40%]">Building / Location</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Date Generated</TableHead>
-                        <TableHead className="text-right">Actions</TableHead>
-                        </TableRow>
-                    </TableHeader>
+          <div className="flex flex-1 overflow-hidden">
+            
+            {/* LEFT SIDEBAR: (320px) */}
+            <div className="w-[320px] border-r bg-slate-50/50 overflow-y-auto custom-scrollbar shrink-0">
+              <div className="p-4 space-y-6">
+                {filteredModalData.map((group) => (
+                  <div key={group.companyName} className="space-y-2">
+                    <div className="flex items-center gap-2 px-1 py-1">
+                      <Building2 className="h-3 w-3 text-slate-400" />
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{group.companyName}</span>
+                    </div>
                     
-                    <TableBody>
-                        {filteredModalData.length === 0 ? (
-                           <TableRow>
-                             <TableCell colSpan={4} className="h-24 text-center text-gray-500">
-                               No results found for "{modalSearchTerm}"
-                             </TableCell>
-                           </TableRow>
-                        ) : (
-                          filteredModalData.map((company) => (
-                          <React.Fragment key={company.companyName}>
-                              {/* Company Header Row */}
-                              <TableRow className="bg-gray-100 hover:bg-gray-100 border-b border-gray-200">
-                                  <TableCell colSpan={4} className="py-3">
-                                      <div className="flex items-center">
-                                          <span className="text-sm font-bold text-gray-900 uppercase tracking-wide">
-                                              {company.companyName}
-                                          </span>
-                                          <span className="ml-2 px-2 py-0.5 bg-gray-200 text-gray-600 text-xs rounded-full">
-                                              {company.menus.length}
-                                          </span>
-                                      </div>
-                                  </TableCell>
-                              </TableRow>
-
-                              {/* Building Rows */}
-                              {company.menus.map((menu) => (
-                                  <TableRow key={menu.id} className="hover:bg-blue-50/30 transition-colors">
-                                      <TableCell className="pl-8 py-3">
-                                          <div className="flex items-center gap-2">
-                                              <div className="h-1.5 w-1.5 rounded-full bg-blue-300"></div>
-                                              <span className="font-medium text-gray-700">{menu.buildingName}</span>
-                                          </div>
-                                      </TableCell>
-                                      <TableCell>
-                                          <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium capitalize ${
-                                              menu.status === 'published' 
-                                                  ? 'bg-green-100 text-green-800 border border-green-200' 
-                                                  : 'bg-yellow-100 text-yellow-800 border border-yellow-200'
-                                          }`}>
-                                              {menu.status}
-                                          </span>
-                                      </TableCell>
-                                      <TableCell className="text-gray-500 text-sm">
-                                          {formatDate(menu.startDate)}
-                                      </TableCell>
-                                      <TableCell className="text-right">
-                                          <div className="flex justify-end gap-1">
-                                              <Button
-                                                  variant="ghost"
-                                                  size="icon"
-                                                  className="h-8 w-8 text-gray-500 hover:text-blue-600"
-                                                  onClick={() => handleOpenViewModal(menu.id)}
-                                                  title="View Menu"
-                                              >
-                                                  <Eye className="h-4 w-4" />
-                                              </Button>
-                                              <Button
-                                                  variant="ghost"
-                                                  size="icon"
-                                                  className="h-8 w-8 text-gray-500 hover:text-blue-600"
-                                                  onClick={() => handleOpenEditModal(menu.id)}
-                                                  title="Edit Menu"
-                                              >
-                                                  <Edit className="h-4 w-4" />
-                                              </Button>
-                                              <Button 
-                                                  variant="ghost" 
-                                                  size="icon"
-                                                  className="h-8 w-8 text-gray-500 hover:text-green-600"
-                                                  onClick={() => handleDownload(menu)}
-                                                  title="Download CSV"
-                                              >
-                                                  <Download className="h-4 w-4" />
-                                              </Button>
-                                          </div>
-                                      </TableCell>
-                                  </TableRow>
-                              ))}
-                          </React.Fragment>
-                          ))
+                    {group.menus.map((menu) => (
+                      <div 
+                        key={menu.id} 
+                        className={`group relative flex items-center justify-between p-3 rounded-xl border transition-all cursor-pointer 
+                          ${selectedMenuId === menu.id 
+                            ? 'bg-white border-blue-600 shadow-md ring-[0.5px] ring-blue-600' 
+                            : 'bg-white border-slate-200 hover:border-blue-300 hover:shadow-sm'}`}
+                        onClick={() => navigateTo('preview', menu.id)}
+                      >
+                        {selectedMenuId === menu.id && (
+                          <div className="absolute left-0 top-3 bottom-3 w-1 bg-blue-600 rounded-r-full" />
                         )}
-                    </TableBody>
-                    </Table>
-                </Card>
+
+                        <div className="flex flex-col gap-0.5 pl-1 overflow-hidden">
+                          <span className={`text-sm font-bold truncate ${selectedMenuId === menu.id ? 'text-blue-700' : 'text-slate-700'}`}>
+                            {menu.buildingName}
+                          </span>
+                          <span className="text-[9px] text-slate-400 font-medium">Click to manage items</span>
+                        </div>
+                        
+                        <div className={`flex items-center gap-0.5 shrink-0 transition-opacity ${selectedMenuId === menu.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
+                           <Button variant="ghost" size="icon" className="h-7 w-7 text-blue-600 hover:bg-blue-50 rounded-md" onClick={(e) => { e.stopPropagation(); navigateTo('view', menu.id); }}>
+                             <Eye className="h-3.5 w-3.5" />
+                           </Button>
+                          <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-400 hover:bg-slate-50 rounded-md" onClick={(e) => { e.stopPropagation(); navigateTo('edit', menu.id); }}>
+                            <Edit className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* RIGHT SIDE: CONTENT AREA */}
+            <div className="flex-1 overflow-hidden flex flex-col bg-white">
+               {!selectedMenuId ? (
+                 <div className="flex-1 flex flex-col items-center justify-center p-12">
+                    <div className="h-20 w-20 bg-slate-50 rounded-[1.5rem] flex items-center justify-center mx-auto rotate-12">
+                       <MousePointer2 className="h-8 w-8 text-slate-200" />
+                    </div>
+                    <div className="space-y-1 text-center mt-5">
+                      <h3 className="text-lg font-bold text-slate-400">Preview Dashboard</h3>
+                      <p className="text-xs text-slate-300 font-medium max-w-[240px]">
+                        Select a building from the sidebar to view or edit the specific menu.
+                      </p>
+                    </div>
+                 </div>
+               ) : (
+                 <div className="flex-1 flex flex-col h-full overflow-hidden">
+                    {/* Switchable Views using URL State */}
+                    {rightView === 'preview' && (
+                      <div className="flex-1 flex flex-col items-center justify-center p-12 animate-in fade-in slide-in-from-right-4 duration-300">
+                        <div className="w-full max-w-2xl space-y-8">
+                          <div className="space-y-3 border-b border-slate-100 pb-8 text-center">
+                            <div className="inline-flex items-center px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 text-[9px] font-black uppercase tracking-widest">
+                              Live Menu Preview
+                            </div>
+                            <h2 className="text-5xl font-black text-slate-900 tracking-tight">
+                              {menus.find(m => m.id === selectedMenuId)?.buildingName}
+                            </h2>
+                            <p className="text-slate-400 text-base font-medium">
+                              You are currently managing the generated menu for this location.
+                            </p>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-6">
+                            <button onClick={() => navigateTo('view')} className="group flex flex-col items-center justify-center p-10 bg-white border-2 border-slate-100 rounded-[2rem] hover:border-blue-600 hover:shadow-lg transition-all">
+                                <div className="h-16 w-16 bg-blue-50 rounded-2xl flex items-center justify-center mb-4 group-hover:bg-blue-600 transition-colors">
+                                  <Eye className="h-8 w-8 text-blue-600 group-hover:text-white transition-colors" />
+                                </div>
+                                <span className="text-xl font-bold text-slate-800">View Menu</span>
+                                <span className="text-slate-400 text-[10px] mt-1">Verify items</span>
+                            </button>
+
+                            <button onClick={() => navigateTo('edit')} className="group flex flex-col items-center justify-center p-10 bg-white border-2 border-slate-100 rounded-[2rem] hover:border-blue-600 hover:shadow-lg transition-all">
+                                <div className="h-16 w-16 bg-slate-50 rounded-2xl flex items-center justify-center mb-4 group-hover:bg-blue-600 transition-colors">
+                                  <Edit className="h-8 w-8 text-slate-600 group-hover:text-white transition-colors" />
+                                </div>
+                                <span className="text-xl font-bold text-slate-800">Edit Menu</span>
+                                <span className="text-slate-400 text-[10px] mt-1">Update prices</span>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {rightView === 'view' && (
+                      <div className="flex-1 overflow-auto p-8 animate-in fade-in zoom-in-95 duration-200">
+                         <div className="mb-4">
+                            {/* Browser history back manual fallback */}
+                            <Button variant="ghost" size="sm" onClick={() => router.back()} className="text-slate-500 text-xs font-bold hover:text-blue-600">
+                               <ArrowLeft className="h-3.5 w-3.5 mr-2" /> Back
+                            </Button>
+                         </div>
+                         <MenuViewModal isOpen={true} onClose={() => router.back()} menuId={selectedMenuId} menuType="company" preloadedMenuItems={menuItems} />
+                      </div>
+                    )}
+
+                    {rightView === 'edit' && (
+                      <div className="flex-1 overflow-auto p-8 animate-in fade-in zoom-in-95 duration-200">
+                         <div className="mb-4">
+                            <Button variant="ghost" size="sm" onClick={() => router.back()} className="text-slate-500 text-xs font-bold hover:text-blue-600">
+                               <ArrowLeft className="h-3.5 w-3.5 mr-2" /> Back
+                            </Button>
+                         </div>
+                         <MenuEditModal isOpen={true} onClose={() => router.back()} menuId={selectedMenuId} menuType="company" onSave={loadCompanyMenus} preloadedMenuItems={menuItems} />
+                      </div>
+                    )}
+                 </div>
+               )}
             </div>
           </div>
 
-          {/* Footer Actions */}
-          <div className="border-t bg-white px-6 py-4 flex justify-between items-center z-10 shrink-0">
-             <Button 
-                variant="destructive" 
-                onClick={(e) => selectedGroup && handleDeleteGroupClick(selectedGroup, e)}
-                className="gap-2"
-            >
-               <Trash2 className="h-4 w-4" />
-               Delete Entire Group
+          {/* Modal Footer */}
+          <div className="px-8 py-3 border-t bg-white flex justify-between items-center shrink-0 z-10">
+             <Button variant="ghost" size="sm" className="text-red-500 font-bold hover:bg-red-50 rounded-lg" onClick={() => { setGroupToDelete(selectedGroup); setDeleteAlertOpen(true); }}>
+               <Trash2 className="h-3.5 w-3.5 mr-2" /> Delete Entire Group
              </Button>
-             <Button variant="outline" onClick={() => setDetailsModalOpen(false)}>
+             <Button variant="outline" onClick={() => setDetailsModalOpen(false)} className="px-10 h-10 text-sm font-bold border-2 rounded-lg">
                Close
              </Button>
           </div>
-
         </DialogContent>
       </Dialog>
 
       {/* Delete Confirmation Alert */}
       <AlertDialog open={deleteAlertOpen} onOpenChange={setDeleteAlertOpen}>
         <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will permanently delete the menu group for the period{" "}
-              <span className="font-medium text-gray-900">
-                {groupToDelete && `${formatDate(groupToDelete.startDate)} to ${formatDate(groupToDelete.endDate)}`}
-              </span>
-              . This action will remove <span className="font-bold">{groupToDelete?.menus.length}</span> individual company menus.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
+          <AlertDialogHeader><AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle></AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={confirmDeleteGroup}
-              disabled={isDeleting}
-              className="bg-red-600 hover:bg-red-700 focus:ring-red-600"
-            >
-              {isDeleting ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Deleting...
-                </>
-              ) : (
-                "Delete Group"
-              )}
-            </AlertDialogAction>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={async () => {
+              if (!groupToDelete) return; setIsDeleting(true);
+              const batch = writeBatch(db);
+              groupToDelete.menus.forEach(m => batch.delete(doc(db, "companyMenus", m.id)));
+              if (!groupToDelete.id.includes("_")) batch.delete(doc(db, "combinedMenus", groupToDelete.id));
+              await batch.commit(); loadCompanyMenus(); setDeleteAlertOpen(false); setDetailsModalOpen(false); setIsDeleting(false);
+            }} className="bg-red-600">Delete</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Individual Menu Modals */}
-      <MenuViewModal
-        isOpen={viewModalOpen}
-        onClose={() => setViewModalOpen(false)}
-        menuId={selectedMenuId}
-        menuType="company"
-        preloadedMenuItems={menuItems}
-      />
-      <MenuEditModal
-        isOpen={editModalOpen}
-        onClose={() => setEditModalOpen(false)}
-        menuId={selectedMenuId}
-        menuType="company"
-        onSave={() => {
-           loadCompanyMenus()
-        }}
-        preloadedMenuItems={menuItems}
-      />
     </div>
   )
 }
