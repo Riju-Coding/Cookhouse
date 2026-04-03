@@ -4,8 +4,8 @@ import React, { useState, useEffect } from "react"
 import { permissionsService, type Permission } from "@/lib/firestore/permissionsService"
 import { toast } from "@/hooks/use-toast"
 
-// Icons
-import { Plus, MoreHorizontal, Pencil, Trash2, Ban } from "lucide-react"
+// Icons - added CheckCircle for the enable action
+import { Plus, Pencil, Trash2, Ban, CheckCircle } from "lucide-react"
 
 // UI Components
 import { Button } from "@/components/ui/button"
@@ -15,13 +15,6 @@ import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { Switch } from "@/components/ui/switch"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { 
-  DropdownMenu, 
-  DropdownMenuContent, 
-  DropdownMenuItem, 
-  DropdownMenuSeparator, 
-  DropdownMenuTrigger 
-} from "@/components/ui/dropdown-menu"
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 
 const initialPermissionState = {
@@ -90,10 +83,10 @@ export default function PermissionManagementPage() {
       setIsSaving(true)
       if (editingId) {
         await permissionsService.update(editingId, formData)
-        toast({ title: "Success", description: "Permission updated" })
+        toast({ title: "Success", description: "Permission updated successfully" })
       } else {
         await permissionsService.add(formData)
-        toast({ title: "Success", description: "Permission created" })
+        toast({ title: "Success", description: "Permission created successfully" })
       }
       setIsModalOpen(false)
       fetchData()
@@ -161,40 +154,35 @@ export default function PermissionManagementPage() {
                   </Badge>
                 </TableCell>
                 <TableCell className="text-right">
-                  {/* --- ACTION MENU --- */}
-                  <DropdownMenu>
-                    {/* Added stopPropagation so clicks don't interfere with the table row */}
-                    <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                      <Button variant="ghost" className="h-8 w-8 p-0">
-                        <MoreHorizontal className="h-4 w-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
+                  {/* INLINE ACTIONS INSTEAD OF DROPDOWN */}
+                  <div className="flex items-center justify-end gap-2">
+                    <Button 
+                      variant="ghost" 
+                      className="h-8 w-8 p-0 text-blue-600 hover:text-blue-800 hover:bg-blue-50" 
+                      onClick={() => handleEdit(perm)}
+                      title="Edit Permission"
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </Button>
                     
-                    <DropdownMenuContent align="end" className="w-40">
-                      {/* EDIT OPTION */}
-                      <DropdownMenuItem onClick={() => handleEdit(perm)} className="cursor-pointer">
-                        <Pencil className="mr-2 h-4 w-4" /> 
-                        Edit
-                      </DropdownMenuItem>
-                      
-                      {/* DISABLE/ENABLE OPTION */}
-                      <DropdownMenuItem onClick={() => handleToggleStatus(perm)} className="cursor-pointer">
-                        <Ban className="mr-2 h-4 w-4" />
-                        {perm.status === 'active' ? 'Disable' : 'Enable'}
-                      </DropdownMenuItem>
-                      
-                      <DropdownMenuSeparator />
-                      
-                      {/* DELETE OPTION */}
-                      <DropdownMenuItem 
-                        onClick={() => handleDelete(perm.id)} 
-                        className="text-red-600 focus:text-red-600 cursor-pointer"
-                      >
-                        <Trash2 className="mr-2 h-4 w-4" /> 
-                        Delete
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                    <Button 
+                      variant="ghost" 
+                      className={`h-8 w-8 p-0 ${perm.status === 'active' ? 'text-orange-600 hover:text-orange-800 hover:bg-orange-50' : 'text-green-600 hover:text-green-800 hover:bg-green-50'}`} 
+                      onClick={() => handleToggleStatus(perm)}
+                      title={perm.status === 'active' ? 'Disable Permission' : 'Enable Permission'}
+                    >
+                      {perm.status === 'active' ? <Ban className="h-4 w-4" /> : <CheckCircle className="h-4 w-4" />}
+                    </Button>
+
+                    <Button 
+                      variant="ghost" 
+                      className="h-8 w-8 p-0 text-red-600 hover:text-red-800 hover:bg-red-50" 
+                      onClick={() => handleDelete(perm.id)}
+                      title="Delete Permission"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </TableCell>
               </TableRow>
             ))}
@@ -202,6 +190,7 @@ export default function PermissionManagementPage() {
         </Table>
       </div>
 
+      {/* ... (Dialog remains exactly the same as previous step) ... */}
       <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
@@ -210,11 +199,11 @@ export default function PermissionManagementPage() {
           <div className="space-y-4 py-4">
             <div className="space-y-2">
               <Label>Permission Name *</Label>
-              <Input value={formData.name} onChange={handleNameChange} />
+              <Input value={formData.name} onChange={handleNameChange} placeholder="e.g., View Reports" />
             </div>
             <div className="space-y-2">
               <Label>Permission Key</Label>
-              <Input value={formData.key} readOnly className="bg-gray-100" />
+              <Input value={formData.key} readOnly className="bg-gray-100" placeholder="Auto-generated (e.g., VIEW_REPORTS)" />
             </div>
             <div className="space-y-2">
               <Label>Page Name / Group *</Label>

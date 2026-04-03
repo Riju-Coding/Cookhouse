@@ -55,6 +55,7 @@
     "next": "14.2.16",
     "next-themes": "latest",
     "nextjs-toploader": "^3.9.17",
+    "radix-ui": "^1.4.3",
     "react": "^18",
     "react-day-picker": "latest",
     "react-dom": "^18",
