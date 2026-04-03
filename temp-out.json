@@ -1,0 +1,33 @@
+{
+  "interfaces": [
+    "48: interface MealPlanChoice {",
+    "62: interface CompanyChoice {",
+    "70: interface MenuCell {",
+    "76: interface UpdationRecord {",
+    "418: interface ItemCompanyAssignmentModalProps {",
+    "1512: interface MenuEditModalProps {",
+    "1521: interface MenuData {"
+  ],
+  "services": [
+    "109: const menuItemsService = {",
+    "130: const repetitionLogsService = {",
+    "158: const companyMenusService = {",
+    "174: const updationService = {"
+  ],
+  "components": [
+    "191: const ItemDescriptionModal = memo(function ItemDescriptionModal({",
+    "402: const UpdationRecordBadge = ({ updation }: { updation: UpdationRecord }) => {",
+    "430: const ItemCompanyAssignmentModal = memo(function ItemCompanyAssignmentModal({",
+    "726: const SubServiceConfirmationModal = memo(function SubServiceConfirmationModal({",
+    "1103: function ConflictDetailsDrawer({",
+    "1532: const RemovedItemsModal = memo(function RemovedItemsModal({",
+    "1600: const TimelineEntry = memo(function TimelineEntry({",
+    "1657: const MenuGridCell = memo(function MenuGridCell({",
+    "2670: const ServiceNavigationPanel = memo(function ServiceNavigationPanel({",
+    "2730: const LoadingProgress = ({ progress, message }: { progress: number; message: str",
+    "2877: export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo",
+    "2918: const CHUNK_SIZE = 7",
+    "5234: const ExcelJS = (await import(\"exceljs\")).default;",
+    "5235: const JSZip = (await import(\"jszip\")).default;"
+  ]
+}

@@ -423,6 +423,9 @@ export default function MealPlanStructurePage() {
     setIsChoiceModalOpen(true)
   }
 
+  // Compute total selected sub meals for live counter
+  const totalSelectedSubMeals = choiceSelections.reduce((sum, mp) => sum + (mp.subMealPlans?.length || 0), 0)
+
   const handleCreateChoice = () => {
     if (!choiceContext || choiceSelections.length === 0) {
       toast({ title: "Error", description: "Please select at least one meal plan", variant: "destructive" })
@@ -437,6 +440,16 @@ export default function MealPlanStructurePage() {
 
     if (hasInvalidMealPlan) {
       toast({ title: "Error", description: "Please select sub meal plan, it's mandatory for each meal plan", variant: "destructive" })
+      return
+    }
+
+    // Validate that item count is strictly less than total selected sub meals
+    if (choiceQuantity >= totalSelectedSubMeals) {
+      toast({
+        title: "Invalid Item Count",
+        description: `Item count (${choiceQuantity}) must be less than total sub meals selected (${totalSelectedSubMeals}). Please select more sub meals or reduce the item count.`,
+        variant: "destructive",
+      })
       return
     }
 
@@ -542,6 +555,29 @@ export default function MealPlanStructurePage() {
 
   const handleSaveStructure = async () => {
     if (!selectedCompany || !selectedBuilding) return
+
+    // Pre-save validation: ensure all choices have quantity < total sub meals
+    for (const day of DAYS) {
+      const dayServices = weeklyStructure[day] || []
+      for (const svc of dayServices) {
+        for (const sub of svc.subServices || []) {
+          const dayChoices = sub.choices?.[day] || []
+          for (const choice of dayChoices) {
+            const totalSubMeals = (choice.mealPlans || []).reduce(
+              (sum: number, mp: any) => sum + (mp.subMealPlans?.length || 0), 0
+            )
+            if (choice.quantity >= totalSubMeals) {
+              toast({
+                title: "Invalid Choice Configuration",
+                description: `Choice on ${day} in ${svc.serviceName || 'service'} → ${sub.subServiceName || 'sub-service'}: item count (${choice.quantity}) must be less than total sub meals (${totalSubMeals}).`,
+                variant: "destructive",
+              })
+              return
+            }
+          }
+        }
+      }
+    }
 
     setLoading(true)
     try {
@@ -1112,10 +1148,31 @@ export default function MealPlanStructurePage() {
               <div className="text-sm text-gray-600 bg-blue-50 p-3 rounded">
                 Selected: <strong>{choiceQuantity}</strong> item{choiceQuantity !== 1 ? 's' : ''}
               </div>
+              <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 p-2.5 rounded flex items-center gap-2">
+                <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                <span>Item count must be <strong>less than</strong> the total number of sub meals you select in the next step.</span>
+              </div>
             </div>
           ) : (
             // STEP 2: Select Meal Plans
             <div className="px-1 flex-1 overflow-hidden flex flex-col">
+              {/* Live counter bar */}
+              <div className={`mb-2 p-2.5 rounded-lg border text-sm font-medium flex items-center justify-between ${
+                totalSelectedSubMeals > 0 && choiceQuantity >= totalSelectedSubMeals
+                  ? 'bg-red-50 border-red-200 text-red-700'
+                  : totalSelectedSubMeals > choiceQuantity
+                    ? 'bg-green-50 border-green-200 text-green-700'
+                    : 'bg-gray-50 border-gray-200 text-gray-600'
+              }`}>
+                <span>Item count: <strong>{choiceQuantity}</strong> &nbsp;|&nbsp; Sub meals selected: <strong>{totalSelectedSubMeals}</strong></span>
+                {totalSelectedSubMeals > 0 && choiceQuantity >= totalSelectedSubMeals && (
+                  <span className="text-xs bg-red-100 text-red-800 px-2 py-0.5 rounded-full">⚠ Need more sub meals</span>
+                )}
+                {totalSelectedSubMeals > choiceQuantity && (
+                  <span className="text-xs bg-green-100 text-green-800 px-2 py-0.5 rounded-full">✓ Valid</span>
+                )}
+              </div>
+
               <div className="relative mb-2">
                 <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-500" />
                 <Input

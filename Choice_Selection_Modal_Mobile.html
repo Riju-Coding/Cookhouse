@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Weekly Menu — Choice Selection</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "on-tertiary-container": "#00a2e5",
+                        "secondary": "#505f76",
+                        "on-error": "#ffffff",
+                        "secondary-fixed-dim": "#b7c8e1",
+                        "tertiary-fixed-dim": "#89ceff",
+                        "secondary-fixed": "#d3e4fe",
+                        "error-container": "#ffdad6",
+                        "secondary-container": "#d0e1fb",
+                        "tertiary": "#001e2f",
+                        "on-primary": "#ffffff",
+                        "on-secondary": "#ffffff",
+                        "on-primary-fixed-variant": "#3c494f",
+                        "surface": "#f7f9fb",
+                        "primary-fixed-dim": "#bbc8d0",
+                        "inverse-primary": "#bbc8d0",
+                        "error": "#ba1a1a",
+                        "primary-container": "#263238",
+                        "on-primary-container": "#8d9aa1",
+                        "surface-container-high": "#e6e8ea",
+                        "outline": "#73787a",
+                        "on-error-container": "#93000a",
+                        "inverse-on-surface": "#eff1f3",
+                        "background": "#f7f9fb",
+                        "surface-container-lowest": "#ffffff",
+                        "surface-container": "#eceef0",
+                        "primary-fixed": "#d7e4ec",
+                        "on-primary-fixed": "#111d23",
+                        "on-surface": "#191c1e",
+                        "tertiary-container": "#00344d",
+                        "surface-variant": "#e0e3e5",
+                        "on-surface-variant": "#43474a",
+                        "inverse-surface": "#2d3133",
+                        "surface-tint": "#546067",
+                        "outline-variant": "#c3c7ca",
+                        "surface-container-low": "#f2f4f6",
+                        "on-secondary-fixed": "#0b1c30",
+                        "surface-dim": "#d8dadc",
+                        "tertiary-fixed": "#c9e6ff",
+                        "on-tertiary-fixed": "#001e2f",
+                        "surface-container-highest": "#e0e3e5",
+                        "primary": "#111d23",
+                        "on-secondary-container": "#54647a",
+                        "on-tertiary": "#ffffff",
+                        "on-background": "#191c1e",
+                        "surface-bright": "#f7f9fb",
+                        "on-secondary-fixed-variant": "#38485d",
+                        "on-tertiary-fixed-variant": "#004c6e"
+                    },
+                    fontFamily: {
+                        "headline": ["Inter"],
+                        "body": ["Inter"],
+                        "label": ["Inter"]
+                    },
+                    borderRadius: {"DEFAULT": "0.125rem", "lg": "0.25rem", "xl": "0.5rem", "full": "0.75rem"},
+                },
+            },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            vertical-align: middle;
+        }
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        
+        /* Connector Styles */
+        .connector-line {
+            position: absolute;
+            border-top: 1.5px dashed #c3c7ca;
+            height: 1px;
+            z-index: 10;
+            pointer-events: none;
+        }
+        .connector-node {
+            width: 6px;
+            height: 6px;
+            background: #111d23;
+            border-radius: 50%;
+            position: absolute;
+            z-index: 11;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-surface font-body text-on-surface antialiased overflow-x-hidden">
+<!-- Top AppBar (from JSON Reference) -->
+<header class="bg-[#111D23] text-white flex justify-between items-center w-full px-6 py-4 fixed top-0 z-50">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-white">menu</span>
+<h1 class="font-['Inter'] font-bold text-[1.5rem] tracking-[-0.02em] text-white">Menu Logistics</h1>
+</div>
+<div class="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center overflow-hidden">
+<img alt="User Profile" data-alt="User profile avatar icon placeholder" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBL7cK4Fc61rIzxjimSLH8RB0ZHO0ENjyXNMeoKFShZTv38UCDAdJbo_B3WDyfZhTMkUMpWOm656MZC8f2d7okQfn3u4MAxHV57sxA_UTZN5RNPvojs4t9CWeEtL46he7i0XoS3EWa1vLDyKQOoEmAauYJSPBpNK0K9QNN-OmT-iufe47hNSfLgpqgYoW54s4yrX7bw5vXJNhHowPGsb10ZZK5W8Yijewhf9lpoUXjqiEVnhFTUJXSsloNRE6Gnm5NlREuyDwJ3mWA"/>
+</div>
+</header>
+<main class="pt-16 pb-24 min-h-screen">
+<!-- Modal Header Section -->
+<section class="px-6 pt-8 pb-4 bg-surface-container-lowest">
+<div class="flex justify-between items-start mb-2">
+<div>
+<h2 class="text-[2.25rem] font-bold tracking-[-0.02em] leading-tight text-primary">Weekly Menu — Choice Selection</h2>
+<p class="text-on-surface-variant text-[0.875rem] mt-1">Select items to complete your menu for the upcoming cycle.</p>
+</div>
+<div class="bg-on-tertiary-container/10 text-on-tertiary-container px-3 py-1 rounded-full text-[0.75rem] font-bold flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+                    12 SELECTED
+                </div>
+</div>
+</section>
+<!-- Building Tabs -->
+<nav class="bg-surface-container-lowest sticky top-16 z-40 border-b border-outline-variant/10 shadow-sm">
+<div class="flex overflow-x-auto hide-scrollbar px-4 py-3 gap-3">
+<button class="flex-none flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-xl shadow-md transition-all duration-200">
+<span class="text-[0.75rem] font-semibold whitespace-nowrap uppercase tracking-wider">Google NYC - Chelsea</span>
+<span class="bg-white/20 text-white text-[10px] px-1.5 py-0.5 rounded-md font-bold">3</span>
+</button>
+<button class="flex-none flex items-center gap-2 px-4 py-2 hover:bg-surface-container-high text-on-surface-variant rounded-xl transition-all duration-200">
+<span class="text-[0.75rem] font-semibold whitespace-nowrap uppercase tracking-wider">Meta NY - Hudson</span>
+<span class="bg-surface-container-high text-on-surface-variant text-[10px] px-1.5 py-0.5 rounded-md font-bold">5</span>
+</button>
+<button class="flex-none flex items-center gap-2 px-4 py-2 hover:bg-surface-container-high text-on-surface-variant rounded-xl transition-all duration-200">
+<span class="text-[0.75rem] font-semibold whitespace-nowrap uppercase tracking-wider">Apple Fifth Ave</span>
+<span class="bg-surface-container-high text-on-surface-variant text-[10px] px-1.5 py-0.5 rounded-md font-bold">4</span>
+</button>
+<button class="flex-none flex items-center gap-2 px-4 py-2 hover:bg-surface-container-high text-on-surface-variant rounded-xl transition-all duration-200">
+<span class="text-[0.75rem] font-semibold whitespace-nowrap uppercase tracking-wider">Amazon NY12</span>
+<span class="bg-surface-container-high text-on-surface-variant text-[10px] px-1.5 py-0.5 rounded-md font-bold">0</span>
+</button>
+</div>
+</nav>
+<!-- Grid Container -->
+<div class="mt-6 px-4">
+<div class="overflow-x-auto rounded-xl shadow-2xl border border-outline-variant/10 bg-surface-container-lowest hide-scrollbar">
+<table class="w-full border-collapse min-w-[1000px] relative">
+<!-- Table Header: Dates -->
+<thead>
+<tr class="bg-surface-container">
+<th class="sticky left-0 z-30 bg-surface-container text-left p-4 border-r border-outline-variant/10 w-48">
+<span class="text-[0.75rem] font-bold uppercase tracking-widest text-on-surface-variant">Menu Structure</span>
+</th>
+<th class="p-4 border-r border-outline-variant/5">
+<div class="flex flex-col items-center">
+<span class="text-[0.75rem] font-medium text-on-surface-variant">MON</span>
+<span class="text-[1.125rem] font-bold">12 Oct</span>
+</div>
+</th>
+<th class="p-4 border-r border-outline-variant/5">
+<div class="flex flex-col items-center">
+<span class="text-[0.75rem] font-medium text-on-surface-variant">TUE</span>
+<span class="text-[1.125rem] font-bold">13 Oct</span>
+<span class="mt-1 bg-amber-100 text-amber-800 text-[9px] px-1.5 py-0.5 rounded font-bold tracking-tighter">CHOICE</span>
+</div>
+</th>
+<th class="p-4 border-r border-outline-variant/5">
+<div class="flex flex-col items-center">
+<span class="text-[0.75rem] font-medium text-on-surface-variant">WED</span>
+<span class="text-[1.125rem] font-bold">14 Oct</span>
+</div>
+</th>
+<th class="p-4 border-r border-outline-variant/5">
+<div class="flex flex-col items-center">
+<span class="text-[0.75rem] font-medium text-on-surface-variant">THU</span>
+<span class="text-[1.125rem] font-bold">15 Oct</span>
+<span class="mt-1 bg-amber-100 text-amber-800 text-[9px] px-1.5 py-0.5 rounded font-bold tracking-tighter">CHOICE</span>
+</div>
+</th>
+<th class="p-4">
+<div class="flex flex-col items-center">
+<span class="text-[0.75rem] font-medium text-on-surface-variant">FRI</span>
+<span class="text-[1.125rem] font-bold">16 Oct</span>
+</div>
+</th>
+</tr>
+</thead>
+<!-- Lunch Service Group -->
+<tbody>
+<tr class="bg-primary text-white">
+<td class="px-4 py-2 text-[0.75rem] font-bold uppercase tracking-widest flex items-center gap-2" colspan="6">
+<span class="material-symbols-outlined text-[16px]">restaurant</span>
+                                Lunch Service — Main Entree
+                            </td>
+</tr>
+<!-- Row: Classic Entree -->
+<tr class="group">
+<td class="sticky left-0 z-20 bg-surface-container-lowest p-4 border-r border-b border-outline-variant/10">
+<div class="flex flex-col">
+<span class="text-[0.875rem] font-semibold text-primary">Classic</span>
+<span class="text-[0.75rem] text-on-surface-variant">Entree</span>
+</div>
+</td>
+<!-- Mon: Simple Item -->
+<td class="p-3 border-r border-b border-outline-variant/5 align-top">
+<div class="p-3 bg-surface-container-low rounded-lg text-[0.875rem] text-on-surface-variant italic">
+                                    No Selection Required
+                                </div>
+</td>
+<!-- Tue: Choice A (Selected) -->
+<td class="p-3 border-r border-b border-outline-variant/5 align-top relative">
+<div class="connector-node -right-1 top-1/2 -translate-y-1/2 bg-on-tertiary-container"></div>
+<div class="connector-line w-full left-[100%] top-1/2 -translate-y-1/2 border-on-tertiary-container/40"></div>
+<button class="w-full text-left p-3 rounded-lg border-2 border-on-tertiary-container bg-on-tertiary-container text-white shadow-lg transition-all scale-105 z-20 relative">
+<div class="flex justify-between items-start">
+<span class="font-bold text-[0.875rem]">Herb Roasted Chicken</span>
+<span class="material-symbols-outlined text-[18px]" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+</div>
+<div class="text-[0.75rem] mt-1 opacity-80">Choice ID: 882A</div>
+</button>
+</td>
+<!-- Wed: Item -->
+<td class="p-3 border-r border-b border-outline-variant/5 align-top">
+<div class="p-3 bg-surface-container-low rounded-lg text-[0.875rem] text-on-surface-variant italic">
+                                    No Selection Required
+                                </div>
+</td>
+<!-- Thu: Choice A (Part of set) -->
+<td class="p-3 border-r border-b border-outline-variant/5 align-top relative">
+<div class="connector-node -left-1 top-1/2 -translate-y-1/2 bg-on-tertiary-container"></div>
+<button class="w-full text-left p-3 rounded-lg border-2 border-on-tertiary-container/30 bg-surface-container-lowest text-on-tertiary-container hover:bg-on-tertiary-container/5 transition-colors">
+<div class="flex justify-between items-start">
+<span class="font-bold text-[0.875rem]">Lemon Garlic Salmon</span>
+<span class="text-[0.65rem] border border-on-tertiary-container/20 px-1 rounded">882A</span>
+</div>
+<div class="text-[0.75rem] mt-1 text-on-surface-variant">Selected on Tuesday</div>
+</button>
+</td>
+<!-- Fri: Item -->
+<td class="p-3 border-b border-outline-variant/5 align-top">
+<div class="p-3 bg-surface-container-low rounded-lg text-[0.875rem] text-on-surface-variant italic">
+                                    No Selection Required
+                                </div>
+</td>
+</tr>
+<!-- Row: Vegetarian Entree -->
+<tr class="group">
+<td class="sticky left-0 z-20 bg-surface-container-lowest p-4 border-r border-b border-outline-variant/10">
+<div class="flex flex-col">
+<span class="text-[0.875rem] font-semibold text-primary">Vegetarian</span>
+<span class="text-[0.75rem] text-on-surface-variant">Entree</span>
+</div>
+</td>
+<td class="p-3 border-r border-b border-outline-variant/5 align-top">
+<button class="w-full text-left p-3 rounded-lg border-2 border-emerald-600/40 bg-white text-emerald-800 hover:bg-emerald-50 transition-colors">
+<span class="font-bold text-[0.875rem]">Spinach Ricotta Pie</span>
+</button>
+</td>
+<td class="p-3 border-r border-b border-outline-variant/5 align-top">
+<button class="w-full text-left p-3 rounded-lg border-2 border-emerald-600/40 bg-white text-emerald-800 hover:bg-emerald-50 transition-colors">
+<span class="font-bold text-[0.875rem]">Quinoa Stuffed Peppers</span>
+</button>
+</td>
+<td class="p-3 border-r border-b border-outline-variant/5 align-top">
+<button class="w-full text-left p-3 rounded-lg border-2 border-emerald-600 bg-emerald-600 text-white shadow-lg transition-all">
+<div class="flex justify-between items-start">
+<span class="font-bold text-[0.875rem]">Mushroom Risotto</span>
+<span class="material-symbols-outlined text-[18px]" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+</div>
+</button>
+</td>
+<td class="p-3 border-r border-b border-outline-variant/5 align-top">
+<button class="w-full text-left p-3 rounded-lg border-2 border-emerald-600/20 bg-surface-container-high opacity-50 cursor-not-allowed">
+<span class="font-bold text-[0.875rem]">Lentil Shepherd's Pie</span>
+<div class="text-[0.7rem] mt-1 uppercase font-bold text-on-surface-variant">Deselected</div>
+</button>
+</td>
+<td class="p-3 border-b border-outline-variant/5 align-top">
+<button class="w-full text-left p-3 rounded-lg border-2 border-emerald-600/40 bg-white text-emerald-800 hover:bg-emerald-50 transition-colors">
+<span class="font-bold text-[0.875rem]">Thai Green Tofu Curry</span>
+</button>
+</td>
+</tr>
+</tbody>
+<!-- Dinner Service Group -->
+<tbody>
+<tr class="bg-primary text-white">
+<td class="px-4 py-2 text-[0.75rem] font-bold uppercase tracking-widest flex items-center gap-2" colspan="6">
+<span class="material-symbols-outlined text-[16px]">dinner_dining</span>
+                                Dinner Service — Premium Sides
+                            </td>
+</tr>
+<tr>
+<td class="sticky left-0 z-20 bg-surface-container-lowest p-4 border-r border-b border-outline-variant/10">
+<div class="flex flex-col">
+<span class="text-[0.875rem] font-semibold text-primary">Artisan</span>
+<span class="text-[0.75rem] text-on-surface-variant">Sides</span>
+</div>
+</td>
+<td class="p-3 border-r border-b border-outline-variant/5 align-top">
+<button class="w-full text-left p-3 rounded-lg border-2 border-violet-600/40 bg-white text-violet-800">
+<span class="font-bold text-[0.875rem]">Truffle Mash</span>
+</button>
+</td>
+<td class="p-3 border-r border-b border-outline-variant/5 align-top relative">
+<div class="connector-node -right-1 top-1/2 -translate-y-1/2 bg-violet-600"></div>
+<div class="connector-line w-full left-[100%] top-1/2 -translate-y-1/2 border-violet-400"></div>
+<button class="w-full text-left p-3 rounded-lg border-2 border-violet-600/40 bg-white text-violet-800">
+<span class="font-bold text-[0.875rem]">Honey Glazed Carrots</span>
+</button>
+</td>
+<td class="p-3 border-r border-b border-outline-variant/5 align-top relative">
+<div class="connector-node -left-1 top-1/2 -translate-y-1/2 bg-violet-600"></div>
+<button class="w-full text-left p-3 rounded-lg border-2 border-violet-600 bg-violet-600 text-white shadow-lg">
+<div class="flex justify-between items-start">
+<span class="font-bold text-[0.875rem]">Asparagus w/ Almonds</span>
+<span class="material-symbols-outlined text-[18px]" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+</div>
+</button>
+</td>
+<td class="p-3 border-r border-b border-outline-variant/5 align-top">
+<button class="w-full text-left p-3 rounded-lg border-2 border-violet-600/40 bg-white text-violet-800">
+<span class="font-bold text-[0.875rem]">Roasted Fingerlings</span>
+</button>
+</td>
+<td class="p-3 border-b border-outline-variant/5 align-top">
+<button class="w-full text-left p-3 rounded-lg border-2 border-violet-600/40 bg-white text-violet-800">
+<span class="font-bold text-[0.875rem]">Charred Broccoli</span>
+</button>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</main>
+<!-- Navigation Drawer Suppression (Contextual Logic) -->
+<!-- Suppressed on this Task-Focused screen to prioritize Canvas -->
+<!-- Floating Selection Summary / Footer -->
+<footer class="fixed bottom-0 left-0 w-full z-[60] bg-white/90 backdrop-blur-xl border-t border-outline-variant/20 px-6 py-6 pb-8 flex items-center justify-between gap-4 shadow-[0px_-12px_32px_rgba(17,29,35,0.06)]">
+<button class="flex-1 py-4 px-6 border border-outline font-semibold rounded-xl text-primary hover:bg-surface-container-low transition-colors text-[0.875rem] uppercase tracking-wider">
+            Cancel
+        </button>
+<button class="flex-[2] py-4 px-6 bg-primary text-white font-bold rounded-xl shadow-xl active:scale-95 transition-all text-[0.875rem] uppercase tracking-wider flex items-center justify-center gap-2">
+            Confirm Selection
+            <span class="bg-white/20 px-2 py-0.5 rounded text-[0.75rem]">(12)</span>
+</button>
+</footer>
+<!-- BottomNavBar (from JSON Reference) - Suppressed as per Task-Focused rule -->
+</body></html>

@@ -17,7 +17,10 @@ import {
   Building2,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   Utensils,
+  ArrowRightLeft,
+  Link2,
 } from "lucide-react"
 import { Spinner } from "@/components/ui/spinner"
 
@@ -72,11 +75,16 @@ interface CompanyChoice {
 
 type SelectionMap = Record<string, SubMealSelection[]>
 
+export interface ChoiceConfirmData {
+  selections: SelectionMap
+  selectedChoiceItems: Record<string, string[]> // Maps itemId -> array of choice keys (e.g., "companyId-buildingId-choiceId")
+}
+
 interface ChoiceSelectionModalProps {
   isOpen: boolean
   onClose: () => void
   companies: CompanyChoice[]
-  onConfirm: (selections: SelectionMap) => void
+  onConfirm: (data: ChoiceConfirmData) => void
   loading?: boolean
   menuData?: Record<string, any>
   allMenuItems?: MenuItem[]
@@ -84,78 +92,8 @@ interface ChoiceSelectionModalProps {
   mealPlans?: MealPlan[]
   subMealPlans?: SubMealPlan[]
   mealPlanAssignments?: any[]
+  initialSelections?: SelectionMap // Pre-filled selections from saved choices
 }
-
-/* ═══════════════════════════════════════════════════════════
-   ✦ NEW — Choice color palette
-   Each choiceId gets a unique visual identity from this list.
-   ═══════════════════════════════════════════════════════════ */
-const CHOICE_PALETTE = [
-  {
-    cellBg:    "bg-sky-50/60",
-    borderL:   "border-l-sky-500",
-    idle:      "border-sky-300",
-    idleHover: "hover:border-sky-500 hover:bg-sky-50",
-    sel:       "bg-sky-600 border-sky-700",
-    ring:      "ring-sky-400/40",
-  },
-  {
-    cellBg:    "bg-violet-50/60",
-    borderL:   "border-l-violet-500",
-    idle:      "border-violet-300",
-    idleHover: "hover:border-violet-500 hover:bg-violet-50",
-    sel:       "bg-violet-600 border-violet-700",
-    ring:      "ring-violet-400/40",
-  },
-  {
-    cellBg:    "bg-emerald-50/60",
-    borderL:   "border-l-emerald-500",
-    idle:      "border-emerald-300",
-    idleHover: "hover:border-emerald-500 hover:bg-emerald-50",
-    sel:       "bg-emerald-600 border-emerald-700",
-    ring:      "ring-emerald-400/40",
-  },
-  {
-    cellBg:    "bg-rose-50/60",
-    borderL:   "border-l-rose-500",
-    idle:      "border-rose-300",
-    idleHover: "hover:border-rose-500 hover:bg-rose-50",
-    sel:       "bg-rose-600 border-rose-700",
-    ring:      "ring-rose-400/40",
-  },
-  {
-    cellBg:    "bg-amber-50/60",
-    borderL:   "border-l-amber-500",
-    idle:      "border-amber-300",
-    idleHover: "hover:border-amber-500 hover:bg-amber-50",
-    sel:       "bg-amber-600 border-amber-700",
-    ring:      "ring-amber-400/40",
-  },
-  {
-    cellBg:    "bg-indigo-50/60",
-    borderL:   "border-l-indigo-500",
-    idle:      "border-indigo-300",
-    idleHover: "hover:border-indigo-500 hover:bg-indigo-50",
-    sel:       "bg-indigo-600 border-indigo-700",
-    ring:      "ring-indigo-400/40",
-  },
-  {
-    cellBg:    "bg-teal-50/60",
-    borderL:   "border-l-teal-500",
-    idle:      "border-teal-300",
-    idleHover: "hover:border-teal-500 hover:bg-teal-50",
-    sel:       "bg-teal-600 border-teal-700",
-    ring:      "ring-teal-400/40",
-  },
-  {
-    cellBg:    "bg-fuchsia-50/60",
-    borderL:   "border-l-fuchsia-500",
-    idle:      "border-fuchsia-300",
-    idleHover: "hover:border-fuchsia-500 hover:bg-fuchsia-50",
-    sel:       "bg-fuchsia-600 border-fuchsia-700",
-    ring:      "ring-fuchsia-400/40",
-  },
-]
 
 export function ChoiceSelectionModal({
   isOpen,
@@ -169,8 +107,12 @@ export function ChoiceSelectionModal({
   mealPlans = [],
   subMealPlans = [],
   mealPlanAssignments = [],
+  initialSelections = {},
 }: ChoiceSelectionModalProps) {
-  const [selections, setSelections] = useState<SelectionMap>({})
+  // CRITICAL: Deep clone initialSelections to prevent state sharing with parent
+  const [selections, setSelections] = useState<SelectionMap>(() => 
+    JSON.parse(JSON.stringify(initialSelections))
+  )
   const [activeTabIndex, setActiveTabIndex] = useState(0)
   // Track selection count per choice to enforce quantity limits
   const [choiceSelectionCounts, setChoiceSelectionCounts] = useState<Record<string, number>>({})
@@ -192,68 +134,31 @@ export function ChoiceSelectionModal({
       )
       .reduce((sum, [, arr]) => sum + arr.length, 0)
 
+  // Per-building, per-day choice completion stats
+  const getBuildingChoiceProgress = (building: CompanyChoice) => {
+    // Group choices by day
+    const dayMap = new Map<string, { total: number; completed: number }>()
+    building.choices.forEach((c: any) => {
+      const day = c.choiceDay?.toLowerCase() || ''
+      if (!dayMap.has(day)) dayMap.set(day, { total: 0, completed: 0 })
+      const entry = dayMap.get(day)!
+      entry.total++
+      // Check if this choice is fully completed
+      const key = `${building.companyId}-${building.buildingId}-${c.choiceId}`
+      const selected = (selections[key] || []).length
+      if (selected >= c.quantity) entry.completed++
+    })
+    return dayMap
+  }
+
   const activeBuilding = companies[activeTabIndex] || companies[0]
 
-  // Handler to save choices to company menus
-  const handleSaveChoicesToMenus = async (
-    selections: SelectionMap,
-    building: CompanyChoice,
-    buildingData: CompanyChoice
-  ) => {
-    try {
-      // Group selections by choice ID
-      const choiceMap: Record<string, any> = {}
-      
-      Object.entries(selections).forEach(([key, items]) => {
-        items.forEach((item: SubMealSelection) => {
-          // Extract choice ID from the key or item context
-          const choice = building.choices.find(c => 
-            c.mealPlans.some(mp =>
-              mp.mealPlanId === item.mealPlanId &&
-              mp.subMealPlans.some(smp => smp.subMealPlanId === item.subMealPlanId)
-            )
-          )
-          
-          if (choice) {
-            if (!choiceMap[choice.choiceId]) {
-              choiceMap[choice.choiceId] = {
-                choiceId: choice.choiceId,
-                quantity: choice.quantity,
-                items: [],
-                serviceId: choice.serviceId,
-                subServiceId: choice.subServiceId,
-                day: choice.choiceDay
-              }
-            }
-            choiceMap[choice.choiceId].items.push({
-              id: item.selectedItemId,
-              name: item.selectedItemName,
-              mealPlanId: item.mealPlanId,
-              subMealPlanId: item.subMealPlanId
-            })
-          }
-        })
-      })
-
-      // Save to company menus via API
-      const response = await fetch('/api/company-menus/save-choices', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          companyId: building.companyId,
-          buildingId: building.buildingId,
-          choices: Object.values(choiceMap),
-          dateRange: dateRange
-        })
-      })
-
-      if (!response.ok) {
-        console.error('Failed to save choices to menus')
-      }
-    } catch (error) {
-      console.error('Error saving choices to menus:', error)
+  // When modal opens/reopens, if there are initial selections, deep clone them
+  React.useEffect(() => {
+    if (isOpen && Object.keys(initialSelections).length > 0) {
+      setSelections(JSON.parse(JSON.stringify(initialSelections)))
     }
-  }
+  }, [isOpen, initialSelections])
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -294,14 +199,24 @@ export function ChoiceSelectionModal({
               <div className="flex gap-1 py-2">
                 {companies.map((building, idx) => {
                   const isActive = idx === activeTabIndex
-                  const count = getTabSelectionCount(building)
+                  const choiceProgress = getBuildingChoiceProgress(building)
+                  const totalAllChoices = building.choices.length
+                  const completedAllChoices = Array.from(choiceProgress.values()).reduce((s, d) => s + d.completed, 0)
+                  const hasAnyChoices = totalAllChoices > 0
+                  // Build day summary string
+                  const daySummaryParts = Array.from(choiceProgress.entries())
+                    .map(([day, stats]) => ({
+                      label: day ? (day.charAt(0).toUpperCase() + day.slice(1, 3)) : '?',
+                      completed: stats.completed,
+                      total: stats.total,
+                      isDone: stats.completed === stats.total,
+                    }))
                   return (
-                    <button
+                    <div
                       key={`${building.companyId}-${building.buildingId}`}
-                      onClick={() => setActiveTabIndex(idx)}
                       className={`
-                        relative flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium
-                        whitespace-nowrap transition-all duration-200 border
+                        flex flex-col rounded-lg text-sm font-medium
+                        whitespace-nowrap transition-all duration-200 border shrink-0
                         ${
                           isActive
                             ? "bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-200"
@@ -309,36 +224,76 @@ export function ChoiceSelectionModal({
                         }
                       `}
                     >
-                      <Building2 className="h-4 w-4 shrink-0" />
-                      <span className="truncate max-w-[140px]">
-                        {building.companyName}
-                      </span>
-                      <span
-                        className={`text-[10px] ${
-                          isActive ? "text-blue-100" : "text-gray-400"
-                        }`}
+                      <button
+                        onClick={() => setActiveTabIndex(idx)}
+                        className="relative flex items-center justify-between gap-2 px-4 py-2.5 w-full text-left"
                       >
-                        — {building.buildingName}
-                      </span>
-                      {count > 0 && (
-                        <span
-                          className={`
-                            ml-1 text-[10px] font-bold rounded-full min-w-[18px] h-[18px]
-                            flex items-center justify-center px-1
-                            ${
-                              isActive
-                                ? "bg-white text-blue-600"
-                                : "bg-green-100 text-green-700"
-                            }
-                          `}
-                        >
-                          {count}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <Building2 className="h-4 w-4 shrink-0" />
+                          <span className="truncate max-w-[140px]">
+                            {building.companyName}
+                          </span>
+                          <span
+                            className={`text-[10px] ${
+                              isActive ? "text-blue-100" : "text-gray-400"
+                            }`}
+                          >
+                            — {building.buildingName}
+                          </span>
+                          {hasAnyChoices && (
+                            <span
+                              className={`
+                                ml-1 text-[10px] font-bold rounded-full min-w-[18px] h-[18px]
+                                flex items-center justify-center px-1.5
+                                ${
+                                  completedAllChoices === totalAllChoices
+                                    ? isActive ? "bg-green-400 text-white" : "bg-green-100 text-green-700"
+                                    : isActive
+                                      ? "bg-white/90 text-blue-600"
+                                      : "bg-amber-100 text-amber-700"
+                                }
+                              `}
+                            >
+                              {completedAllChoices}/{totalAllChoices}
+                            </span>
+                          )}
+                        </div>
+                        {isActive && (
+                          <span className="absolute -bottom-[1px] left-3 right-3 h-[3px] bg-blue-600 rounded-t-full" />
+                        )}
+                      </button>
+
+                      {/* Sub-header for Day-by-day stats in building card (Horizontal alignment) */}
+                      {hasAnyChoices && daySummaryParts.length > 0 && (
+                        <div className={`px-4 pb-2 pt-1.5 flex flex-wrap items-center gap-1 text-[10px] border-t ${
+                          isActive ? 'bg-blue-700/20 border-white/10' : 'bg-gray-50 border-gray-100'
+                        }`}>
+                          {(() => {
+                            // Sort correctly based on Mon-Sun order
+                            const DAY_ORDER = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
+                            const sortedParts = [...daySummaryParts].sort((a, b) => {
+                              const idA = DAY_ORDER.indexOf(a.label.toLowerCase())
+                              const idB = DAY_ORDER.indexOf(b.label.toLowerCase())
+                              return (idA === -1 ? 99 : idA) - (idB === -1 ? 99 : idB)
+                            })
+                            
+                            return sortedParts.map((dp, i) => (
+                              <span key={i} className="flex items-center">
+                                <span className="font-medium" style={{ color: isActive ? 'hsl(210, 100%, 90%)' : 'hsl(210, 10%, 30%)' }}>
+                                  {dp.label}
+                                  <span className="font-medium ml-0.5" style={{ color: dp.isDone ? 'hsl(120, 60%, 40%)' : isActive ? 'hsl(210, 100%, 80%)' : 'hsl(210, 10%, 50%)' }}>
+                                    ({dp.completed}/{dp.total})
+                                  </span>
+                                </span>
+                                {i < sortedParts.length - 1 && (
+                                  <span className="font-light mx-1.5" style={{ color: isActive ? 'hsla(210, 100%, 80%, 0.4)' : 'hsl(210, 10%, 70%)' }}>|</span>
+                                )}
+                              </span>
+                            ))
+                          })()}
+                        </div>
                       )}
-                      {isActive && (
-                        <span className="absolute -bottom-[9px] left-3 right-3 h-[3px] bg-blue-600 rounded-t-full" />
-                      )}
-                    </button>
+                    </div>
                   )
                 })}
               </div>
@@ -388,9 +343,37 @@ export function ChoiceSelectionModal({
             <Button
               className="bg-blue-600 hover:bg-blue-700 text-white"
               onClick={() => {
-                // Save choices to company menus before confirming
-                handleSaveChoicesToMenus(selections, activeBuilding, companies[activeTabIndex])
-                onConfirm(selections)
+                // Clean up selections: Remove any entries with undefined values
+                const cleanedSelections: SelectionMap = {}
+                Object.entries(selections).forEach(([key, items]) => {
+                  const validItems = items.filter(item => 
+                    item && 
+                    item.selectedItemId !== undefined && 
+                    item.subMealPlanId !== undefined
+                  )
+                  if (validItems.length > 0) {
+                    cleanedSelections[key] = validItems
+                  }
+                })
+                
+                // Build choice items map for marking in company-wise menu
+                const selectedChoiceItems: Record<string, string[]> = {}
+                Object.entries(cleanedSelections).forEach(([key, items]) => {
+                  items.forEach((item) => {
+                    const itemId = item.selectedItemId
+                    if (!selectedChoiceItems[itemId]) {
+                      selectedChoiceItems[itemId] = []
+                    }
+                    selectedChoiceItems[itemId].push(key) // Store the choice key
+                  })
+                })
+                
+                // Pass both selections and choice items info
+                const result: ChoiceConfirmData = {
+                  selections: cleanedSelections,
+                  selectedChoiceItems: selectedChoiceItems
+                }
+                onConfirm(result)
               }}
               disabled={!hasAnySelection || loading}
             >
@@ -442,10 +425,20 @@ function BuildingMenuGrid({
      ✦ NEW — Map each choiceId to a palette entry
      ═══════════════════════════════════════════════════ */
   const choiceColorMap = useMemo(() => {
-    const map = new Map<string, (typeof CHOICE_PALETTE)[0]>()
+    const map = new Map<string, any>()
     const ids = [...new Set(building.choices.map((c: any) => c.choiceId))]
+    const total = ids.length
+    
     ids.forEach((id: string, i: number) => {
-      map.set(id, CHOICE_PALETTE[i % CHOICE_PALETTE.length])
+      // distribute hue 0-360 evenly
+      const hue = Math.round((360 / Math.max(1, total)) * i)
+      
+      map.set(id, {
+        primary: `hsl(${hue}, 85%, 45%)`,
+        lightBg: `hsla(${hue}, 85%, 50%, 0.1)`,
+        selectedBg: `hsla(${hue}, 85%, 50%, 0.15)`,
+        text: `hsl(${hue}, 90%, 30%)`
+      })
     })
     return map
   }, [building.choices])
@@ -551,6 +544,30 @@ function BuildingMenuGrid({
       .filter(Boolean)
   }
 
+  /* ═══════════════════════════════════════════════════
+     ✦ NEW — Pool ALL items across ALL sub-meals in a choice
+     ═══════════════════════════════════════════════════ */
+  const getAllItemsForChoice = (
+    date: string,
+    choice: any,
+    group: ServiceGroup
+  ) => {
+    const allItems = new Map<string, any>()
+    choice.mealPlans.forEach((mp: any) => {
+      mp.subMealPlans.forEach((smp: any) => {
+        const items = getCellItems(
+          date,
+          group.serviceId,
+          group.subServiceId,
+          mp.mealPlanId,
+          smp.subMealPlanId
+        )
+        items.forEach((item: any) => allItems.set(item.id, item))
+      })
+    })
+    return Array.from(allItems.values())
+  }
+
   const getChoiceForCell = (
     date: string,
     mealPlanId: string,
@@ -574,52 +591,70 @@ function BuildingMenuGrid({
     )
   }
 
-  const handleSelect = (choiceId: string, row: any, item: any) => {
+  const toggleSelection = (choiceId: string, row: any, item: any) => {
     const key = `${building.companyId}-${building.buildingId}-${choiceId}`
-    
-    // Get the choice to check quantity limit
     const choice = building.choices.find((c: any) => c.choiceId === choiceId)
     if (!choice) return
-    
+
     setSelections((prev: any) => {
       const current = prev[key] || []
       
-      // Check if we're already at the quantity limit
-      if (current.length >= choice.quantity && !current.some((s: any) => s.subMealPlanId === row.subMealPlanId)) {
-        // Can't add more if at limit
-        console.warn(`[v0] Choice quantity limit reached (${choice.quantity} items). Cannot add more.`)
-        return prev
-      }
-      
-      const filtered = current.filter(
-        (s: any) => s.subMealPlanId !== row.subMealPlanId
+      // Check if this item is already selected in THIS cell
+      const existingIdx = current.findIndex(
+        (s: any) => s.subMealPlanId === row.subMealPlanId && s.selectedItemId === item.id
       )
-      return {
-        ...prev,
-        [key]: [
-          ...filtered,
-          {
-            mealPlanId: row.mealPlanId,
-            mealPlanName: row.mealPlanName,
-            subMealPlanId: row.subMealPlanId,
-            subMealPlanName: row.subMealPlanName,
-            selectedItemId: item.id,
-            selectedItemName: item.name,
-          },
-        ],
+      
+      if (existingIdx >= 0) {
+        // Remove it (toggle off)
+        const next = [...current]
+        next.splice(existingIdx, 1)
+        return { ...prev, [key]: next }
+      } else {
+        // Add it (toggle on)
+        // Check if we reached the choice limit
+        if (current.length >= choice.quantity) {
+          console.warn(`[v0] Choice limit reached`)
+          return prev
+        }
+        
+        // Prevent adding if it's already selected in ANOTHER cell of this choice
+        const selectedElsewhere = current.some((s: any) => s.selectedItemId === item.id)
+        if (selectedElsewhere) {
+          return prev
+        }
+
+        return {
+          ...prev,
+          [key]: [
+            ...current,
+            {
+              mealPlanId: row.mealPlanId,
+              mealPlanName: row.mealPlanName,
+              subMealPlanId: row.subMealPlanId,
+              subMealPlanName: row.subMealPlanName,
+              selectedItemId: item.id,
+              selectedItemName: item.name,
+            },
+          ],
+        }
       }
     })
   }
 
-  const clearSelection = (choiceId: string, subMealPlanId: string) => {
-    const key = `${building.companyId}-${building.buildingId}-${choiceId}`
-    setSelections((prev: any) => ({
-      ...prev,
-      [key]: (prev[key] || []).filter(
-        (s: any) => s.subMealPlanId !== subMealPlanId
-      ),
-    }))
-  }
+  /* ── Per-choice selection status (selected count vs limit) ── */
+  const choiceSelectionStatus = useMemo(() => {
+    const status: Record<string, { selected: number; limit: number; isAtLimit: boolean }> = {}
+    building.choices.forEach((c: any) => {
+      const key = `${building.companyId}-${building.buildingId}-${c.choiceId}`
+      const selected = (selections[key] || []).length
+      status[c.choiceId] = {
+        selected,
+        limit: c.quantity,
+        isAtLimit: selected >= c.quantity,
+      }
+    })
+    return status
+  }, [building, selections])
 
   /* ── Count choices in this building ── */
   const choiceDayCount = useMemo(() => {
@@ -718,32 +753,80 @@ function BuildingMenuGrid({
                       </span>
                     </th>
                     {dateRange.map((d: any) => {
-                      // Only show "CHOICE" badge if this specific service/sub-service has choices on this day
-                      const hasChoice = building.choices.some(
+                      // Gather all choices for this day + service/sub-service
+                      const dayChoices = building.choices.filter(
                         (c: any) =>
                           c.choiceDay?.toLowerCase() === d.day.toLowerCase() &&
                           (c.serviceId === group.serviceId || !c.serviceId) &&
                           (c.subServiceId === group.subServiceId || !c.subServiceId)
                       )
+                      const hasChoice = dayChoices.length > 0
+
+                      // Compute live counter: completed choices / total choices
+                      const completedChoices = dayChoices.filter((c: any) => {
+                        const status = choiceSelectionStatus[c.choiceId]
+                        return status && status.selected >= status.limit
+                      }).length
+                      const totalChoices = dayChoices.length
+
                       return (
                         <th
                           key={d.date}
                           className={`
-                            border-b-2 border-r border-gray-300 px-4 py-3 text-center min-w-[200px]
+                            border-b-2 border-r border-gray-300 px-4 py-3 text-center min-w-[240px]
                             ${hasChoice ? "bg-amber-50" : "bg-gray-50"}
                           `}
                         >
-                          <div className="text-xs font-bold text-gray-700 uppercase">
-                            {d.day}
+                          <div className="flex items-center justify-center gap-1.5">
+                            <span className="text-xs font-bold text-gray-700 uppercase">
+                              {d.day}
+                            </span>
+                            {hasChoice && (
+                              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+                                completedChoices === totalChoices
+                                  ? 'bg-green-200 text-green-800'
+                                  : 'bg-amber-200 text-amber-800'
+                              }`}>
+                                ({completedChoices}/{totalChoices})
+                              </span>
+                            )}
                           </div>
                           <div className="text-[10px] text-gray-400 mt-0.5">
                             {d.date}
                           </div>
+                          {/* Choice summary horizontal slider */}
                           {hasChoice && (
-                            <div className="mt-1">
-                              <span className="inline-block text-[9px] font-bold bg-amber-200 text-amber-800 px-1.5 py-0.5 rounded-full">
-                                CHOICE
-                              </span>
+                            <div className="mt-2 w-full max-w-[220px] mx-auto overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-gray-200 scrollbar-track-transparent">
+                              <div className="flex gap-2 w-max px-1 pt-1">
+                                {dayChoices.map((c: any, ci: number) => {
+                                  const status = choiceSelectionStatus[c.choiceId]
+                                  const smpNames = c.mealPlans
+                                    .flatMap((mp: any) => mp.subMealPlans.map((s: any) => s.subMealPlanName || 'SMP'))
+                                    .join(', ')
+                                  const cc = choiceColorMap.get(c.choiceId)
+                                  return (
+                                    <div
+                                      key={c.choiceId}
+                                      className="text-[10px] w-[140px] shrink-0 p-1.5 rounded border-l-4 shadow-sm text-left bg-white"
+                                      style={cc ? { backgroundColor: cc.lightBg, borderLeftColor: cc.primary } : { borderLeftColor: '#e5e7eb' }}
+                                    >
+                                      <div className="flex items-center justify-between">
+                                        <span className="font-bold" style={{ color: cc?.text || '#374151' }}>C{ci + 1}</span>
+                                        <span className={`font-bold px-1 rounded text-[9px] ${
+                                          status && status.selected >= status.limit
+                                            ? 'bg-green-100 text-green-700'
+                                            : 'bg-gray-100 text-gray-600'
+                                        }`}>
+                                          ({status?.selected || 0}/{status?.limit || 0})
+                                        </span>
+                                      </div>
+                                      <div className="text-gray-500 mt-1 truncate font-medium" title={smpNames}>
+                                        {smpNames}
+                                      </div>
+                                    </div>
+                                  )
+                                })}
+                              </div>
                             </div>
                           )}
                         </th>
@@ -791,29 +874,13 @@ function BuildingMenuGrid({
                               }`}
                             />
                             <div className="flex items-center gap-2 ml-6">
-                              {rowHasAnyChoice && (
-                                <div className="flex-shrink-0">
-                                  {/* Show choice ID badge for rows with choices */}
-                                  {dateRange.map((d: any) => {
-                                    const choice = getChoiceForCell(d.date, row.mealPlanId, row.subMealPlanId, group.serviceId, group.subServiceId)
-                                    return choice ? (
-                                      <div
-                                        key={`${d.date}-${choice.choiceId}`}
-                                        className="text-[9px] font-bold bg-blue-600 text-white px-1.5 py-0.5 rounded-full inline-block"
-                                        title={`Choice ID: ${choice.choiceId.substring(0, 8)}... (Qty: ${choice.quantity})`}
-                                      >
-                                        {choice.choiceId.substring(0, 8)}...
-                                      </div>
-                                    ) : null
-                                  }).filter(Boolean)[0]}
-                                </div>
-                              )}
+                              {/* Removed blue choice ID badge for a cleaner look */}
                               <div className="min-w-0">
-                                <div className="font-semibold text-gray-900 text-sm leading-tight">
+                                <div className="font-semibold text-gray-800 text-sm leading-tight">
                                   {row.mealPlanName}
                                 </div>
-                                <div className="text-xs text-gray-400 mt-0.5">
-                                  ↳ {row.subMealPlanName}
+                                <div className="text-xs font-medium text-gray-500 mt-1">
+                                  {row.subMealPlanName}
                                 </div>
                               </div>
                             </div>
@@ -823,7 +890,7 @@ function BuildingMenuGrid({
                         {/* ═══════════════════════════════════════
                             ✦ MODIFIED — Date cells with choice colors
                             ═══════════════════════════════════════ */}
-                        {dateRange.map((d: any) => {
+                        {dateRange.map((d: any, dIdx: number) => {
                           const items = getCellItems(
                             d.date,
                             group.serviceId,
@@ -855,11 +922,46 @@ function BuildingMenuGrid({
                             ? choiceColorMap.get(choice.choiceId)
                             : null
 
+                          /* ✦ NEW — check if this choice is at its selection limit */
+                          const choiceStatus = choice
+                            ? choiceSelectionStatus[choice.choiceId]
+                            : null
+                          const isChoiceAtLimit = choiceStatus?.isAtLimit ?? false
+                          const isThisRowSelectedForChoice = selected != null
+
+                          // Check if the next cell in this row has the same choice to draw a connector
+                          const nextDay = dateRange[dIdx + 1]
+                          const nextChoice = nextDay
+                            ? getChoiceForCell(
+                                nextDay.date,
+                                row.mealPlanId,
+                                row.subMealPlanId,
+                                group.serviceId,
+                                group.subServiceId
+                              )
+                            : null
+                          const hasNextSameChoice =
+                            choice && nextChoice && choice.choiceId === nextChoice.choiceId
+
+                          // Check if the previous cell in this row has the same choice
+                          const prevDay = dateRange[dIdx - 1]
+                          const prevChoice = prevDay
+                            ? getChoiceForCell(
+                                prevDay.date,
+                                row.mealPlanId,
+                                row.subMealPlanId,
+                                group.serviceId,
+                                group.subServiceId
+                              )
+                            : null
+                          const hasPrevSameChoice =
+                            choice && prevChoice && choice.choiceId === prevChoice.choiceId
+
                           return (
                             <td
                               key={d.date}
                               className={`
-                                px-3 py-2.5 align-top min-w-[200px]
+                                relative px-3 py-2.5 align-top min-w-[200px]
                                 border-r border-gray-200
                                 ${!isLast ? "border-b border-gray-200" : ""}
                                 ${cc
@@ -868,70 +970,145 @@ function BuildingMenuGrid({
                                 }
                               `}
                             >
-                              {items.length > 0 ? (
-                                <div className="space-y-1.5">
-                                  {items.map((item: any) => {
-                                    if (!isChoice) {
-                                      // ── Plain menu item (unchanged) ──
-                                      return (
+                              {/* Visual Arrow Connector (Stitch Style: Nodes and Lines) */}
+                              
+                              {/* Left Node AND Left-spanning SVG line (if connected to a previous choice) */}
+                              {hasPrevSameChoice && cc && (
+                                <>
+                                  <div className={`absolute w-[10px] h-[10px] rounded-full border-2 border-white -left-[5px] top-1/2 -translate-y-1/2 z-30 ${cc.borderL.replace("border-l-", "bg-")}`}></div>
+                                  <svg className="absolute top-1/2 left-0 w-full h-[4px] -translate-y-1/2 pointer-events-none z-[5] overflow-visible" preserveAspectRatio="none">
+                                    <line stroke={cc.hex} strokeWidth="2.5" strokeLinecap="round" strokeDasharray="6,4" x1="-100%" x2="0%" y1="50%" y2="50%" fill="none"></line>
+                                  </svg>
+                                </>
+                              )}
+
+                              {/* Right Node + Right-spanning SVG line (if connected to a next choice) */}
+                              {hasNextSameChoice && cc && (
+                                <>
+                                  <div className={`absolute w-[10px] h-[10px] rounded-full border-2 border-white -right-[5px] top-1/2 -translate-y-1/2 z-30 ${cc.borderL.replace("border-l-", "bg-")}`}></div>
+                                  <svg className="absolute top-1/2 left-0 w-full h-[4px] -translate-y-1/2 pointer-events-none z-[5] overflow-visible" preserveAspectRatio="none">
+                                    <line stroke={cc.hex} strokeWidth="2.5" strokeLinecap="round" strokeDasharray="6,4" x1="100%" x2="200%" y1="50%" y2="50%" fill="none"></line>
+                                  </svg>
+                                </>
+                              )}
+                              {(() => {
+                                // For choice cells, pool ALL items across the choice
+                                const displayItems = isChoice && choice
+                                  ? getAllItemsForChoice(d.date, choice, group)
+                                  : items
+
+                                if (displayItems.length === 0) {
+                                  return (
+                                    <div className="text-[10px] text-gray-300 text-center py-3">
+                                      —
+                                    </div>
+                                  )
+                                }
+
+                                if (!isChoice) {
+                                  // ── Plain menu items (non-choice) ──
+                                  return (
+                                    <div className="space-y-1.5">
+                                      {displayItems.map((item: any) => (
                                         <div
                                           key={item.id}
                                           className="text-[11px] text-gray-600 bg-gray-100 border border-gray-200 px-2.5 py-1.5 rounded-md"
                                         >
                                           {item.name}
                                         </div>
-                                      )
-                                    }
+                                      ))}
+                                    </div>
+                                  )
+                                }
 
-                                    // ── Choice item ──
-                                    const isSelected =
-                                      selected?.selectedItemId === item.id
+                                // ── Choice cell with inline selection list ──
+                                const choiceStatusObj = choiceSelectionStatus[choice.choiceId]
+                                const isChoiceAtLimit = choiceStatusObj?.isAtLimit ?? false
 
-                                    return (
-                                      <button
-                                        key={item.id}
-                                        onClick={() =>
-                                          isSelected
-                                            ? clearSelection(
-                                                choice.choiceId,
-                                                row.subMealPlanId
-                                              )
-                                            : handleSelect(
-                                                choice.choiceId,
-                                                row,
-                                                item
-                                              )
-                                        }
-                                        /* ✦ MODIFIED — choice-colored button states */
-                                        className={`
-                                          w-full text-left px-2.5 py-2 rounded-lg text-xs
-                                          transition-all duration-150 border
-                                          ${
-                                            isSelected
-                                              ? `${cc!.sel} text-white shadow-md font-bold ring-2 ${cc!.ring}`
-                                              : selected
-                                              ? "bg-white border-gray-200 text-gray-400 hover:border-gray-300 hover:text-gray-600 hover:bg-gray-50/50"
-                                              : `bg-white ${cc!.idle} text-gray-700 ${cc!.idleHover} hover:text-gray-900 shadow-sm`
-                                          }
-                                        `}
-                                      >
-                                        <span className="flex items-center gap-1.5">
-                                          {isSelected && (
-                                            <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
-                                          )}
-                                          <span className="leading-tight">
-                                            {item.name}
-                                          </span>
-                                        </span>
-                                      </button>
-                                    )
-                                  })}
-                                </div>
-                              ) : (
-                                <div className="text-[10px] text-gray-300 text-center py-3">
-                                  —
-                                </div>
-                              )}
+                                // Find all items selected for this choice
+                                const choiceKey = `${building.companyId}-${building.buildingId}-${choice.choiceId}`
+                                const selectedItemsForChoice = selections[choiceKey] || []
+                                
+                                // Items selected specifically in this cell
+                                const selectedInThisCell = selectedItemsForChoice.filter(
+                                  (s: any) => s.subMealPlanId === row.subMealPlanId
+                                )
+                                
+                                // Choice sorting index (to get C1, C2, etc.)
+                                // Group by day to find its index within this day
+                                const dayChoices = building.choices.filter((c: any) => c.choiceDay?.toLowerCase() === d.day.toLowerCase())
+                                const choiceIndex = dayChoices.findIndex((c: any) => c.choiceId === choice.choiceId)
+                                const cLabel = `C${choiceIndex >= 0 ? choiceIndex + 1 : '?'}`
+                                
+                                const choiceLabel = `${cLabel}(${choiceStatusObj?.selected || 0}/${choice.quantity})`
+
+                                return (
+                                  <div className="space-y-2 relative text-left w-full">
+                                    {/* Choice dynamic header - Simplified since checkboxes render the checked items below  */}
+                                    <div className="text-[10px] font-bold tracking-wide mb-1" style={{ color: cc?.text || '#374151' }}>
+                                      <span>{choiceLabel}</span>
+                                    </div>
+
+                                    {/* Items List (Inline checkboxes instead of dropdown) */}
+                                    <div className="flex flex-col gap-1.5 mt-2">
+                                      {[...displayItems].sort((a: any, b: any) => {
+                                        const aSel = selectedInThisCell.some((s:any) => s.selectedItemId === a.id)
+                                        const bSel = selectedInThisCell.some((s:any) => s.selectedItemId === b.id)
+                                        if (aSel && !bSel) return -1
+                                        if (!aSel && bSel) return 1
+                                        return 0
+                                      }).map((item: any) => {
+                                        const isSelectedHere = selectedInThisCell.some((s:any) => s.selectedItemId === item.id)
+                                        const selectedElsewhere = !isSelectedHere ? selectedItemsForChoice.find((s:any) => s.selectedItemId === item.id) : null
+                                        const isDisabled = !!selectedElsewhere || (!isSelectedHere && isChoiceAtLimit)
+                                        
+                                        return (
+                                          <div key={item.id} className="flex items-start gap-1">
+                                            {isSelectedHere && <span className="text-gray-400 font-normal mt-1.5 text-[10px] ml-1">|-</span>}
+                                            <label 
+                                              className={`
+                                                flex-1 flex items-start gap-2 px-2 py-1.5 rounded text-[11px] transition-all border
+                                                ${isDisabled 
+                                                  ? 'opacity-60 cursor-not-allowed bg-gray-200 border-gray-300' 
+                                                  : isSelectedHere 
+                                                    ? 'shadow-sm border-transparent' 
+                                                    : 'bg-white border-gray-200 cursor-pointer hover:border-gray-300 hover:bg-gray-50'}
+                                              `}
+                                              style={isSelectedHere && cc ? { backgroundColor: cc.selectedBg } : {}}
+                                            >
+                                              <input 
+                                                type="checkbox" 
+                                                className="mt-0.5 rounded border-gray-300 w-3 h-3 cursor-pointer disabled:cursor-not-allowed shrink-0"
+                                                checked={isSelectedHere}
+                                                disabled={isDisabled}
+                                                onChange={() => {
+                                                  if (!isDisabled) {
+                                                    toggleSelection(choice.choiceId, row, item)
+                                                  }
+                                                }}
+                                                style={cc && isSelectedHere ? { accentColor: cc.primary } : {}}
+                                              />
+                                              <div className="flex flex-col leading-tight pt-[1px] w-full">
+                                                <span className={`${isSelectedHere ? 'font-bold' : 'font-medium'} ${isDisabled && !selectedElsewhere ? 'text-gray-500' : 'text-gray-700'}`}>
+                                                  {item.name}
+                                                </span>
+                                                {selectedElsewhere && (
+                                                  <span className="text-[9px] text-amber-600 font-semibold mt-0.5" title="You must uncheck it in the other cell first.">
+                                                    Choice already made in {selectedElsewhere.subMealPlanName}
+                                                  </span>
+                                                )}
+                                              </div>
+                                            </label>
+                                          </div>
+                                        )
+                                      })}
+                                      {displayItems.length === 0 && (
+                                        <div className="px-3 py-2 text-[11px] text-gray-500 italic text-center border rounded bg-gray-50">No items available</div>
+                                      )}
+                                    </div>
+                                  </div>
+                                )
+                              })()}
                             </td>
                           )
                         })}
