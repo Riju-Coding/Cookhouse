@@ -1805,8 +1805,9 @@ export default function CombinedMenuCreationPage() {
   // New State for duplicate handling
   const [duplicateMenuId, setDuplicateMenuId] = useState<string | null>(null)
   const [showEditModal, setShowEditModal] = useState(false)
+  const [showCreateModal, setShowCreateModal] = useState(false)
 
-  // Conflict Analysis State
+  // Conflict Analysis State (used by handleAnalyzeConflicts)
   const [conflictDrawerOpen, setConflictDrawerOpen] = useState(false)
   const [conflictAnalysisData, setConflictAnalysisData] = useState<any[]>([])
 
@@ -3267,273 +3268,28 @@ export default function CombinedMenuCreationPage() {
                     Open Existing Menu
                 </Button>
             ) : (
-                <Button onClick={generateDateRange} disabled={generatingGrid || !startDate} className="w-full">
-                    {generatingGrid ? (
-                    <>
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        Generating Grid...
-                    </>
-                    ) : (
-                    <>
-                        <Maximize2 className="h-4 w-4 mr-2" />
-                        Create New Grid
-                    </>
-                    )}
+                <Button onClick={() => setShowCreateModal(true)} disabled={!startDate} className="w-full">
+                    <Maximize2 className="h-4 w-4 mr-2" />
+                    Create New Menu
                 </Button>
             )}
           </div>
         </CardContent>
       </Card>
 
-      {startDate && endDate && hasDraft && !showModal && !duplicateMenuId && (
-        <Card className="mb-6 border-l-4 border-l-purple-500 bg-purple-50">
-          <CardContent className="pt-6">
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="text-sm text-gray-700">
-                <span className="font-medium">Draft available.</span> It will be loaded automatically when you open the
-                grid.
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {showModal && (
-        <>
-          <div className="fixed inset-0  bg-opacity-50 z-50 flex flex-col">
-            <div className="bg-white rounded-lg w-full h-full flex flex-col  absolute">
-              <div className="flex items-center justify-between p-4 border-b bg-gradient-to-r from-white to-blue-50">
-                <div>
-                  <h2 className="text-xl font-bold">Combined Menu Grid</h2>
-                  <p className="text-sm text-gray-600">
-                    {new Date(startDate).toLocaleDateString()} - {new Date(endDate).toLocaleDateString()}
-                    {visibleDates < dateRange.length && (
-                      <span className="ml-2 text-blue-600">
-                        (Loading {visibleDates}/{dateRange.length} days...)
-                      </span>
-                    )}
-                  </p>
-                </div>
-                <div className="flex gap-2 items-center">
-                  {menuItemsLoading && (
-                    <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 px-3 py-2 rounded text-sm text-blue-700">
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      <span>Loading items...</span>
-                    </div>
-                  )}
-                  {copyBuffer ? (
-                    <div className="flex items-center gap-2 px-3 py-2 border rounded bg-yellow-50 text-sm">
-                      <div className="text-sm">Copied: {copyBuffer.items.length}</div>
-                      <Button variant="ghost" size="sm" onClick={clearCopyBuffer}>
-                        Clear
-                      </Button>
-                    </div>
-                  ) : null}
-                  <Button
-                    onClick={handleSaveDraft}
-                    disabled={saving || Object.keys(combinedMenu).length === 0}
-                    variant="outline"
-                    size="sm"
-                    className="border-purple-300 text-purple-700 hover:bg-purple-100 bg-transparent"
-                  >
-                    {saving ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Saving...
-                      </>
-                    ) : (
-                      <>
-                        <Save className="mr-2 h-4 w-4" />
-                        Save as Draft
-                      </>
-                    )}
-                  </Button>
-                  <Button onClick={handleSaveCombinedMenu} disabled={saving || menuItemsLoading}>
-                    {saving ? (
-                      <>
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        Saving...
-                      </>
-                    ) : (
-                      <>
-                        <Save className="h-4 w-4 mr-2" />
-                        Save & Generate Company Menus
-                      </>
-                    )}
-                  </Button>
-                  <Button variant="outline" onClick={() => setShowModal(false)} disabled={saving}>
-                    <X className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-
-              <div className="flex-1 overflow-auto p-4">
-                {services.map((service) => {
-                  const serviceSubServices = subServices.filter((ss) => ss.serviceId === service.id)
-                  return (
-                    <ServiceTable
-                      key={service.id}
-                      service={service}
-                      subServices={serviceSubServices}
-                      dateRange={dateRange}
-                      mealPlanStructure={mealPlanStructure}
-                      combinedMenu={combinedMenu}
-                      allItems={menuItems}
-                      onAddItem={addMenuItemToCell}
-                      
-                      onRemoveItem={removeMenuItemFromCell}
-                      onCreateItem={handleCreateItem}
-                      visibleDates={visibleDates}
-                      selectedSubServiceId={selectedSubServiceIds[service.id] || null}
-                      onSubServiceSelect={(subServiceId) =>
-                        setSelectedSubServiceIds((prev) => ({ ...prev, [service.id]: subServiceId }))
-                      }
-                      onApplyItemsToCell={applyItemsToCell}
-                      prevWeekMap={prevWeekMap}
-                      addRepetitionLog={addRepetitionLog}
-                      dateRangeSet={dateRangeSet.current}
-                      copyBuffer={copyBuffer}
-                      handleCopyFromCell={(date, items, meta) => handleCopyFromCell(date, items, meta)}
-                      handlePasteToCell={(date, serviceId, subServiceId, mealPlanId, subMealPlanId) =>
-                        handlePasteToCell(date, serviceId, subServiceId, mealPlanId, subMealPlanId)
-                      }
-                      mealPlanStructureAssignments={mealPlanStructureAssignments}
-                      companies={companies}
-                      buildings={buildings}
-                      structureAssignments={mealPlanStructureAssignments}
-                      onUpdateCustomAssignments={updateCustomAssignments}
-                      repetitionLog={repetitionLog}
-                      onShowConflicts={handleAnalyzeConflicts}
-                    />
-                  )
-                })}
-              </div>
-
-              {/* Floating Action Button for Logs */}
-              <button
-                onClick={() => setShowLogPanel(!showLogPanel)}
-                className={`fixed bottom-6 right-6 h-14 w-14 rounded-full shadow-lg z-[60] flex items-center justify-center transition-all duration-200 border-2 border-white ${
-                  repetitionLog.length > 0
-                    ? "bg-red-500 hover:bg-red-600 text-white animate-in zoom-in"
-                    : "bg-gray-400 hover:bg-gray-500 text-white"
-                }`}
-                title="Toggle Repetition Logs"
-              >
-                <div className="flex flex-col items-center">
-                  {showLogPanel ? <ChevronDown className="h-6 w-6" /> : <AlertCircle className="h-5 w-5" />}
-                  {!showLogPanel && <span className="text-[10px] font-bold">{repetitionLog.length}</span>}
-                </div>
-              </button>
-
-              {/* Log Panel */}
-              {showLogPanel && (
-                <div className="border-t bg-white p-4 animate-in slide-in-from-bottom-10 z-50 shadow-[0_-5px_20px_rgba(0,0,0,0.1)]">
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="font-semibold text-sm flex items-center gap-2">
-                      <AlertCircle className="h-4 w-4 text-red-500" />
-                      Repetition Log
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="text-xs text-gray-500">{repetitionLog.length} entries</div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={clearRepetitionLog}
-                        className="text-red-600 hover:bg-red-50"
-                      >
-                        Clear All Logs
-                      </Button>
-                    </div>
-                  </div>
-                  <div className="flex gap-2 overflow-x-auto pb-2">
-                    {repetitionLog.length === 0 ? (
-                      <div className="text-xs text-gray-500 italic p-2">No repetitions detected yet. Great job!</div>
-                    ) : (
-                      repetitionLog.map((entry, idx) => {
-                        const isError = entry.type === "In-week duplicate" || entry.type === "Prev-week repeat"
-                        const bgColor = isError ? "bg-red-50" : "bg-green-50"
-                        const borderColor = isError ? "border-red-200" : "border-green-200"
-                        const textColor = isError ? "text-red-700" : "text-green-700"
-
-                        return (
-                          <div
-                            key={idx}
-                            className={`flex-shrink-0 p-3 border rounded ${bgColor} ${borderColor} text-xs min-w-[300px] relative`}
-                          >
-                            <div className={`flex items-start justify-between gap-2 mb-1 ${textColor} font-semibold`}>
-                              <div className="truncate flex-1" title={entry.itemName || entry.itemId}>
-                                {entry.type} — {entry.itemName || entry.itemNames?.join(", ") || entry.itemId}
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <div className="text-xs whitespace-nowrap opacity-75">
-                                  {entry.createdAt?.toDate
-                                    ? entry.createdAt
-                                        .toDate()
-                                        .toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-                                    : entry.time
-                                      ? new Date(entry.time).toLocaleTimeString([], {
-                                          hour: "2-digit",
-                                          minute: "2-digit",
-                                        })
-                                      : ""}
-                                </div>
-                                <button
-                                  onClick={() => removeRepetitionLog(entry.id)}
-                                  className="text-gray-400 hover:text-red-600 transition-colors p-0.5 rounded-full hover:bg-red-100"
-                                  title="Dismiss this log"
-                                >
-                                  <X className="h-3.5 w-3.5" />
-                                </button>
-                              </div>
-                            </div>
-
-                            <div className="mb-1 font-medium text-gray-700 border-b border-gray-200 pb-1">
-                              {entry.serviceName || "Service"} <span className="text-gray-400">/</span>{" "}
-                              {entry.subServiceName || "Sub-Service"}
-                            </div>
-
-                            <div className={isError ? "text-red-600" : "text-gray-600"}>
-                              {entry.type === "In-week duplicate" && (
-                                <>
-                                  Already on{" "}
-                                  <span className="font-semibold">{entry.originalDate || entry.attemptedDate}</span>.
-                                  Attempted: <span className="font-semibold"> {entry.attemptedDate}</span>
-                                </>
-                              )}
-                              {entry.type === "Prev-week repeat" && (
-                                <>
-                                  Prev week: <span className="font-semibold">{entry.prevDate}</span>. Attempted:{" "}
-                                  <span className="font-semibold">{entry.attemptedDate}</span>
-                                </>
-                              )}
-                            </div>
-                          </div>
-                        )
-                      })
-                    )}
-                  </div>
-               </div>
-              )}
-            </div>
-          </div>
-
-          {/* Conflict Analysis Drawer */}
-          <ConflictDetailsDrawer 
-            isOpen={conflictDrawerOpen}
-            onClose={() => setConflictDrawerOpen(false)}
-            analysisData={conflictAnalysisData}
-          />
-        </>
-      )}
-
-      {/* Conflict Details Drawer */}
-      <ConflictDetailsDrawer 
-        isOpen={conflictDrawerOpen}
-        onClose={() => setConflictDrawerOpen(false)}
-        analysisData={conflictAnalysisData}
+      {/* Create Modal (New menu creation) */}
+      <MenuEditModal
+        isOpen={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        menuId=""
+        menuType="combined"
+        mode="create"
+        createStartDate={startDate}
+        createEndDate={endDate}
+        preloadedMenuItems={menuItems}
       />
 
-      {/* Edit Modal (Triggered on Duplicate when changes ) */}
+      {/* Edit Modal (Triggered on Duplicate when changes) */}
       <MenuEditModal
         isOpen={showEditModal}
         onClose={() => setShowEditModal(false)}

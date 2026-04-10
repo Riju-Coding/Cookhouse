@@ -1,0 +1,18 @@
+(node:35060) ExperimentalWarning: CommonJS module C:\Users\Sudipta\AppData\Roaming\npm\node_modules\npm\node_modules\debug\src\node.js is loading ES Module C:\Users\Sudipta\AppData\Roaming\npm\node_modules\npm\node_modules\supports-color\index.js using require().
+Support for loading ES Module in require() is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ??? Next.js 14.2.16
+
+   Creating an optimized production build ...
+Failed to compile.
+
+./lib/firebaseAdmin.ts
+Module not found: Can't resolve './serviceAccountKey.json'
+
+https://nextjs.org/docs/messages/module-not-found
+
+Import trace for requested module:
+./app/api/firestore-export/route.ts
+
+
+> Build failed because of webpack errors

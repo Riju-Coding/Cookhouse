@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo, memo, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { ChevronLeft , Globe2  } from "lucide-react";
 import { createPortal } from 'react-dom' // <--- ADD THIS IMPORT
 import {
   Loader2,
@@ -40,7 +41,12 @@ import {
 import { collection, getDocs, doc, getDoc, updateDoc, addDoc, query, where, writeBatch, serverTimestamp } from "firebase/firestore"
 import { db } from "@/lib/firebase"
 import { detectMenuChanges, createChangeSummary } from "@/lib/change-detector"
-import { ChoiceSelectionModal } from "@/components/choice-selection-modal"
+import { ChoiceSelectionModal, BuildingMenuGrid } from "@/components/choice-selection-modal"
+import { UpdationRecordBadge as ImportedUpdationRecordBadge } from "@/components/menu-edit-modal/updation-record-badge"
+import { RemovedItemsModal as ImportedRemovedItemsModal } from "@/components/menu-edit-modal/removed-items-modal"
+import { TimelineEntry as ImportedTimelineEntry } from "@/components/menu-edit-modal/timeline-entry"
+import { ServiceNavigationPanel as ImportedServiceNavigationPanel } from "@/components/menu-edit-modal/service-navigation-panel"
+import { LoadingProgress as ImportedLoadingProgress } from "@/components/menu-edit-modal/loading-progress"
 
 // --- Local Services Definition ---
 // --- Types ---
@@ -399,21 +405,7 @@ const ItemDescriptionModal = memo(function ItemDescriptionModal({
 })
 
 // Helper component to render updation record with company attribution badge
-const UpdationRecordBadge = ({ updation }: { updation: UpdationRecord }) => {
-  return (
-    <div className="flex items-center gap-2">
-      <span className="text-xs font-medium text-gray-700">
-        #{updation.updationNumber}
-      </span>
-      {updation.isCompanyWiseChange && updation.sourcedFromCompanyName ? (
-        <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-800 border border-blue-300">
-          <Building2 className="h-3 w-3" />
-          {updation.sourcedFromCompanyName}
-        </span>
-      ) : null}
-    </div>
-  )
-}
+const UpdationRecordBadge = ImportedUpdationRecordBadge
 
 interface ItemCompanyAssignmentModalProps {
   isOpen: boolean
@@ -1516,6 +1508,12 @@ interface MenuEditModalProps {
   menuType: "combined" | "company"
   onSave?: () => void
   preloadedMenuItems?: MenuItem[]
+  /** 'create' mode generates an empty grid from dates; 'edit' mode loads from Firestore (default) */
+  mode?: "create" | "edit"
+  /** Start date for create mode (YYYY-MM-DD) */
+  createStartDate?: string
+  /** End date for create mode (YYYY-MM-DD) */
+  createEndDate?: string
 }
 
 interface MenuData {
@@ -1529,129 +1527,11 @@ interface MenuData {
 }
 
 // --- Removed Items Modal Component ---
-const RemovedItemsModal = memo(function RemovedItemsModal({
-  isOpen,
-  onClose,
-  itemName,
-  companies: removedCompanies,
-  allCompanies,
-  allBuildings,
-}: {
-  isOpen: boolean
-  onClose: () => void
-  itemName: string
-  companies: Array<{ companyId: string; buildingId: string }>
-  allCompanies: any[]
-  allBuildings: any[]
-}) {
-  if (!isOpen) return null;
-
-  const companyBuildingMap = removedCompanies.reduce((acc, comp) => {
-    if (!acc[comp.companyId]) {
-      acc[comp.companyId] = [];
-    }
-    acc[comp.companyId].push(comp.buildingId);
-    return acc;
-  }, {} as Record<string, string[]>);
-
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 z-[150] flex items-center justify-center p-4">
-      <div className="bg-white rounded-lg max-w-md w-full max-h-[60vh] overflow-auto">
-        <div className="sticky top-0 bg-gradient-to-r from-red-50 to-white border-b p-4 flex items-center justify-between">
-          <div>
-            <h3 className="font-semibold text-lg flex items-center gap-2">
-              <Building2 className="h-5 w-5 text-red-600" />
-              Removed From
-            </h3>
-            <p className="text-sm text-gray-600 mt-1 font-medium">{itemName}</p>
-          </div>
-          <button onClick={onClose} className="text-gray-500 hover:text-gray-700" type="button">
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-        <div className="p-4 space-y-3">
-          {Object.entries(companyBuildingMap).map(([compId, buildingIds]) => {
-            const company = allCompanies?.find((c: any) => c.id === compId);
-            return (
-              <div key={compId} className="border rounded-lg p-3 bg-red-50 border-red-200">
-                <div className="text-sm font-semibold text-gray-900">{company?.name || compId}</div>
-                <div className="mt-2 space-y-1">
-                  {(buildingIds as string[]).map((buildingId) => {
-                    const building = allBuildings?.find((b: any) => b.id === buildingId);
-                    return (
-                      <div key={buildingId} className="text-sm text-gray-700 ml-3 flex items-center gap-2">
-                        <div className="h-1 w-1 rounded-full bg-gray-400" />
-                        {building?.name || buildingId}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    </div>
-  );
-});
+const RemovedItemsModal = ImportedRemovedItemsModal
 
 // --- NEW: Timeline Entry Component ---
 // --- NEW TIMELINE COMPONENT ---
-const TimelineEntry = memo(function TimelineEntry({
-  label,
-  labelBg,
-  itemName,
-  action,
-  isLive = false,
-  buildingCount,
-  onBuildingClick,
-  removedCompanies = []
-}: {
-  label: string
-  labelBg: string
-  itemName: string
-  action: "added" | "removed" | "replaced" | "og" | "null"
-  isLive?: boolean
-  buildingCount?: number
-  onBuildingClick?: () => void
-  removedCompanies?: Array<{ companyId: string; buildingId: string }>
-}) {
-  const config = {
-    added: { icon: <Plus className="h-2 w-2" />, color: "text-green-700", bg: "bg-green-50" },
-    removed: { icon: <Minus className="h-2 w-2" />, color: "text-red-700", bg: "bg-red-50" },
-    replaced: { icon: <ArrowRightLeft className="h-2 w-2" />, color: "text-orange-700", bg: "bg-orange-50" },
-    og: { icon: <CheckCircle className="h-2 w-2" />, color: "text-blue-700", bg: "bg-blue-50" },
-    null: { icon: <CheckCircle className="h-2 w-2" />, color: "text-gray-600", bg: "bg-gray-50" },
-  }
-
-  const style = config[action] || config.added;
-
-  return (
-    <div className={`mb-1.5 relative pl-3 border-l-2 ${isLive ? 'border-dashed border-green-300' : 'border-gray-200'}`}>
-      <div className="flex flex-wrap items-center gap-1">
-        <span className={`inline-block ${labelBg} text-white px-1 py-0 rounded text-[8px] font-black uppercase`}>
-          {label}
-        </span>
-        <span className={`inline-flex items-center gap-0.5 ${style.bg} ${style.color} px-1 py-0 rounded text-[8px] font-bold border whitespace-nowrap`}>
-          {style.icon} {action === "null" ? "NULL" : action.toUpperCase()}
-        </span>
-        {buildingCount && buildingCount > 0 && (
-          <button
-            onClick={onBuildingClick}
-            className="inline-flex items-center gap-0.5 bg-blue-50 text-blue-600 px-1 py-0 rounded text-[8px] font-bold border border-blue-200 hover:bg-blue-100 transition-colors"
-            title={`Custom assignments: ${buildingCount} building(s)`}
-          >
-            <Building2 className="h-2 w-2" />
-            <span className="font-semibold">{buildingCount}</span>
-          </button>
-        )}
-      </div>
-      <div className={`text-[11px] font-semibold mt-0.5 break-words ${action === "removed" ? "text-red-600 line-through" : "text-gray-800"}`}>
-        {action === "null" ? "(Empty State)" : itemName}
-      </div>
-    </div>
-  )
-})
+const TimelineEntry = ImportedTimelineEntry
 
 // --- Menu Cell Component ---
 const MenuGridCell = memo(function MenuGridCell({
@@ -2667,80 +2547,9 @@ const MenuGridCell = memo(function MenuGridCell({
 
 
 // --- Navigation Panel ---
-const ServiceNavigationPanel = memo(function ServiceNavigationPanel({
-  services,
-  subServices,
-  selectedService,
-  selectedSubService,
-  onSelectService,
-  onSelectSubService,
-}: {
-  services: Service[]
-  subServices: Map<string, SubService[]>
-  selectedService: Service | null
-  selectedSubService: SubService | null
-  onSelectService: (service: Service) => void
-  onSelectSubService: (subService: SubService) => void
-}) {
-  return (
-    <div className="w-full bg-gray-50 border-b flex gap-2 p-3 overflow-x-auto">
-      <div className="flex gap-2">
-        {services.map((service) => (
-          <div key={service.id}>
-            <button
-              onClick={() => onSelectService(service)}
-              className={`px-4 py-2 rounded font-medium text-sm transition-colors ${selectedService?.id === service.id
-                  ? "bg-blue-600 text-white"
-                  : "bg-white border text-gray-700 hover:bg-gray-100"
-                }`}
-              type="button"
-            >
-              {service.name}
-            </button>
-          </div>
-        ))}
-      </div>
+const ServiceNavigationPanel = ImportedServiceNavigationPanel
 
-      {selectedService && (
-        <>
-          <div className="flex items-center text-gray-400 px-2">
-            <ChevronRight className="h-4 w-4" />
-          </div>
-          <div className="flex gap-2">
-            {(subServices.get(selectedService.id) || []).map((subService) => (
-              <button
-                key={subService.id}
-                onClick={() => onSelectSubService(subService)}
-                className={`px-4 py-2 rounded font-medium text-sm transition-colors ${selectedSubService?.id === subService.id
-                    ? "bg-green-600 text-white"
-                    : "bg-white border text-gray-700 hover:bg-gray-100"
-                  }`}
-                type="button"
-              >
-                {subService.name}
-              </button>
-            ))}
-          </div>
-        </>
-      )}
-    </div>
-  )
-})
-
-const LoadingProgress = ({ progress, message }: { progress: number; message: string }) => (
-  <div className="w-full">
-    <div className="flex items-center justify-between mb-2">
-      <span className="text-sm font-medium text-gray-700">{message}</span>
-      <span className="text-sm font-medium text-blue-600">{progress}%</span>
-    </div>
-    <div className="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden">
-      <div
-        className="bg-blue-600 h-2.5 rounded-full transition-all duration-300 ease-out"
-        style={{ width: `${progress}%` }}
-      />
-    </div>
-  </div>
-)
+const LoadingProgress = ImportedLoadingProgress
 
 // --- Choice Selection Modal Component ---
 // const ChoiceSelectionModal = memo(function ChoiceSelectionModal({
@@ -2874,7 +2683,8 @@ const LoadingProgress = ({ progress, message }: { progress: number; message: str
 // })
 
 // --- Main Modal Component ---
-export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, preloadedMenuItems }: MenuEditModalProps) {
+export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, preloadedMenuItems, mode = "edit", createStartDate, createEndDate }: MenuEditModalProps) {
+  const isCreateMode = mode === "create";
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [progress, setProgress] = useState(0)
@@ -2932,6 +2742,60 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
   const [initialChoiceSelections, setInitialChoiceSelections] = useState<Record<string, any[]>>({})
   // Maps itemId to array of choice keys - for marking items as coming from choices
   const [selectedChoiceItems, setSelectedChoiceItems] = useState<Record<string, string[]>>({})
+
+  // TABBED INTERFACE STATE
+  const [activeBottomTab, setActiveBottomTab] = useState<'menu' | 'choices' | 'universal'>('menu')
+  const [choiceTabIndex, setChoiceTabIndex] = useState(0)
+  const [inlineChoiceSelections, setInlineChoiceSelections] = useState<Record<string, any[]>>({})
+
+  // Universal aggregate
+  const universalData = useMemo(() => {
+    const uniqueChoices = new Map<string, any>()
+    const buildingMap = new Map<string, Array<any>>()
+
+    companiesWithChoices.forEach((company) => {
+      company.choices.forEach((c: any) => {
+        // Validation: A technically valid choice MUST contain >= 2 SMPs. 
+        // 1-SMP choices are database corruption/glitches and force unintended row fracturing.
+        const smpCount = c.mealPlans?.reduce((acc: number, mp: any) => acc + (mp.subMealPlans?.length || 0), 0) || 0;
+        if (smpCount < 2) return;
+
+        // Generate signature to group structurally identical choices together across companies
+        const sortedMealPlans = [...(c.mealPlans || [])].sort((a: any, b: any) => a.mealPlanId.localeCompare(b.mealPlanId));
+        const smpSignature = sortedMealPlans.map((mp: any) => {
+          const sortedSmps = [...(mp.subMealPlans || [])].sort((a: any, b: any) => a.subMealPlanId.localeCompare(b.subMealPlanId));
+          return `${mp.mealPlanId}:${sortedSmps.map((smp: any) => smp.subMealPlanId).join(',')}`
+        }).join('|');
+        
+        const signature = `${c.serviceId || ''}-${c.subServiceId || ''}-${(c.choiceDay || '').toLowerCase()}-${Number(c.quantity) || 1}-${smpSignature}`;
+
+        if (!uniqueChoices.has(signature)) {
+          uniqueChoices.set(signature, { ...c, choiceId: signature })
+        }
+        if (!buildingMap.has(signature)) {
+          buildingMap.set(signature, [])
+        }
+        buildingMap.get(signature)!.push({
+          companyId: company.companyId,
+          companyName: company.companyName,
+          buildingId: company.buildingId,
+          buildingName: company.buildingName,
+          originalChoiceId: c.choiceId
+        })
+      })
+    })
+
+    return {
+      building: {
+         companyId: "universal",
+         companyName: "Universal Choices",
+         buildingId: "all",
+         buildingName: "All Buildings",
+         choices: Array.from(uniqueChoices.values())
+      },
+      associations: buildingMap
+    }
+  }, [companiesWithChoices])
 
   const [updations, setUpdations] = useState<UpdationRecord[]>([])
 
@@ -3019,7 +2883,7 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
 
   // Main Data Loading Effect
   useEffect(() => {
-    if (!isOpen || !menuId) {
+    if (!isOpen || (!menuId && !isCreateMode)) {
       setLoading(true)
       setProgress(0)
       setVisibleDates(0)
@@ -3043,18 +2907,31 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
         setProgress(10)
         setMessage("Loading menu...")
 
-        const collectionName = menuType === "combined" ? "combinedMenus" : "companyMenus"
-        const docRef = doc(db, collectionName, menuId)
-        const docSnap = await getDoc(docRef)
+        let menuDoc: MenuData
 
-        if (signal.aborted || !mountedRef.current) return
+        if (isCreateMode && createStartDate && createEndDate) {
+          // CREATE MODE: Generate empty menu document (no Firestore load)
+          menuDoc = {
+            startDate: createStartDate,
+            endDate: createEndDate,
+            status: "draft",
+            menuData: {},
+          } as MenuData
+        } else {
+          // EDIT MODE: Load from Firestore
+          const collectionName = menuType === "combined" ? "combinedMenus" : "companyMenus"
+          const docRef = doc(db, collectionName, menuId)
+          const docSnap = await getDoc(docRef)
 
-        if (!docSnap.exists()) {
-          throw new Error("Menu not found")
+          if (signal.aborted || !mountedRef.current) return
+
+          if (!docSnap.exists()) {
+            throw new Error("Menu not found")
+          }
+
+          menuDoc = { id: docSnap.id, ...(docSnap.data() as any) } as MenuData
         }
 
-
-        const menuDoc = { id: docSnap.id, ...(docSnap.data() as any) } as MenuData
         setProgress(30)
         setMessage("Calculating dates...")
 
@@ -3157,6 +3034,37 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
         // FIXED: Reconstruct the TRUE original (OG) baseline by reversing all updations
         // OG is the state BEFORE any U-records were created
         let ogData = JSON.parse(JSON.stringify(originalData))
+
+        // In CREATE mode, skip OG reconstruction and updation loading since there's no existing data
+        if (isCreateMode) {
+          setOgMenuData({})
+          setMenu(menuDoc)
+          setMenuData({})
+          setDateRange(dates)
+          setServices(filteredServices)
+          setSubServices(subServicesMap)
+          setMealPlans(filteredMealPlans)
+          setSubMealPlans(filteredSubMealPlans)
+          setMenuItems(filteredMenuItems)
+
+          if (filteredServices.length > 0) {
+            setSelectedService(filteredServices[0])
+            const firstSubServices = subServicesMap.get(filteredServices[0].id)
+            if (firstSubServices && firstSubServices.length > 0) {
+              setSelectedSubService(firstSubServices[0])
+            }
+          }
+
+          setProgress(100)
+          setMessage("Ready!")
+          setTimeout(() => {
+            if (mountedRef.current) {
+              setLoading(false)
+              setVisibleDates(CHUNK_SIZE)
+            }
+          }, 300)
+          return
+        }
 
         // Load updations FIRST to reconstruct original
         try {
@@ -3345,7 +3253,70 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
     return () => {
       abortControllerRef.current?.abort()
     }
-  }, [isOpen, menuId, menuType, onClose, preloadedMenuItems, loadPrevWeekMap])
+  }, [isOpen, menuId, menuType, onClose, preloadedMenuItems, loadPrevWeekMap, isCreateMode, createStartDate, createEndDate])
+
+  // --- Eagerly load companies with choices for the Choices tab ---
+  useEffect(() => {
+    if (!loading && isOpen && buildings.length > 0) {
+      (async () => {
+        try {
+          const data = await detectCompaniesWithChoices()
+          if (mountedRef.current && data.length > 0) {
+            setCompaniesWithChoices(data)
+            // Also load initial selections from existing saved choices
+            let currentSelections: Record<string, any[]> = {}
+            if (menuType === 'company' && menuData) {
+              data.forEach(companyChoice => {
+                for (const choice of companyChoice.choices) {
+                  const choiceKey = `${companyChoice.companyId}-${companyChoice.buildingId}-${choice.choiceId}`
+                  const selectedItems: any[] = []
+                  for (const date in menuData) {
+                    const dateData = menuData[date]
+                    const serviceId = (choice as any).serviceId || ''
+                    const subServiceId = (choice as any).subServiceId || ''
+                    if (dateData?.[serviceId]?.[subServiceId]) {
+                      for (const mp of choice.mealPlans) {
+                        for (const smp of mp.subMealPlans) {
+                          const cell = dateData[serviceId][subServiceId][mp.mealPlanId]?.[smp.subMealPlanId]
+                          if (cell?.menuItemIds && cell.menuItemIds.length > 0) {
+                            for (const itemId of cell.menuItemIds) {
+                              const itemChoice = cell.itemChoiceMarks?.[itemId]
+                              if (itemChoice === choice.choiceId) {
+                                const item = menuItems.find(m => m.id === itemId)
+                                if (item) {
+                                  selectedItems.push({
+                                    mealPlanId: mp.mealPlanId,
+                                    mealPlanName: mp.mealPlanName || '',
+                                    subMealPlanId: smp.subMealPlanId,
+                                    subMealPlanName: smp.subMealPlanName || '',
+                                    selectedItemId: itemId,
+                                    selectedItemName: item.name
+                                  })
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                  if (selectedItems.length > 0) {
+                    currentSelections[choiceKey] = selectedItems
+                  }
+                }
+              })
+            } else if (menuType === 'combined' && menu && (menu as any).savedChoices) {
+              currentSelections = (menu as any).savedChoices
+            }
+            setInitialChoiceSelections(currentSelections)
+            setInlineChoiceSelections(currentSelections)
+          }
+        } catch (e) {
+          console.error("Error eagerly loading choices:", e)
+        }
+      })()
+    }
+  }, [loading, isOpen, buildings.length])
 
   // --- Logic Functions ---
 
@@ -4149,81 +4120,40 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
   }
 
   const handleSave = async (isDraft = false) => {
-    if (!menu) return
+    if (!menu && !isCreateMode) return
     console.log("[v0] handleSave called, isDraft:", isDraft)
 
     // For non-draft saves, check for companies with choices
+    // TABBED APPROACH: Instead of opening a separate modal, use inline selections from the Choices tab
     if (!isDraft) {
       console.log("[v0] Checking for companies with choices...")
-      const companiesWithChoicesData = await detectCompaniesWithChoices()
-      console.log("[v0] Companies with choices result:", companiesWithChoicesData)
-      if (companiesWithChoicesData.length > 0) {
-        console.log("[v0] Found companies with choices, showing modal")
-        setCompaniesWithChoices(companiesWithChoicesData)
-        setChoiceSelections({})
-        
-        // CRITICAL: Extract current selections from company menu data for pre-filling choice modal
-        let currentSelections: Record<string, any[]> = {}
-        
-        // Only for company menus - look for items marked with savedChoiceId
-        if (menuType === 'company' && menuData) {
-          companiesWithChoicesData.forEach(companyChoice => {
-            for (const choice of companyChoice.choices) {
-              const choiceKey = `${companyChoice.companyId}-${companyChoice.buildingId}-${choice.choiceId}`
-              const selectedItems: any[] = []
-              
-              // Scan company menu data for items marked with this choice
-              for (const date in menuData) {
-                const dateData = menuData[date]
-                const serviceId = (choice as any).serviceId || ''
-                const subServiceId = (choice as any).subServiceId || ''
-                
-                if (dateData?.[serviceId]?.[subServiceId]) {
-                  for (const mp of choice.mealPlans) {
-                    for (const smp of mp.subMealPlans) {
-                      const cell = dateData[serviceId][subServiceId][mp.mealPlanId]?.[smp.subMealPlanId]
-                      
-                      // Look for items marked with this specific choice ID
-                      if (cell?.menuItemIds && cell.menuItemIds.length > 0) {
-                        for (const itemId of cell.menuItemIds) {
-                          const itemChoice = cell.itemChoiceMarks?.[itemId]
-                          // If this item was saved from this choice, include it
-                          if (itemChoice === choice.choiceId) {
-                            const item = menuItems.find(m => m.id === itemId)
-                            if (item) {
-                              selectedItems.push({
-                                mealPlanId: mp.mealPlanId,
-                                mealPlanName: mp.mealPlanName || '',
-                                subMealPlanId: smp.subMealPlanId,
-                                subMealPlanName: smp.subMealPlanName || '',
-                                selectedItemId: itemId,
-                                selectedItemName: item.name
-                              })
-                            }
-                          }
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-              
-              if (selectedItems.length > 0) {
-                currentSelections[choiceKey] = selectedItems
-              }
-            }
+      const hasInlineSelections = Object.values(inlineChoiceSelections).some(items => items.length > 0)
+      
+      if (companiesWithChoices.length > 0 && hasInlineSelections) {
+        console.log("[v0] Using inline choice selections from Choices tab")
+        // Build choice items map from inline selections
+        const selectedChoiceItemsMap: Record<string, string[]> = {}
+        Object.entries(inlineChoiceSelections).forEach(([key, items]) => {
+          const validItems = items.filter((item: any) => item && item.selectedItemId !== undefined && item.subMealPlanId !== undefined)
+          validItems.forEach((item: any) => {
+            const itemId = item.selectedItemId
+            if (!selectedChoiceItemsMap[itemId]) selectedChoiceItemsMap[itemId] = []
+            selectedChoiceItemsMap[itemId].push(key)
           })
-        } else if (menuType === 'combined') {
-          // For combined menus, restore saved choices previously stored on the document
-          if (menu && menu.savedChoices) {
-            currentSelections = menu.savedChoices
-          }
-        }
-        
-        setInitialChoiceSelections(currentSelections)
-        
-        setShowChoiceModal(true)
-        setPendingSaveAction({ isDraft: false })
+        })
+        setChoiceSelections(inlineChoiceSelections)
+        setSelectedChoiceItems(selectedChoiceItemsMap)
+        // Proceed directly to save with these selections
+        await executeSave(false, inlineChoiceSelections)
+        return
+      } else if (companiesWithChoices.length > 0 && !hasInlineSelections) {
+        // Choices exist but none selected - prompt user to go to Choices tab
+        toast({
+          title: "Choices Required",
+          description: "Please set choice selections in the Choices tab before saving.",
+          variant: "destructive"
+        })
+        setActiveBottomTab('choices')
         return
       } else {
         console.log("[v0] No companies with choices found, proceeding with regular save")
@@ -4282,10 +4212,63 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
   }
 
   const executeSave = async (isDraft = false, choiceSelectionsData: Record<string, any[]> = {}) => {
-    if (!menu) return
+    if (!menu && !isCreateMode) return
     const isFirstTimeSave = !updations || updations.length === 0;
     try {
       setSaving(true)
+
+      // ═══ CREATE MODE: Save new combined menu document ═══
+      if (isCreateMode && menuType === "combined") {
+        const sanitizedData = sanitizeMenuData(JSON.parse(JSON.stringify(menuData)))
+        const newMenuDoc = {
+          startDate: createStartDate,
+          endDate: createEndDate,
+          status: isDraft ? "draft" : "active",
+          menuData: sanitizedData,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        }
+        const newDocRef = await addDoc(collection(db, "combinedMenus"), newMenuDoc)
+
+        if (!isDraft) {
+          // Generate company menus from the new combined menu
+          toast({ title: "Creating company menus...", description: "Generating company-specific menus from combined menu." })
+
+          // Filter out empty cells
+          const filtered: any = {}
+          Object.entries(sanitizedData).forEach(([date, dayMenu]: [string, any]) => {
+            const filteredDay: any = {}
+            Object.entries(dayMenu).forEach(([sId, sData]: [string, any]) => {
+              const filteredS: any = {}
+              Object.entries(sData).forEach(([ssId, ssData]: [string, any]) => {
+                const filteredSS: any = {}
+                Object.entries(ssData).forEach(([mpId, mpData]: [string, any]) => {
+                  const filteredMP: any = {}
+                  Object.entries(mpData).forEach(([smpId, cell]: [string, any]) => {
+                    if (cell.menuItemIds?.length > 0) filteredMP[smpId] = cell
+                  })
+                  if (Object.keys(filteredMP).length > 0) filteredSS[mpId] = filteredMP
+                })
+                if (Object.keys(filteredSS).length > 0) filteredS[ssId] = filteredSS
+              })
+              if (Object.keys(filteredS).length > 0) filteredDay[sId] = filteredS
+            })
+            if (Object.keys(filteredDay).length > 0) filtered[date] = filteredDay
+          })
+
+          const count = await generateCompanyMenus(newDocRef.id, filtered)
+          toast({ title: "Complete!", description: `Created combined menu and ${count} company menus.` })
+        } else {
+          toast({ title: "Draft Saved", description: "Combined menu saved as draft." })
+        }
+
+        onSave?.()
+        onClose()
+        return
+      }
+
+      // ═══ EDIT MODE: Existing save logic ═══
+      if (!menu) return
       const collectionName = menuType === "combined" ? "combinedMenus" : "companyMenus"
       const docRef = doc(db, collectionName, menuId)
       const statusToSave = isDraft ? "draft" : menu.status
@@ -5581,12 +5564,13 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
         <div className="border-b p-4 flex-none flex items-center justify-between bg-white z-40">
           <div>
             <h2 className="text-2xl font-bold">
-              Edit {menuType === "combined" ? "Combined" : "Company"} Menu
+              {isCreateMode ? "Create" : "Edit"} {menuType === "combined" ? "Combined" : "Company"} Menu
             </h2>
-            {menu && (
+            {(menu || isCreateMode) && (
               <p className="text-sm text-gray-600 mt-1">
-                {new Date(menu.startDate).toLocaleDateString()} to {new Date(menu.endDate).toLocaleDateString()}
-                {menu.status === 'draft' && <span className="ml-2 bg-purple-100 text-purple-700 px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wider">Draft</span>}
+                {new Date(menu?.startDate || createStartDate || '').toLocaleDateString()} to {new Date(menu?.endDate || createEndDate || '').toLocaleDateString()}
+                {isCreateMode && <span className="ml-2 bg-green-100 text-green-700 px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wider">New</span>}
+                {!isCreateMode && menu?.status === 'draft' && (<span className="ml-2 bg-purple-100 text-purple-700 px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wider">Draft</span>)}
               </p>
             )}
           </div>
@@ -5611,7 +5595,9 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
             </div>
           ) : (
             <div className="flex flex-col h-full">
-              <div className="bg-white sticky top-0 z-30 shadow-sm">
+              {activeBottomTab === 'menu' && (
+                <>
+                  <div className="bg-white sticky top-0 z-30 shadow-sm">
                 <ServiceNavigationPanel
                   services={services}
                   subServices={subServices}
@@ -5807,6 +5793,167 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
                   </div>
                 )}
               </div>
+            </>
+          )}
+
+            {activeBottomTab === 'choices' && (
+              <div className="flex-1 flex flex-col h-full overflow-hidden bg-white">
+                {companiesWithChoices.length > 0 ? (
+                  <div className="flex flex-col h-full">
+                    {/* Building Tabs for Choices */}
+                    <div className="shrink-0 bg-white border-b border-gray-200 shadow-sm">
+                      <div className="flex items-center px-4 gap-1">
+                        <button
+                          onClick={() => setChoiceTabIndex((i) => Math.max(0, i - 1))}
+                          disabled={choiceTabIndex === 0}
+                          className="shrink-0 p-1.5 rounded-md text-gray-400 hover:text-gray-700 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                        >
+                          <ChevronLeft className="h-4 w-4" />
+                        </button>
+
+                        <div className="flex-1 overflow-x-auto scrollbar-hide">
+                          <div className="flex gap-1 py-2">
+                            {companiesWithChoices.map((building, idx) => {
+                              const isActive = idx === choiceTabIndex
+                              return (
+                                <div
+                                  key={`${building.companyId}-${building.buildingId}`}
+                                  className={`
+                                    flex flex-col rounded-lg text-sm font-medium
+                                    whitespace-nowrap transition-all duration-200 border shrink-0
+                                    ${isActive ? "bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-200" : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50 hover:border-gray-300"}
+                                  `}
+                                >
+                                  <button
+                                    onClick={() => setChoiceTabIndex(idx)}
+                                    className="relative flex items-center justify-between gap-2 px-4 py-2.5 w-full text-left"
+                                  >
+                                    <div className="flex items-center gap-2">
+                                      <Building2 className="h-4 w-4 shrink-0" />
+                                      <span className="truncate max-w-[140px]">{building.companyName}</span>
+                                      <span className={`text-[10px] ${isActive ? "text-blue-100" : "text-gray-400"}`}>— {building.buildingName}</span>
+                                    </div>
+                                    {isActive && <span className="absolute -bottom-[1px] left-3 right-3 h-[3px] bg-blue-600 rounded-t-full" />}
+                                  </button>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        </div>
+
+                        <button
+                          onClick={() => setChoiceTabIndex((i) => Math.min(companiesWithChoices.length - 1, i + 1))}
+                          disabled={choiceTabIndex === companiesWithChoices.length - 1}
+                          className="shrink-0 p-1.5 rounded-md text-gray-400 hover:text-gray-700 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                        >
+                          <ChevronRight className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Active Grid */}
+                    <div className="flex-1 overflow-auto bg-gray-100 relative">
+                      {companiesWithChoices[choiceTabIndex] && (
+                        <BuildingMenuGrid
+                          key={`${companiesWithChoices[choiceTabIndex].companyId}-${companiesWithChoices[choiceTabIndex].buildingId}`}
+                          building={companiesWithChoices[choiceTabIndex]}
+                          dateRange={dateRange}
+                          allMenuItems={menuItems}
+                          menuData={menuData}
+                          mealPlans={mealPlans}
+                          subMealPlans={subMealPlans}
+                          mealPlanAssignments={mealPlanAssignments}
+                          selections={inlineChoiceSelections}
+                          setSelections={setInlineChoiceSelections}
+                        />
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex-1 flex flex-col items-center justify-center text-gray-500 bg-gray-50">
+                    <AlertCircle className="h-12 w-12 text-gray-300 mb-4" />
+                    <h3 className="text-lg font-medium text-gray-700 mb-1">No Choices Available</h3>
+                    <p className="text-sm">There are no choices configured for the companies in this menu.</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {activeBottomTab === 'universal' && (
+              <div className="flex-1 flex flex-col h-full overflow-hidden bg-white">
+                {universalData.building.choices.length > 0 ? (
+                  <div className="flex flex-col h-full">
+                    <div className="shrink-0 bg-blue-50 border-b border-blue-200 shadow-sm px-4 py-3 flex items-center justify-between">
+                       <div className="flex items-center gap-2">
+                         <Globe2 className="h-5 w-5 text-blue-600" />
+                         <span className="font-semibold text-blue-800">Universal Choices</span>
+                         <span className="text-xs text-blue-600 font-medium ml-2 bg-white px-2 py-0.5 rounded-full border border-blue-200">
+                           {universalData.building.choices.length} choices across {companiesWithChoices.length} companies
+                         </span>
+                       </div>
+                       <div className="text-xs text-blue-500 font-medium italic flex items-center gap-1">
+                          <AlertCircle className="h-3.5 w-3.5" />
+                          Changes apply to all {companiesWithChoices.length} associated companies
+                       </div>
+                    </div>
+                    {/* Active Grid */}
+                    <div className="flex-1 overflow-auto bg-gray-100 relative">
+                        <BuildingMenuGrid
+                          key="universal-grid"
+                          building={universalData.building}
+                          dateRange={dateRange}
+                          allMenuItems={menuItems}
+                          menuData={menuData}
+                          mealPlans={mealPlans}
+                          subMealPlans={subMealPlans}
+                          mealPlanAssignments={mealPlanAssignments}
+                          selections={inlineChoiceSelections}
+                          setSelections={setInlineChoiceSelections}
+                          isUniversal={true}
+                          universalAssociations={universalData.associations}
+                        />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex-1 flex flex-col items-center justify-center text-gray-500 bg-gray-50">
+                    <AlertCircle className="h-12 w-12 text-gray-300 mb-4" />
+                    <h3 className="text-lg font-medium text-gray-700 mb-1">No Choices Configured</h3>
+                    <p className="text-sm">There are no choices available to display universally.</p>
+                  </div>
+                )}
+              </div>
+            )}
+            {/* --- BOTTOM TAB BAR --- */}
+            <div className="flex bg-gray-100 border-t border-gray-300 px-4 pt-2 gap-2 z-40 relative shadow-[0_-2px_4px_rgba(0,0,0,0.05)] select-none shrink-0">
+              <button 
+                onClick={() => setActiveBottomTab('menu')}
+                className={`px-5 py-2 rounded-t-lg font-semibold text-sm border border-b-0 transition-colors flex flex-col items-center justify-center ${activeBottomTab === 'menu' ? 'bg-white border-gray-300 text-blue-700 shadow-[0_-2px_6px_rgba(0,0,0,0.08)] relative z-10' : 'bg-gray-200/80 border-transparent text-gray-500 hover:bg-gray-200'}`}
+                style={{ marginBottom: activeBottomTab === 'menu' ? '-1px' : '0' }}
+              >
+                Menu Edit
+              </button>
+              <button 
+                onClick={() => setActiveBottomTab('choices')}
+                className={`px-5 py-2 rounded-t-lg font-semibold text-sm border border-b-0 transition-colors flex flex-col items-center justify-center ${activeBottomTab === 'choices' ? 'bg-white border-gray-300 text-blue-700 shadow-[0_-2px_6px_rgba(0,0,0,0.08)] relative z-10' : 'bg-gray-200/80 border-transparent text-gray-500 hover:bg-gray-200'} ${companiesWithChoices.length === 0 ? 'opacity-50 cursor-not-allowed' : ''}`}
+                style={{ marginBottom: activeBottomTab === 'choices' ? '-1px' : '0' }}
+                disabled={companiesWithChoices.length === 0}
+              >
+                <div className="flex items-center gap-2">
+                  Choice Selection
+                  {companiesWithChoices.length > 0 && (
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${activeBottomTab === 'choices' ? 'bg-blue-100 text-blue-700' : 'bg-gray-300 text-gray-600'}`}>{companiesWithChoices.length}</span>
+                  )}
+                </div>
+              </button>
+              <button 
+                onClick={() => setActiveBottomTab('universal')}
+                className={`px-5 py-2 rounded-t-lg font-semibold text-sm border border-b-0 transition-colors flex flex-col items-center justify-center ${activeBottomTab === 'universal' ? 'bg-white border-gray-300 text-blue-700 shadow-[0_-2px_6px_rgba(0,0,0,0.08)] relative z-10' : 'bg-gray-200/80 border-transparent text-gray-500 hover:bg-gray-200'} ${companiesWithChoices.length === 0 ? 'opacity-50 cursor-not-allowed' : ''}`}
+                style={{ marginBottom: activeBottomTab === 'universal' ? '-1px' : '0' }}
+                disabled={companiesWithChoices.length === 0}
+              >
+                 Universal Choices
+              </button>
+            </div>
             </div>
           )}
         </div>
@@ -5859,12 +6006,17 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
               {saving ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                  Saving...
+                  {isCreateMode ? "Creating..." : "Saving..."}
                 </>
               ) : (
                 <>
                   <Save className="h-4 w-4 mr-2" />
-                  {menuType === 'combined' && menu?.status === 'draft' ? "Save & Activate" : "Save Changes"}
+                  {isCreateMode
+                    ? "Save & Generate Company Menus"
+                    : menuType === 'combined' && menu?.status === 'draft'
+                      ? "Save & Activate"
+                      : "Save Changes"
+                  }
                 </>
               )}
             </Button>
@@ -5973,6 +6125,8 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
           menuData={menuData}
           allMenuItems={menuItems}
           dateRange={dateRange}
+          mealPlans={mealPlans}
+          subMealPlans={subMealPlans}
           // --- THIS IS THE NEW PROP ---
           mealPlanAssignments={mealPlanAssignments}
           // Pre-filled selections from previously saved choices

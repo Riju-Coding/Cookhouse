@@ -9,6 +9,11 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog"
+import {
+  HoverCard,
+  HoverCardContent,
+  HoverCardTrigger,
+} from "@/components/ui/hover-card"
 import { Badge } from "@/components/ui/badge"
 import { ArrowDown } from "lucide-react"
 import {
@@ -22,8 +27,11 @@ import {
   Utensils,
   ArrowRightLeft,
   Link2,
+  Globe2,
 } from "lucide-react"
 import { Spinner } from "@/components/ui/spinner"
+import { calculateFrequencyViolations } from "@/lib/frequency-validator"
+import { FrequencyViolationsAlert } from "@/components/frequency-violations-alert"
 
 // --- Interfaces ---
 interface MenuItem {
@@ -42,6 +50,7 @@ interface SubMealPlan {
   name: string
   mealPlanId: string
   order?: number
+  maxFrequency?: number
 }
 
 interface MealPlanChoice {
@@ -128,6 +137,11 @@ export function ChoiceSelectionModal({
     [selections]
   )
 
+  // Calculate frequency violations
+  const frequencyStatus = useMemo(() => {
+    return calculateFrequencyViolations(selections, subMealPlans as any)
+  }, [selections, subMealPlans])
+
   const getTabSelectionCount = (building: CompanyChoice) =>
     Object.entries(selections)
       .filter(([key]) =>
@@ -184,6 +198,11 @@ export function ChoiceSelectionModal({
             </Badge>
           </div>
         </DialogHeader>
+
+        {/* ─── Frequency Violations Warning ─── */}
+        {frequencyStatus.hasViolations && (
+          <FrequencyViolationsAlert violations={frequencyStatus.violations} />
+        )}
 
         {/* ─── Building Tabs ─── */}
         <div className="shrink-0 bg-white border-b border-gray-200 shadow-sm">
@@ -410,7 +429,7 @@ interface ServiceGroup {
 
 
 
-function BuildingMenuGrid({
+export function BuildingMenuGrid({
   building,
   dateRange,
   allMenuItems,
@@ -420,6 +439,8 @@ function BuildingMenuGrid({
   mealPlanAssignments,
   selections,
   setSelections,
+  isUniversal = false,
+  universalAssociations = null,
 }: any) {
   const menuItemMap = useMemo(
     () => new Map(allMenuItems.map((item: any) => [item.id, item])),
@@ -449,16 +470,87 @@ function BuildingMenuGrid({
   }, [building.choices])
 
     const serviceGroups: ServiceGroup[] = useMemo(() => {
-    const assignment = mealPlanAssignments?.find(
+    // If Universal, we don't strict match assignments against the building, just pool them directly or rely on the fact that building.choices is already aggregated
+    const assignment = isUniversal ? null : mealPlanAssignments?.find(
       (a: any) =>
         a.companyId === building.companyId &&
         a.buildingId === building.buildingId
     )
-    if (!assignment?.weekStructure) return []
+    if (!assignment?.weekStructure && !isUniversal) return []
 
     const groupMap = new Map<string, ServiceGroup>()
     const rowSeen = new Map<string, Set<string>>()
 
+    // For universal, build structure directly from the aggregated choices since no single assignment covers everything
+    if (isUniversal) {
+       building.choices.forEach((c: any) => {
+          const serviceId = c.serviceId || 'unknown'
+          const subServiceId = c.subServiceId || 'unknown'
+          const gKey = `${serviceId}|${subServiceId}`
+          
+          if (!groupMap.has(gKey)) {
+             let sName = "Unified Service"
+             let ssName = "Unified Sub-Service"
+             
+             // Extract true names from assignments cross-reference
+             if (mealPlanAssignments) {
+               for (const a of mealPlanAssignments) {
+                 if (a.weekStructure) {
+                   for (const dayArr of Object.values(a.weekStructure)) {
+                     for (const s of (dayArr as any[])) {
+                       if (s.serviceId === serviceId) {
+                         sName = s.serviceName || sName
+                         for (const ss of (s.subServices || [])) {
+                           if (ss.subServiceId === subServiceId) {
+                             ssName = ss.subServiceName || ssName
+                             break
+                           }
+                         }
+                         break
+                       }
+                     }
+                   }
+                 }
+               }
+             }
+
+             groupMap.set(gKey, {
+                 serviceId,
+                 serviceName: sName,
+                 subServiceId,
+                 subServiceName: ssName,
+                 rows: []
+             })
+             rowSeen.set(gKey, new Set())
+          }
+          const group = groupMap.get(gKey)!
+          const seen = rowSeen.get(gKey)!
+
+          c.mealPlans.forEach((mp: any) => {
+             mp.subMealPlans.forEach((smp: any) => {
+                const rKey = `${mp.mealPlanId}|${smp.subMealPlanId}`
+                if (!seen.has(rKey)) {
+                   seen.add(rKey)
+                   const mpInfo = mealPlans.find((m: any) => m.id === mp.mealPlanId)
+                   const smpInfo = subMealPlans.find((s: any) => s.id === smp.subMealPlanId)
+                   group.rows.push({
+                      mealPlanId: mp.mealPlanId,
+                      mealPlanName: mpInfo?.name || mp.mealPlanName || "Unknown MP",
+                      subMealPlanId: smp.subMealPlanId,
+                      subMealPlanName: smpInfo?.name || smp.subMealPlanName || "Unknown SMP",
+                      order: mpInfo?.order ?? 999
+                   })
+                }
+             })
+          })
+       })
+       for (const g of groupMap.values()) {
+         g.rows.sort((a, b) => a.order - b.order)
+       }
+       return Array.from(groupMap.values())
+    }
+
+    // NORMAL BUILDING LOGIC
     dateRange.forEach(({ day }: any) => {
       const dayKey = day.toLowerCase()
       const services = assignment.weekStructure[dayKey] || []
@@ -529,7 +621,7 @@ function BuildingMenuGrid({
         )
       )
     })
-  }, [building, dateRange, mealPlanAssignments, mealPlans, subMealPlans])
+  }, [building, dateRange, mealPlanAssignments, mealPlans, subMealPlans, isUniversal])
 
   /* ── helpers ── */
   const getCellItems = (
@@ -573,7 +665,7 @@ function BuildingMenuGrid({
     return Array.from(allItems.values())
   }
 
-  const getChoiceForCell = (
+  const getChoicesForCell = (
     date: string,
     mealPlanId: string,
     subMealPlanId: string,
@@ -581,11 +673,11 @@ function BuildingMenuGrid({
     subServiceId?: string
   ) => {
     const day = dateRange.find((d: any) => d.date === date)?.day
-    return building.choices.find(
+    return building.choices.filter(
       (c: any) =>
         c.choiceDay?.toLowerCase() === day?.toLowerCase() &&
-        (serviceId ? c.serviceId === serviceId : true) && // Match service if checking
-        (subServiceId ? c.subServiceId === subServiceId : true) && // Match sub-service if checking
+        (serviceId ? c.serviceId === serviceId : true) && 
+        (subServiceId ? c.subServiceId === subServiceId : true) && 
         c.mealPlans.some(
           (mp: any) =>
             mp.mealPlanId === mealPlanId &&
@@ -597,10 +689,65 @@ function BuildingMenuGrid({
   }
 
   const toggleSelection = (choiceId: string, row: any, item: any) => {
-    const key = `${building.companyId}-${building.buildingId}-${choiceId}`
     const choice = building.choices.find((c: any) => c.choiceId === choiceId)
     if (!choice) return
 
+    if (isUniversal && universalAssociations) {
+      const associatedBuildings = universalAssociations.get(choiceId) || [];
+      if (associatedBuildings.length === 0) return;
+
+      setSelections((prev: any) => {
+        const nextState = { ...prev };
+        
+        // Define key for the first building to check its state
+        const firstBuilding = associatedBuildings[0];
+        const firstChoiceId = firstBuilding.originalChoiceId || choiceId;
+        const firstKey = `${firstBuilding.companyId}-${firstBuilding.buildingId}-${firstChoiceId}`;
+        const currentFirst = prev[firstKey] || [];
+        
+        const existingIdx = currentFirst.findIndex(
+          (s: any) => s.subMealPlanId === row.subMealPlanId && s.selectedItemId === item.id
+        );
+        const isTogglingOff = existingIdx >= 0;
+
+        associatedBuildings.forEach((b: any) => {
+          const actualChoiceId = b.originalChoiceId || choiceId;
+          const bKey = `${b.companyId}-${b.buildingId}-${actualChoiceId}`;
+          const current = nextState[bKey] || [];
+
+          if (isTogglingOff) {
+             const bExistingIdx = current.findIndex((s: any) => s.subMealPlanId === row.subMealPlanId && s.selectedItemId === item.id);
+             if (bExistingIdx >= 0) {
+                 const next = [...current];
+                 next.splice(bExistingIdx, 1);
+                 nextState[bKey] = next;
+             }
+          } else {
+             if (current.length < choice.quantity) {
+               const selectedElsewhere = current.some((s: any) => s.selectedItemId === item.id);
+               if (!selectedElsewhere) {
+                 nextState[bKey] = [
+                   ...current,
+                   {
+                     mealPlanId: row.mealPlanId,
+                     mealPlanName: row.mealPlanName,
+                     subMealPlanId: row.subMealPlanId,
+                     subMealPlanName: row.subMealPlanName,
+                     selectedItemId: item.id,
+                     selectedItemName: item.name,
+                   }
+                 ]
+               }
+             }
+          }
+        });
+        return nextState;
+      });
+      return;
+    }
+
+    const key = `${building.companyId}-${building.buildingId}-${choiceId}`
+    
     setSelections((prev: any) => {
       const current = prev[key] || []
       
@@ -670,8 +817,9 @@ function BuildingMenuGrid({
   }, [building.choices])
 
   return (
-    <div className="h-full overflow-auto">
-      <div className="p-6 space-y-8" style={{ minWidth: "max-content" }}>
+    <div className="h-full flex flex-col overflow-hidden">
+      {/* Building info bar — always visible at top */}
+      <div className="shrink-0 px-6 pt-5 pb-3 bg-gray-100">
         {/* Building info bar */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -701,17 +849,20 @@ function BuildingMenuGrid({
             </Badge>
           </div>
         </div>
+      </div>
 
-        {/* Service group tables */}
+      {/* Service group tables — each gets its own scroll container */}
+      <div className="flex-1 overflow-auto bg-gray-100 px-6 pb-6 space-y-6">
         {serviceGroups.length > 0 ? (
           serviceGroups.map((group) => (
             <div
               key={`${group.serviceId}-${group.subServiceId}`}
-              className="rounded-xl overflow-hidden shadow-sm border border-gray-200"
+              className="rounded-xl border border-gray-200 shadow-sm flex flex-col bg-white"
+              style={{ isolation: 'isolate', minWidth: 'max-content' }}
             >
-              {/* Service / Sub-Service header */}
-              <div className="bg-gradient-to-r from-slate-700 to-slate-800 px-5 py-3 flex items-center gap-3">
-                <div className="h-8 w-8 rounded-lg bg-white/15 flex items-center justify-center">
+              {/* ── Service / Sub-Service header — sticky at top of this group's scroll area ── */}
+              <div className="sticky top-0 z-[40] bg-gradient-to-r from-slate-700 to-slate-800 px-5 py-3 flex items-center gap-3 shrink-0 rounded-t-xl">
+                <div className="h-8 w-8 rounded-lg bg-white/15 flex items-center justify-center shrink-0">
                   <Utensils className="h-4 w-4 text-white" />
                 </div>
                 <div className="text-white">
@@ -726,10 +877,9 @@ function BuildingMenuGrid({
                   <Badge className="bg-white/15 text-white border-none text-[10px]">
                     {group.rows.length} meal plans
                   </Badge>
-                  {/* Show selection counter for each choice in this group */}
                   {group.rows.some((row: any) =>
                     dateRange.some((d: any) =>
-                      getChoiceForCell(d.date, row.mealPlanId, row.subMealPlanId, group.serviceId, group.subServiceId)
+                      getChoicesForCell(d.date, row.mealPlanId, row.subMealPlanId, group.serviceId, group.subServiceId).length > 0
                     )
                   ) && (
                     <div className="text-[10px] text-white bg-white/20 px-2 py-1 rounded-md">
@@ -745,14 +895,14 @@ function BuildingMenuGrid({
                 </div>
               </div>
 
-              {/* Table */}
+              {/* ── Scrollable table area — scrolls horizontally AND vertically ── */}
               <table
-                className="border-collapse w-full bg-white"
-                style={{ minWidth: "max-content" }}
+                className="border-collapse bg-white"
+                style={{ minWidth: "max-content", width: "100%" }}
               >
-                <thead>
+                <thead className="sticky top-[56px] z-30 shadow-sm">
                   <tr className="bg-gray-50">
-                    <th className="sticky left-0 z-20 bg-gray-50 border-b-2 border-r-2 border-gray-300 px-5 py-3 text-left min-w-[240px]">
+                    <th className="sticky left-0 z-[35] bg-gray-50 border-b-2 border-r-2 border-gray-300 px-5 py-3 text-left min-w-[240px]">
                       <span className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">
                         Meal Plan / Sub Meal Plan
                       </span>
@@ -805,8 +955,12 @@ function BuildingMenuGrid({
                               <div className="flex gap-2 w-max px-1 pt-1">
                                 {dayChoices.map((c: any, ci: number) => {
                                   const status = choiceSelectionStatus[c.choiceId]
+                                  // Resolve SMP names from subMealPlans collection (not stale choice data)
                                   const smpNames = c.mealPlans
-                                    .flatMap((mp: any) => mp.subMealPlans.map((s: any) => s.subMealPlanName || 'SMP'))
+                                    .flatMap((mp: any) => mp.subMealPlans.map((s: any) => {
+                                      const freshSmp = subMealPlans.find((smp: any) => smp.id === s.subMealPlanId)
+                                      return freshSmp?.name || s.subMealPlanName || 'SMP'
+                                    }))
                                     .join(', ')
                                   const cc = choiceColorMap.get(c.choiceId)
                                   return (
@@ -841,180 +995,162 @@ function BuildingMenuGrid({
                 </thead>
 
                 <tbody>
-                  {group.rows.map((row, rIdx) => {
-                    const isEven = rIdx % 2 === 0
-                    const isLast = rIdx === group.rows.length - 1
-                    const rowKey = `${row.mealPlanId}|${row.subMealPlanId}`
+                  {(() => {
+                    // ═══════════════════════════════════════════════════════════
+                    // ✦ MERGED ROWS — Group rows that share the same choice
+                    // ═══════════════════════════════════════════════════════════
+                    type MergedRow = {
+                      type: 'choice' | 'plain'
+                      rows: typeof group.rows
+                      choiceIds?: string[]
+                    }
 
-                    const rowHasAnyChoice = dateRange.some((d: any) =>
-                      !!getChoiceForCell(d.date, row.mealPlanId, row.subMealPlanId, group.serviceId, group.subServiceId)
-                    )
+                    // Helper: resolve fresh SMP name from subMealPlans collection
+                    const resolveSmpName = (subMealPlanId: string, fallback: string) => {
+                      const freshSmp = subMealPlans.find((s: any) => s.id === subMealPlanId)
+                      return freshSmp?.name || fallback
+                    }
 
-                    const nextRow = group.rows[rIdx + 1]
-                    const nextRowHasAnyChoice = !!nextRow && dateRange.some((d: any) =>
-                      !!getChoiceForCell(d.date, nextRow.mealPlanId, nextRow.subMealPlanId, group.serviceId, group.subServiceId)
-                    )
+                    const mergedRows: MergedRow[] = []
 
-                    return (
-                      <tr
-                        key={`${row.mealPlanId}-${row.subMealPlanId}`}
-                        className={`
-                          transition-colors hover:bg-blue-50/30
-                          ${isEven ? "bg-white" : "bg-gray-50/40"}
-                        `}
-                      >
-                        {/* Row label */}
-                        <td
-                          className={`
-                            sticky left-0 z-10 px-5 py-3 min-w-[240px]
-                            border-r-2 border-gray-300
-                            ${!isLast ? "border-b border-gray-200" : ""}
-                            ${isEven ? "bg-white" : "bg-gray-50"}
-                          `}
-                        >
-                          <div className="relative">
-                            <div
-                              className={`absolute left-5 top-0 bottom-0 w-px transition-opacity duration-150 ${
-                                (rowHasAnyChoice || nextRowHasAnyChoice) ? "bg-gray-300 opacity-100" : "bg-transparent opacity-0"
-                              }`}
-                            />
-                            <div className="flex items-center gap-2 ml-6">
-                              {/* Removed blue choice ID badge for a cleaner look */}
-                              <div className="min-w-0">
-                                <div className="font-semibold text-gray-800 text-sm leading-tight">
-                                  {row.mealPlanName}
-                                </div>
-                                <div className="text-xs font-medium text-gray-500 mt-1">
-                                  {row.subMealPlanName}
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
+                    // Step 1: Compute choice connections (Edges between rows)
+                    const rowAdj = new Map<number, Set<number>>()
+                    group.rows.forEach((row, rIdx) => {
+                      if (!rowAdj.has(rIdx)) rowAdj.set(rIdx, new Set())
+                    })
 
-                        {/* ═══════════════════════════════════════
-                            ✦ MODIFIED — Date cells with choice colors
-                            ═══════════════════════════════════════ */}
-                        {dateRange.map((d: any, dIdx: number) => {
-                          const items = getCellItems(
-                            d.date,
-                            group.serviceId,
-                            group.subServiceId,
-                            row.mealPlanId,
-                            row.subMealPlanId
-                          )
-                          const choice = getChoiceForCell(
-                            d.date,
-                            row.mealPlanId,
-                            row.subMealPlanId,
-                            group.serviceId,
-                            group.subServiceId
-                          )
-                          const selKey = choice
-                            ? `${building.companyId}-${building.buildingId}-${choice.choiceId}`
-                            : null
-                          const selected = selKey
-                            ? (selections[selKey] || []).find(
-                                (s: any) =>
-                                  s.subMealPlanId === row.subMealPlanId
-                              )
-                            : null
+                    dateRange.forEach((d: any) => {
+                      const choiceMap = new Map<string, number[]>()
+                      group.rows.forEach((row, rIdx) => {
+                        const chs = getChoicesForCell(d.date, row.mealPlanId, row.subMealPlanId, group.serviceId, group.subServiceId)
+                        chs.forEach((ch: any) => {
+                          if (!choiceMap.has(ch.choiceId)) choiceMap.set(ch.choiceId, [])
+                          choiceMap.get(ch.choiceId)!.push(rIdx)
+                        })
+                      })
+                      choiceMap.forEach(rIdxs => {
+                        for (let i = 0; i < rIdxs.length; i++) {
+                          for (let j = i + 1; j < rIdxs.length; j++) {
+                            rowAdj.get(rIdxs[i])!.add(rIdxs[j])
+                            rowAdj.get(rIdxs[j])!.add(rIdxs[i])
+                          }
+                        }
+                      })
+                    })
 
-                          const isChoice = !!choice
+                    // Step 2: Extract Connected Components
+                    const visited = new Set<number>()
+                    const components: number[][] = []
 
-                          /* ✦ NEW — resolve the color for this choice */
-                          const cc = choice
-                            ? choiceColorMap.get(choice.choiceId)
-                            : null
+                    group.rows.forEach((row, rIdx) => {
+                      if (visited.has(rIdx)) return
 
-                          /* ✦ NEW — check if this choice is at its selection limit */
-                          const choiceStatus = choice
-                            ? choiceSelectionStatus[choice.choiceId]
-                            : null
-                          const isChoiceAtLimit = choiceStatus?.isAtLimit ?? false
-                          const isThisRowSelectedForChoice = selected != null
+                      const comp: number[] = []
+                      const q = [rIdx]
+                      visited.add(rIdx)
 
-                          // Check if the next cell in this row has the same choice to draw a connector
-                          const nextDay = dateRange[dIdx + 1]
-                          const nextChoice = nextDay
-                            ? getChoiceForCell(
-                                nextDay.date,
-                                row.mealPlanId,
-                                row.subMealPlanId,
-                                group.serviceId,
-                                group.subServiceId
-                              )
-                            : null
-                          const hasNextSameChoice =
-                            choice && nextChoice && choice.choiceId === nextChoice.choiceId
+                      while (q.length > 0) {
+                        const curr = q.shift()!
+                        comp.push(curr)
+                        rowAdj.get(curr)!.forEach(neighbor => {
+                          if (!visited.has(neighbor)) {
+                            visited.add(neighbor)
+                            q.push(neighbor)
+                          }
+                        })
+                      }
+                      
+                      comp.sort((a,b) => a - b)
+                      components.push(comp)
+                    })
 
-                          // Check if the previous cell in this row has the same choice
-                          const prevDay = dateRange[dIdx - 1]
-                          const prevChoice = prevDay
-                            ? getChoiceForCell(
-                                prevDay.date,
-                                row.mealPlanId,
-                                row.subMealPlanId,
-                                group.serviceId,
-                                group.subServiceId
-                              )
-                            : null
-                          const hasPrevSameChoice =
-                            choice && prevChoice && choice.choiceId === prevChoice.choiceId
+                    // Step 3: Build merged rows
+                    const mergedRowIndices = new Set<number>()
+                    components.forEach(comp => {
+                      let componentHasAnyChoice = false;
+                      comp.forEach(rIdx => {
+                         if (rowAdj.get(rIdx)!.size > 0 || dateRange.some((d: any) => getChoicesForCell(d.date, group.rows[rIdx].mealPlanId, group.rows[rIdx].subMealPlanId, group.serviceId, group.subServiceId).length > 0)) {
+                            componentHasAnyChoice = true;
+                         }
+                      })
 
-                          return (
+                      if (comp.length > 1 || componentHasAnyChoice) {
+                         const choiceRows = comp.map(i => group.rows[i])
+                         
+                         const allChoiceIds = new Set<string>()
+                         comp.forEach(rIdx => {
+                           dateRange.forEach((d: any) => {
+                             const chs = getChoicesForCell(d.date, group.rows[rIdx].mealPlanId, group.rows[rIdx].subMealPlanId, group.serviceId, group.subServiceId)
+                             chs.forEach(ch => allChoiceIds.add(ch.choiceId))
+                           })
+                         })
+
+                         mergedRows.push({ type: 'choice', rows: choiceRows, choiceIds: Array.from(allChoiceIds) })
+                         comp.forEach(rIdx => mergedRowIndices.add(rIdx))
+                      }
+                    })
+
+                    // Plain rows
+                    group.rows.forEach((row, rIdx) => {
+                      if (!mergedRowIndices.has(rIdx)) {
+                        mergedRows.push({ type: 'plain', rows: [row] })
+                      }
+                    })
+
+                    return mergedRows.map((merged, mIdx) => {
+                      const isEven = mIdx % 2 === 0
+                      const isLast = mIdx === mergedRows.length - 1
+                      const primaryRow = merged.rows[0]
+
+                      if (merged.type === 'plain') {
+                        // ── Plain row (non-choice) — render exactly as before ──
+                        const row = primaryRow
+                        return (
+                          <tr
+                            key={`plain-${row.mealPlanId}-${row.subMealPlanId}`}
+                            className={`
+                              transition-colors hover:bg-blue-50/30
+                              ${isEven ? "bg-white" : "bg-gray-50/40"}
+                            `}
+                          >
                             <td
-                              key={d.date}
                               className={`
-                                relative px-3 py-2.5 align-top min-w-[200px]
-                                border-r border-gray-200
+                                sticky left-0 z-10 px-5 py-3 min-w-[240px]
+                                border-r-2 border-gray-300
                                 ${!isLast ? "border-b border-gray-200" : ""}
-                                ${cc
-                                  ? `${cc.cellBg} border-l-4 ${cc.borderL}`
-                                  : ""
-                                }
+                                ${isEven ? "bg-white" : "bg-gray-50"}
                               `}
                             >
-                              {/* Visual Arrow Connector (Stitch Style: Nodes and Lines) */}
-                              
-                              {/* Left Node AND Left-spanning SVG line (if connected to a previous choice) */}
-                              {hasPrevSameChoice && cc && (
-                                <>
-                                  <div className={`absolute w-[10px] h-[10px] rounded-full border-2 border-white -left-[5px] top-1/2 -translate-y-1/2 z-30 ${cc.borderL.replace("border-l-", "bg-")}`}></div>
-                                  <svg className="absolute top-1/2 left-0 w-full h-[4px] -translate-y-1/2 pointer-events-none z-[5] overflow-visible" preserveAspectRatio="none">
-                                    <line stroke={cc.hex} strokeWidth="2.5" strokeLinecap="round" strokeDasharray="6,4" x1="-100%" x2="0%" y1="50%" y2="50%" fill="none"></line>
-                                  </svg>
-                                </>
-                              )}
-
-                              {/* Right Node + Right-spanning SVG line (if connected to a next choice) */}
-                              {hasNextSameChoice && cc && (
-                                <>
-                                  <div className={`absolute w-[10px] h-[10px] rounded-full border-2 border-white -right-[5px] top-1/2 -translate-y-1/2 z-30 ${cc.borderL.replace("border-l-", "bg-")}`}></div>
-                                  <svg className="absolute top-1/2 left-0 w-full h-[4px] -translate-y-1/2 pointer-events-none z-[5] overflow-visible" preserveAspectRatio="none">
-                                    <line stroke={cc.hex} strokeWidth="2.5" strokeLinecap="round" strokeDasharray="6,4" x1="100%" x2="200%" y1="50%" y2="50%" fill="none"></line>
-                                  </svg>
-                                </>
-                              )}
-                              {(() => {
-                                // For choice cells, pool ALL items across the choice
-                                const displayItems = isChoice && choice
-                                  ? getAllItemsForChoice(d.date, choice, group)
-                                  : items
-
-                                if (displayItems.length === 0) {
-                                  return (
-                                    <div className="text-[10px] text-gray-300 text-center py-3">
-                                      —
-                                    </div>
-                                  )
-                                }
-
-                                if (!isChoice) {
-                                  // ── Plain menu items (non-choice) ──
-                                  return (
+                              <div className="flex items-center gap-2 ml-2">
+                                <div className="min-w-0">
+                                  <div className="font-semibold text-gray-800 text-sm leading-tight">
+                                    {row.mealPlanName}
+                                  </div>
+                                  <div className="text-xs font-medium text-gray-500 mt-1">
+                                    {resolveSmpName(row.subMealPlanId, row.subMealPlanName)}
+                                  </div>
+                                </div>
+                              </div>
+                            </td>
+                            {dateRange.map((d: any) => {
+                              const items = getCellItems(
+                                d.date, group.serviceId, group.subServiceId,
+                                row.mealPlanId, row.subMealPlanId
+                              )
+                              return (
+                                <td
+                                  key={d.date}
+                                  className={`
+                                    relative px-3 py-2.5 align-top min-w-[200px]
+                                    border-r border-gray-200
+                                    ${!isLast ? "border-b border-gray-200" : ""}
+                                  `}
+                                >
+                                  {items.length === 0 ? (
+                                    <div className="text-[10px] text-gray-300 text-center py-3">—</div>
+                                  ) : (
                                     <div className="space-y-1.5">
-                                      {displayItems.map((item: any) => (
+                                      {items.map((item: any) => (
                                         <div
                                           key={item.id}
                                           className="text-[11px] text-gray-600 bg-gray-100 border border-gray-200 px-2.5 py-1.5 rounded-md"
@@ -1023,103 +1159,397 @@ function BuildingMenuGrid({
                                         </div>
                                       ))}
                                     </div>
-                                  )
-                                }
+                                  )}
+                                </td>
+                              )
+                            })}
+                          </tr>
+                        )
+                      }
 
-                                // ── Choice cell with inline selection list ──
-                                const choiceStatusObj = choiceSelectionStatus[choice.choiceId]
-                                const isChoiceAtLimit = choiceStatusObj?.isAtLimit ?? false
+                      // ═══════════════════════════════════════════════════════════
+                      // ✦ MERGED CHOICE ROW — multiple SMPs grouped into one row
+                      // ═══════════════════════════════════════════════════════════
+                      if (!merged.choiceIds || merged.choiceIds.length === 0) return null
+                      const cc = choiceColorMap.get(merged.choiceIds[0])
+                      const choiceStatusObjs = merged.choiceIds.map(id => choiceSelectionStatus[id])
+                      const totalSelected = choiceStatusObjs.reduce((s, o) => s + (o?.selected || 0), 0)
+                      const totalLimit = choiceStatusObjs.reduce((s, o) => s + (o?.limit || 0), 0)
+                      const isAtLimit = totalLimit > 0 && totalSelected >= totalLimit
 
-                                // Find all items selected for this choice
-                                const choiceKey = `${building.companyId}-${building.buildingId}-${choice.choiceId}`
-                                const selectedItemsForChoice = selections[choiceKey] || []
-                                
-                                // Items selected specifically in this cell
-                                const selectedInThisCell = selectedItemsForChoice.filter(
-                                  (s: any) => s.subMealPlanId === row.subMealPlanId
-                                )
-                                
-                                // Choice sorting index (to get C1, C2, etc.)
-                                // Group by day to find its index within this day
-                                const dayChoices = building.choices.filter((c: any) => c.choiceDay?.toLowerCase() === d.day.toLowerCase())
-                                const choiceIndex = dayChoices.findIndex((c: any) => c.choiceId === choice.choiceId)
-                                const cLabel = `C${choiceIndex >= 0 ? choiceIndex + 1 : '?'}`
-                                
-                                const choiceLabel = `${cLabel}(${choiceStatusObj?.selected || 0}/${choice.quantity})`
+                      const mealPlanName = primaryRow.mealPlanName
 
-                                return (
-                                  <div className="space-y-2 relative text-left w-full">
-                                    {/* Choice dynamic header - Simplified since checkboxes render the checked items below  */}
-                                    <div className="text-[10px] font-bold tracking-wide mb-1" style={{ color: cc?.text || '#374151' }}>
-                                      <span>{choiceLabel}</span>
-                                    </div>
+                      // Compute frequency info for all SMPs in this merged row
+                      const frequencyInfos = merged.rows.map(row => {
+                        const assignment = mealPlanAssignments?.find(
+                          (a: any) => a.companyId === building.companyId && a.buildingId === building.buildingId
+                        )
+                        let maxFrequency = 7
+                        if (assignment?.weekStructure) {
+                          Object.values(assignment.weekStructure).forEach((dayServices: any) => {
+                            dayServices?.forEach((service: any) => {
+                              service.subServices?.forEach((subService: any) => {
+                                subService.mealPlans?.forEach((mp: any) => {
+                                  mp.subMealPlans?.forEach((smp: any) => {
+                                    if (smp.subMealPlanId === row.subMealPlanId && smp.maxFrequency) {
+                                      maxFrequency = smp.maxFrequency
+                                    }
+                                  })
+                                })
+                              })
+                            })
+                          })
+                        }
 
-                                    {/* Items List (Inline checkboxes instead of dropdown) */}
-                                    <div className="flex flex-col gap-1.5 mt-2">
-                                      {[...displayItems].sort((a: any, b: any) => {
-                                        const aSel = selectedInThisCell.some((s:any) => s.selectedItemId === a.id)
-                                        const bSel = selectedInThisCell.some((s:any) => s.selectedItemId === b.id)
-                                        if (aSel && !bSel) return -1
-                                        if (!aSel && bSel) return 1
-                                        return 0
-                                      }).map((item: any) => {
-                                        const isSelectedHere = selectedInThisCell.some((s:any) => s.selectedItemId === item.id)
-                                        const selectedElsewhere = !isSelectedHere ? selectedItemsForChoice.find((s:any) => s.selectedItemId === item.id) : null
-                                        const isDisabled = !!selectedElsewhere || (!isSelectedHere && isChoiceAtLimit)
-                                        
-                                        return (
-                                          <div key={item.id} className="flex items-start gap-1">
-                                            {isSelectedHere && <span className="text-gray-400 font-normal mt-1.5 text-[10px] ml-1">|-</span>}
-                                            <label 
-                                              className={`
-                                                flex-1 flex items-start gap-2 px-2 py-1.5 rounded text-[11px] transition-all border
-                                                ${isDisabled 
-                                                  ? 'opacity-60 cursor-not-allowed bg-gray-200 border-gray-300' 
-                                                  : isSelectedHere 
-                                                    ? 'shadow-sm border-transparent' 
-                                                    : 'bg-white border-gray-200 cursor-pointer hover:border-gray-300 hover:bg-gray-50'}
-                                              `}
-                                              style={isSelectedHere && cc ? { backgroundColor: cc.selectedBg } : {}}
-                                            >
-                                              <input 
-                                                type="checkbox" 
-                                                className="mt-0.5 rounded border-gray-300 w-3 h-3 cursor-pointer disabled:cursor-not-allowed shrink-0"
-                                                checked={isSelectedHere}
-                                                disabled={isDisabled}
-                                                onChange={() => {
-                                                  if (!isDisabled) {
-                                                    toggleSelection(choice.choiceId, row, item)
-                                                  }
-                                                }}
-                                                style={cc && isSelectedHere ? { accentColor: cc.primary } : {}}
-                                              />
-                                              <div className="flex flex-col leading-tight pt-[1px] w-full">
-                                                <span className={`${isSelectedHere ? 'font-bold' : 'font-medium'} ${isDisabled && !selectedElsewhere ? 'text-gray-500' : 'text-gray-700'}`}>
-                                                  {item.name}
-                                                </span>
-                                                {selectedElsewhere && (
-                                                  <span className="text-[9px] text-amber-600 font-semibold mt-0.5" title="You must uncheck it in the other cell first.">
-                                                    Choice already made in {selectedElsewhere.subMealPlanName}
-                                                  </span>
-                                                )}
-                                              </div>
-                                            </label>
-                                          </div>
-                                        )
-                                      })}
-                                      {displayItems.length === 0 && (
-                                        <div className="px-3 py-2 text-[11px] text-gray-500 italic text-center border rounded bg-gray-50">No items available</div>
-                                      )}
-                                    </div>
+                        let selectedCount = 0
+                        Object.entries(selections).forEach(([key, items]: [string, any]) => {
+                          if (key.startsWith(`${building.companyId}-${building.buildingId}-`)) {
+                            items.forEach((item: any) => {
+                              if (item.subMealPlanId === row.subMealPlanId) {
+                                selectedCount++
+                              }
+                            })
+                          }
+                        })
+
+                        return { smpName: resolveSmpName(row.subMealPlanId, row.subMealPlanName), selectedCount, maxFrequency }
+                      })
+
+                      // Overall frequency: sum across all SMPs
+                      const totalFreqSelected = frequencyInfos.reduce((s, f) => s + f.selectedCount, 0)
+                      const totalFreqMax = frequencyInfos.reduce((s, f) => s + f.maxFrequency, 0)
+
+                      let freqBgColor = 'bg-yellow-100'
+                      let freqTextColor = 'text-yellow-700'
+                      if (totalFreqSelected === totalFreqMax) {
+                        freqBgColor = 'bg-green-100'
+                        freqTextColor = 'text-green-700'
+                      } else if (totalFreqSelected > totalFreqMax) {
+                        freqBgColor = 'bg-red-100'
+                        freqTextColor = 'text-red-700'
+                      }
+
+                      return (
+                        <tr
+                          key={`choice-${merged.choiceIds!.join('-')}`}
+                          className={`
+                            transition-colors hover:bg-blue-50/30
+                            ${isEven ? "bg-white" : "bg-gray-50/40"}
+                          `}
+                        >
+                          {/* ── Merged Row Label ── */}
+                          <td
+                            className={`
+                              sticky left-0 z-10 px-5 py-3 min-w-[240px]
+                              border-r-2 border-gray-300
+                              ${!isLast ? "border-b border-gray-200" : ""}
+                              ${isEven ? "bg-white" : "bg-gray-50"}
+                            `}
+                          >
+                            <div className="flex flex-col gap-2">
+                              {/* SMP names joined with / */}
+                              <div className="flex items-center gap-2">
+                                <div
+                                  className="w-1 self-stretch rounded-full shrink-0"
+                                  style={{ backgroundColor: cc?.primary || '#6366f1' }}
+                                />
+                                <div className="min-w-0 flex-1">
+                                  <div className="font-semibold text-gray-800 text-sm leading-tight">
+                                    {mealPlanName}
                                   </div>
-                                )
-                              })()}
-                            </td>
-                          )
-                        })}
-                      </tr>
-                    )
-                  })}
+                                  <div className="flex flex-wrap items-center gap-1 mt-1">
+                                    {merged.rows.map((r, i) => (
+                                      <React.Fragment key={r.subMealPlanId}>
+                                        <span
+                                          className="text-xs font-semibold px-1.5 py-0.5 rounded"
+                                          style={{
+                                            backgroundColor: cc?.lightBg || 'hsla(240, 80%, 50%, 0.08)',
+                                            color: cc?.text || '#4338ca'
+                                          }}
+                                        >
+                                          {resolveSmpName(r.subMealPlanId, r.subMealPlanName)}
+                                        </span>
+                                        {i < merged.rows.length - 1 && (
+                                          <span className="text-gray-400 text-xs font-bold">/</span>
+                                        )}
+                                      </React.Fragment>
+                                    ))}
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Choice count + Frequency badges row */}
+                              <div className="flex items-center gap-2 flex-wrap ml-3">
+                                {/* Choice selection count */}
+                                <span
+                                  className={`text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap ${
+                                    isAtLimit
+                                      ? 'bg-green-100 text-green-700'
+                                      : 'bg-amber-100 text-amber-700'
+                                  }`}
+                                >
+                                  {totalSelected}/{totalLimit} chosen
+                                </span>
+
+                                {/* Frequency count */}
+                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${freqBgColor} ${freqTextColor} whitespace-nowrap`}>
+                                  {totalFreqSelected}/{totalFreqMax}× freq
+                                </span>
+
+                                {/* Per-SMP frequency breakdown (if multiple SMPs) */}
+                                {merged.rows.length > 1 && frequencyInfos.map((fi, idx) => {
+                                  let fiBg = 'bg-gray-100'
+                                  let fiText = 'text-gray-500'
+                                  if (fi.selectedCount === fi.maxFrequency) {
+                                    fiBg = 'bg-green-50'; fiText = 'text-green-600'
+                                  } else if (fi.selectedCount > fi.maxFrequency) {
+                                    fiBg = 'bg-red-50'; fiText = 'text-red-600'
+                                  }
+                                  return (
+                                    <span key={idx} className={`text-[9px] font-medium px-1.5 py-0.5 rounded ${fiBg} ${fiText} whitespace-nowrap`}>
+                                      {fi.smpName}: {fi.selectedCount}/{fi.maxFrequency}×
+                                    </span>
+                                  )
+                                })}
+                              </div>
+
+                              {isUniversal && merged.rows.length === 1 && (
+                                <div className="mt-3 p-2 bg-red-50 text-red-800 text-[10px] rounded border border-red-200">
+                                  <strong className="block mb-1 font-bold text-red-900 border-b border-red-200/50 pb-0.5">⚠️ Isolated SMP Diagnostic</strong>
+                                  <span className="text-red-700 block mb-1">This SMP is entirely isolated. It does NOT share a single Choice ID on ANY day natively with any other SMP in this sub-service.</span>
+                                  <div className="bg-white/50 p-1.5 rounded border border-red-100 mb-1.5 max-h-[150px] overflow-y-auto">
+                                    <span className="font-semibold text-gray-700 block mb-0.5">Isolated SMP: {resolveSmpName(merged.rows[0].subMealPlanId, merged.rows[0].subMealPlanName)}</span>
+                                    <span className="font-mono text-[9px] break-all text-gray-600 block mb-2">
+                                      Choices: {JSON.stringify(merged.choiceIds)}
+                                    </span>
+                                    <span className="font-semibold text-gray-700 block mb-0.5">Other SMPs in {group.serviceName}:</span>
+                                    {group.rows.map((r, i) => {
+                                       if (r.subMealPlanId === merged.rows[0].subMealPlanId) return null;
+                                       const cIds = new Set<string>()
+                                       dateRange.forEach((d: any) => {
+                                         const chs = getChoicesForCell(d.date, r.mealPlanId, r.subMealPlanId, group.serviceId, group.subServiceId)
+                                         chs.forEach(ch => cIds.add(ch.choiceId))
+                                       })
+                                       return (
+                                          <div key={i} className={`font-mono text-[9px] break-words mb-1 text-gray-500`}>
+                                              <span className="font-semibold">{r.subMealPlanName}</span> ➜ {JSON.stringify(Array.from(cIds))}
+                                          </div>
+                                       )
+                                    })}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </td>
+
+                          {/* ── Date cells for merged choice ── */}
+                          {dateRange.map((d: any, dIdx: number) => {
+                            const dayChoices = new Map<string, any>()
+                            const smpAssignmentMap = new Map<string, any>()
+
+                            merged.rows.forEach(r => {
+                               const chs = getChoicesForCell(d.date, r.mealPlanId, r.subMealPlanId, group.serviceId, group.subServiceId)
+                               chs.forEach(ch => {
+                                  dayChoices.set(ch.choiceId, ch)
+                                  smpAssignmentMap.set(r.subMealPlanId, ch)
+                               })
+                            })
+
+                            if (dayChoices.size === 0) {
+                              // Non-choice day — show items from all merged SMPs
+                              const allDayItems: any[] = []
+                              merged.rows.forEach(r => {
+                                const items = getCellItems(d.date, group.serviceId, group.subServiceId, r.mealPlanId, r.subMealPlanId)
+                                items.forEach((item: any) => {
+                                  if (!allDayItems.find((x: any) => x.id === item.id)) allDayItems.push(item)
+                                })
+                              })
+
+                              return (
+                                <td
+                                  key={d.date}
+                                  className={`
+                                    relative px-3 py-2.5 align-top min-w-[200px]
+                                    border-r border-gray-200
+                                    ${!isLast ? "border-b border-gray-200" : ""}
+                                  `}
+                                >
+                                  {allDayItems.length === 0 ? (
+                                    <div className="text-[10px] text-gray-300 text-center py-3">—</div>
+                                  ) : (
+                                    <div className="space-y-1.5">
+                                      {allDayItems.map((item: any) => (
+                                        <div key={item.id} className="text-[11px] text-gray-600 bg-gray-100 border border-gray-200 px-2.5 py-1.5 rounded-md">
+                                          {item.name}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </td>
+                              )
+                            }
+
+                            // ── Choice day cell (Supports Heterogeneous Multi-Choice Cells) ──
+                            return (
+                              <td
+                                key={d.date}
+                                className={`
+                                  relative hover:z-[100] px-3 py-2.5 align-top min-w-[200px]
+                                  border-r border-gray-200 bg-amber-50/10
+                                  ${!isLast ? "border-b border-gray-200" : ""}
+                                `}
+                              >
+                                <div className="space-y-2 relative text-left w-full h-full">
+                                  {Array.from(dayChoices.values()).map(choice => {
+                                      const displayItems = getAllItemsForChoice(d.date, choice, group)
+                                      const currentChoiceStatus = choiceSelectionStatus[choice.choiceId]
+                                      const isChoiceAtLimit = currentChoiceStatus?.isAtLimit ?? false
+                                      const choiceKey = `${building.companyId}-${building.buildingId}-${choice.choiceId}`
+                                      let selectedItemsForChoice = selections[choiceKey] || []
+          
+                                      if (isUniversal && universalAssociations) {
+                                        const associatedBuildings = universalAssociations.get(choice.choiceId) || [];
+                                        if (associatedBuildings.length > 0) {
+                                          const firstB = associatedBuildings[0];
+                                          const firstChoiceId = firstB.originalChoiceId || choice.choiceId;
+                                          const firstKey = `${firstB.companyId}-${firstB.buildingId}-${firstChoiceId}`;
+                                          selectedItemsForChoice = selections[firstKey] || [];
+                                        }
+                                      }
+          
+                                      const dayChoicesAll = building.choices.filter((c: any) => c.choiceDay?.toLowerCase() === d.day.toLowerCase())
+                                      const choiceIndex = dayChoicesAll.findIndex((c: any) => c.choiceId === choice.choiceId)
+                                      const cLabel = `C${choiceIndex >= 0 ? choiceIndex + 1 : '?'}`
+                                      
+                                      // Extract SMP names to help user identify which choice pair this is
+                                      const smpNames = choice.mealPlans
+                                        .flatMap((mp: any) => mp.subMealPlans.map((s: any) => {
+                                          const freshSmp = subMealPlans.find((smp: any) => smp.id === s.subMealPlanId)
+                                          return freshSmp?.name || s.subMealPlanName || 'SMP'
+                                        }))
+                                        .join(', ')
+
+                                      const choiceLabel = (
+                                        <div className="flex items-center gap-1 min-w-0">
+                                          <span className="shrink-0">{cLabel} ({currentChoiceStatus?.selected || 0}/{choice.quantity})</span>
+                                          <span className="font-normal opacity-80 text-[9px] truncate mt-[1px]" title={smpNames}>
+                                            {smpNames}
+                                          </span>
+                                        </div>
+                                      )
+                                      const cc = choiceColorMap.get(choice.choiceId)
+
+                                      return (
+                                        <div key={choice.choiceId} className={`rounded shadow-sm overflow-hidden p-1.5 ${cc ? `border-l-4` : 'border border-gray-200'}`} style={cc ? { backgroundColor: cc.lightBg, borderLeftColor: cc.primary } : {}}>
+                                          {/* Choice header */}
+                                          <div className="text-[10px] font-bold tracking-wide mb-1 flex items-center justify-between" style={{ color: cc?.text || '#374151' }}>
+                                            <span>{choiceLabel}</span>
+                                            {isUniversal && universalAssociations && (
+                                              <HoverCard openDelay={200}>
+                                                <HoverCardTrigger asChild>
+                                                  <div className="bg-white/50 hover:bg-white rounded p-0.5 border border-transparent hover:border-blue-200 transition-colors cursor-help pointer-events-auto">
+                                                    <Globe2 className="h-3.5 w-3.5" style={{ color: cc?.primary || '#3b82f6' }} />
+                                                  </div>
+                                                </HoverCardTrigger>
+                                                <HoverCardContent 
+                                                  side="bottom" 
+                                                  align="end" 
+                                                  className="w-[220px] p-2 bg-gray-800 border-none shadow-2xl z-[9999]"
+                                                >
+                                                  <div className="font-semibold text-white mb-1 border-b border-gray-600/50 pb-0.5">Assigned to {universalAssociations.get(choice.choiceId)?.length || 0} Companies:</div>
+                                                  <ul className="space-y-0.5 max-h-[250px] overflow-y-auto pr-1">
+                                                    {(universalAssociations.get(choice.choiceId) || []).map((b: any, bIdx: number) => (
+                                                      <li key={bIdx} className="truncate text-gray-200 text-[10px]">• {b.companyName} <span className="text-gray-400">({b.buildingName})</span></li>
+                                                    ))}
+                                                  </ul>
+                                                </HoverCardContent>
+                                              </HoverCard>
+                                            )}
+                                          </div>
+      
+                                          {/* Items list with checkboxes */}
+                                          <div className="flex flex-col gap-1.5 mt-2">
+                                            {[...displayItems].sort((a: any, b: any) => {
+                                              const aSel = selectedItemsForChoice.some((s:any) => s.selectedItemId === a.id)
+                                              const bSel = selectedItemsForChoice.some((s:any) => s.selectedItemId === b.id)
+                                              if (aSel && !bSel) return -1
+                                              if (!aSel && bSel) return 1
+                                              return 0
+                                            }).map((item: any) => {
+                                              // Find which SMP this item belongs to (for toggling)
+                                              let itemRow = merged.rows.find(r => smpAssignmentMap.get(r.subMealPlanId)?.choiceId === choice.choiceId) || merged.rows[0]
+                                              for (const r of merged.rows) {
+                                                const cellItems = getCellItems(d.date, group.serviceId, group.subServiceId, r.mealPlanId, r.subMealPlanId)
+                                                if (cellItems.some((ci: any) => ci.id === item.id)) {
+                                                  itemRow = r
+                                                  break
+                                                }
+                                              }
+      
+                                              const isSelectedHere = selectedItemsForChoice.some((s:any) => s.selectedItemId === item.id)
+                                              const isDisabled = !isSelectedHere && isChoiceAtLimit
+      
+                                              return (
+                                                <div key={item.id} className="flex items-start gap-1">
+                                                  {isSelectedHere && <span className="text-gray-400 font-normal mt-1.5 text-[10px] ml-1">|-</span>}
+                                                  <label
+                                                    className={`
+                                                      flex-1 flex items-start gap-2 px-2 py-1.5 rounded text-[11px] transition-all border
+                                                      ${isDisabled
+                                                        ? 'opacity-60 cursor-not-allowed bg-gray-200 border-gray-300'
+                                                        : isSelectedHere
+                                                          ? 'shadow-sm border-transparent'
+                                                          : 'bg-white border-gray-200 cursor-pointer hover:border-gray-300 hover:bg-gray-50'}
+                                                    `}
+                                                    style={isSelectedHere && cc ? { backgroundColor: cc.selectedBg } : {}}
+                                                  >
+                                                    <input
+                                                      type="checkbox"
+                                                      className="mt-0.5 rounded border-gray-300 w-3 h-3 cursor-pointer disabled:cursor-not-allowed shrink-0"
+                                                      checked={isSelectedHere}
+                                                      disabled={isDisabled}
+                                                      onChange={() => {
+                                                        if (!isDisabled) {
+                                                          toggleSelection(choice.choiceId, itemRow, item)
+                                                        }
+                                                      }}
+                                                      style={cc && isSelectedHere ? { accentColor: cc.primary } : {}}
+                                                    />
+                                                    <div className="flex flex-col leading-tight pt-[1px] w-full">
+                                                      <span className={`${isSelectedHere ? 'font-bold' : 'font-medium'} ${isDisabled ? 'text-gray-500' : 'text-gray-700'}`}>
+                                                        {item.name}
+                                                      </span>
+                                                    </div>
+                                                  </label>
+                                                </div>
+                                              )
+                                            })}
+                                          </div>
+                                        </div>
+                                      )
+                                  })}
+
+                                  {/* Render warnings for SMPs that aren't mapped to ANY choice today */}
+                                  {isUniversal && merged.rows.map(r => {
+                                    const choices = getChoicesForCell(d.date, r.mealPlanId, r.subMealPlanId, group.serviceId, group.subServiceId);
+                                    if (choices.length === 0) {
+                                      return (
+                                        <div key={`warn-${r.subMealPlanId}`} className="text-[9px] bg-red-50 text-red-600 border border-red-200 p-1.5 rounded shadow-sm font-medium mt-2">
+                                          <strong className="block mb-0.5 text-red-700 font-bold">⚠️ Excluded from Set</strong>
+                                          <span className="opacity-90 leading-tight block">{resolveSmpName(r.subMealPlanId, r.subMealPlanName)} is not assigned globally on this day.</span>
+                                        </div>
+                                      )
+                                    }
+                                    return null
+                                  })}
+                                </div>
+                              </td>
+                            )
+                          })}
+                        </tr>
+                      )
+                    })
+                  })()}
                 </tbody>
               </table>
             </div>
@@ -1135,7 +1565,7 @@ function BuildingMenuGrid({
             </p>
           </div>
         )}
-      </div>
+      </div>{/* end service groups scroll area */}
     </div>
   )
 }

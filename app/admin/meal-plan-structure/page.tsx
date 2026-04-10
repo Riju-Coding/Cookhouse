@@ -1,3 +1,4 @@
+﻿
 "use client"
 
 import { useState, useEffect, useMemo, Fragment } from "react"
@@ -17,6 +18,8 @@ import {
 } from "@/components/ui/dialog"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area"
+import { Popover, PopoverContent, PopoverTrigger, PopoverClose } from "@/components/ui/popover"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuLabel, DropdownMenuSeparator } from "@/components/ui/dropdown-menu"
 import {
   ChevronDown,
   Building2,
@@ -32,6 +35,7 @@ import {
   Eye,
   Plus,
   Trash2,
+  Edit,
 } from "lucide-react"
 import { toast } from "@/hooks/use-toast"
 import {
@@ -64,6 +68,7 @@ interface MealPlanStructureData {
   subMealPlans: {
     subMealPlanId: string
     subMealPlanName?: string
+    maxFrequency?: number
   }[]
 }
 
@@ -72,6 +77,9 @@ interface MealPlanChoice {
   quantity: number
   mealPlans: MealPlanStructureData[]
   createdAt?: string | Date
+  day?: string
+  serviceId?: string
+  subServiceId?: string
 }
 
 interface DayChoices {
@@ -142,7 +150,11 @@ export default function MealPlanStructurePage() {
   const [choiceStep, setChoiceStep] = useState<'quantity' | 'selection'>("quantity")
   const [choiceSelections, setChoiceSelections] = useState<MealPlanStructureData[]>([])
   const [choiceSearchQuery, setChoiceSearchQuery] = useState("")
-  
+  const [editingChoiceId, setEditingChoiceId] = useState<string | null>(null)
+  const [isCopyChoiceModalOpen, setIsCopyChoiceModalOpen] = useState(false)
+  const [selectedChoiceToCopy, setSelectedChoiceToCopy] = useState<MealPlanChoice | null>(null)
+  const [selectedTargetDays, setSelectedTargetDays] = useState<string[]>([])
+
   // New states for View All Companies - Full Screen Editor
   const [isViewAllModalOpen, setIsViewAllModalOpen] = useState(false)
   const [isLoadingAllData, setIsLoadingAllData] = useState(false)
@@ -150,6 +162,29 @@ export default function MealPlanStructurePage() {
   const [allBuildingsWeeklyStructure, setAllBuildingsWeeklyStructure] = useState<Record<string, WeeklyStructure>>({})
   const [editingBuildingId, setEditingBuildingId] = useState<string | null>(null)
   const [editingBuildingStructure, setEditingBuildingStructure] = useState<WeeklyStructure>({})
+
+  const [copyMpTarget, setCopyMpTarget] = useState<{sourceDay: string, serviceId: string, subServiceId: string, mealPlanId: string} | null>(null)
+  const [copyMpSelectedDays, setCopyMpSelectedDays] = useState<string[]>([])
+
+  // Compute global sub meal plan frequencies to maintain consistency across the week
+  const globalFrequencies = useMemo(() => {
+    const freqs: Record<string, number> = {}
+    DAYS.forEach((day) => {
+      const dayServices = weeklyStructure[day] || []
+      dayServices.forEach((svc) => {
+        svc.subServices.forEach((sub) => {
+          sub.mealPlans?.forEach((mp) => {
+            mp.subMealPlans?.forEach((smp) => {
+              if (smp.maxFrequency !== undefined) {
+                freqs[smp.subMealPlanId] = smp.maxFrequency
+              }
+            })
+          })
+        })
+      })
+    })
+    return freqs
+  }, [weeklyStructure])
 
   // Initial Fetch of Base Data
   useEffect(() => {
@@ -374,7 +409,10 @@ export default function MealPlanStructurePage() {
     newMealPlans: MealPlanStructureData[],
   ) => {
     setWeeklyStructure((prev) => {
-      const dayServices = prev[day] ? [...prev[day]] : []
+      const updatedStructure = { ...prev }
+
+      // 1. Update the selections for THIS DAY ONLY
+      const dayServices = updatedStructure[day] ? [...updatedStructure[day]] : []
       let serviceIndex = dayServices.findIndex((s) => s.serviceId === serviceId)
 
       if (serviceIndex === -1) {
@@ -398,7 +436,69 @@ export default function MealPlanStructurePage() {
 
       service.subServices = subServicesList
       dayServices[serviceIndex] = service
-      return { ...prev, [day]: dayServices }
+      updatedStructure[day] = dayServices
+
+      // 2. Sync ONLY the `maxFrequency` property across ALL 7 days.
+      // This preserves user's daily check/uncheck selections perfectly.
+      const frequencyMap = new Map<string, number>()
+      newMealPlans.forEach(mp => {
+        mp.subMealPlans?.forEach(smp => {
+          if (smp.maxFrequency !== undefined) {
+            frequencyMap.set(smp.subMealPlanId, smp.maxFrequency)
+          }
+        })
+      })
+
+      if (frequencyMap.size > 0) {
+        DAYS.forEach((currentDay) => {
+          if (currentDay === day) return // Already updated
+
+          const currentDayServices = updatedStructure[currentDay] ? [...updatedStructure[currentDay]] : []
+          const svcIdx = currentDayServices.findIndex((s) => s.serviceId === serviceId)
+
+          if (svcIdx !== -1) {
+            const currentSvc = { ...currentDayServices[svcIdx] }
+            const currentSubSvcList = [...currentSvc.subServices]
+            const dSubIdx = currentSubSvcList.findIndex((s) => s.subServiceId === subServiceId)
+
+            if (dSubIdx !== -1) {
+              const currentMealPlans = currentSubSvcList[dSubIdx].mealPlans || []
+              let changed = false
+              
+              const updatedMealPlans = currentMealPlans.map(mp => {
+                if (!mp.subMealPlans || mp.subMealPlans.length === 0) return mp
+                
+                let mpChanged = false
+                const updatedSubMealPlans = mp.subMealPlans.map(smp => {
+                  if (frequencyMap.has(smp.subMealPlanId)) {
+                    const newFreq = frequencyMap.get(smp.subMealPlanId)
+                    if (smp.maxFrequency !== newFreq) {
+                      mpChanged = true
+                      return { ...smp, maxFrequency: newFreq }
+                    }
+                  }
+                  return smp
+                })
+
+                if (mpChanged) {
+                  changed = true
+                  return { ...mp, subMealPlans: updatedSubMealPlans }
+                }
+                return mp
+              })
+
+              if (changed) {
+                currentSubSvcList[dSubIdx] = { ...currentSubSvcList[dSubIdx], mealPlans: updatedMealPlans }
+                currentSvc.subServices = currentSubSvcList
+                currentDayServices[svcIdx] = currentSvc
+                updatedStructure[currentDay] = currentDayServices
+              }
+            }
+          }
+        })
+      }
+
+      return updatedStructure
     })
   }
 
@@ -454,14 +554,21 @@ export default function MealPlanStructurePage() {
     }
 
     const { day, serviceId, subServiceId } = choiceContext
+    
+    if (editingChoiceId) {
+      // Update existing choice
+      handleSaveEditedChoice()
+      return
+    }
+
     const choiceId = `choice-${Date.now()}-${Math.random().toString(36).substring(7)}`
     
     const newChoice: MealPlanChoice = {
       choiceId,
       quantity: choiceQuantity,
-      choiceDay: day,
-      serviceId, // Store service ID so we know which service this choice belongs to
-      subServiceId, // Store sub-service ID so we know which sub-service this choice belongs to
+      day,
+      serviceId,
+      subServiceId,
       mealPlans: JSON.parse(JSON.stringify(choiceSelections)),
       createdAt: new Date(),
     }
@@ -537,6 +644,182 @@ export default function MealPlanStructurePage() {
     })
 
     toast({ title: "Deleted", description: "Choice removed" })
+  }
+
+  const handleEditChoice = (choice: MealPlanChoice) => {
+    if (!choice.day || !choice.serviceId || !choice.subServiceId) return
+    
+    // Close any open copy modal first
+    setIsCopyChoiceModalOpen(false)
+    
+    // Set editing state
+    setEditingChoiceId(choice.choiceId)
+    setChoiceContext({ day: choice.day, serviceId: choice.serviceId, subServiceId: choice.subServiceId })
+    setChoiceQuantity(choice.quantity)
+    setChoiceSelections(JSON.parse(JSON.stringify(choice.mealPlans)))
+    setChoiceStep("selection")
+    
+    // Open the modal
+    setIsChoiceModalOpen(true)
+  }
+
+  const handleSaveEditedChoice = () => {
+    if (!editingChoiceId || !choiceContext || choiceSelections.length === 0) {
+      toast({ title: "Error", description: "Please select at least one meal plan", variant: "destructive" })
+      return
+    }
+
+    const hasInvalidMealPlan = choiceSelections.some((mp) => {
+      const hasSubMealPlans = mp.subMealPlans && mp.subMealPlans.length > 0
+      return !hasSubMealPlans
+    })
+
+    if (hasInvalidMealPlan) {
+      toast({ title: "Error", description: "Please select sub meal plan, it's mandatory for each meal plan", variant: "destructive" })
+      return
+    }
+
+    const totalSelectedSubMeals = choiceSelections.reduce((sum, mp) => sum + (mp.subMealPlans?.length || 0), 0)
+    if (choiceQuantity >= totalSelectedSubMeals) {
+      toast({
+        title: "Invalid Item Count",
+        description: `Item count (${choiceQuantity}) must be less than total sub meals selected (${totalSelectedSubMeals}). Please select more sub meals or reduce the item count.`,
+        variant: "destructive",
+      })
+      return
+    }
+
+    const { day, serviceId, subServiceId } = choiceContext
+
+    setWeeklyStructure((prev) => {
+      const dayServices = prev[day] ? [...prev[day]] : []
+      const serviceIndex = dayServices.findIndex((s) => s.serviceId === serviceId)
+
+      if (serviceIndex !== -1) {
+        const service = { ...dayServices[serviceIndex] }
+        const subServicesList = [...service.subServices]
+        const subIndex = subServicesList.findIndex((s) => s.subServiceId === subServiceId)
+
+        if (subIndex !== -1) {
+          const subService = { ...subServicesList[subIndex] }
+          if (subService.choices && subService.choices[day]) {
+            const choiceIndex = subService.choices[day].findIndex((c) => c.choiceId === editingChoiceId)
+            if (choiceIndex !== -1) {
+              subService.choices[day][choiceIndex] = {
+                ...subService.choices[day][choiceIndex],
+                quantity: choiceQuantity,
+                mealPlans: JSON.parse(JSON.stringify(choiceSelections)),
+              }
+            }
+          }
+          subServicesList[subIndex] = subService
+        }
+
+        service.subServices = subServicesList
+        dayServices[serviceIndex] = service
+      }
+
+      return { ...prev, [day]: dayServices }
+    })
+
+    toast({ title: "Success", description: "Choice updated successfully" })
+    setIsChoiceModalOpen(false)
+    setEditingChoiceId(null)
+    setChoiceContext(null)
+    setChoiceSelections([])
+  }
+
+  const handleCopyChoice = (choice: MealPlanChoice) => {
+    if (!choice.day || !choice.serviceId || !choice.subServiceId) return
+    
+    // Close any open edit modal first
+    setIsChoiceModalOpen(false)
+    
+    // Set copy state
+    setSelectedChoiceToCopy(choice)
+    setSelectedTargetDays([])
+    
+    // Show toast notification
+    toast({ title: "Copied", description: "Choice copied to clipboard. Select days to paste." })
+    
+    // Open the copy modal
+    setIsCopyChoiceModalOpen(true)
+  }
+
+ const handlePasteChoiceToWeek = async () => {
+    if (!selectedChoiceToCopy || selectedTargetDays.length === 0) {
+      toast({ title: "Error", description: "Please select at least one day", variant: "destructive" })
+      return
+    }
+
+    const { serviceId, subServiceId, quantity, mealPlans } = selectedChoiceToCopy
+
+    setWeeklyStructure((prev) => {
+      const updatedStructure = { ...prev }
+
+      selectedTargetDays.forEach((targetDay) => {
+        const dayServices = updatedStructure[targetDay] ? [...updatedStructure[targetDay]] : []
+        let serviceIndex = dayServices.findIndex((s) => s.serviceId === serviceId)
+
+        if (serviceIndex === -1) {
+          dayServices.push({ serviceId, serviceName: getServiceName(serviceId), subServices: [] })
+          serviceIndex = dayServices.length - 1
+        }
+
+        const service = { ...dayServices[serviceIndex] }
+        const subServicesList = [...service.subServices]
+        const subIndex = subServicesList.findIndex((s) => s.subServiceId === subServiceId)
+
+        if (subIndex !== -1) {
+          const subService = { ...subServicesList[subIndex] }
+          
+          // FIX 1: Clone the choices object deeply so days don't share identical memory references
+          subService.choices = subService.choices ? { ...subService.choices } : {}
+
+          const newChoiceId = `choice-${Date.now()}-${Math.random().toString(36).substring(7)}`
+          const newChoice: MealPlanChoice = {
+            choiceId: newChoiceId,
+            quantity,
+            mealPlans: JSON.parse(JSON.stringify(mealPlans)),
+            createdAt: new Date(),
+            day: targetDay,
+            serviceId,
+            subServiceId,
+          }
+
+          // FIX 2: Check if identical choice already exists to prevent duplicate stacking
+          const existingChoiceIndex = subService.choices[targetDay]?.findIndex((c) =>
+            JSON.stringify(c.mealPlans) === JSON.stringify(newChoice.mealPlans) &&
+            c.quantity === newChoice.quantity
+          ) ?? -1
+
+          if (existingChoiceIndex !== -1) {
+            // Replace existing instead of appending a duplicate
+            const targetDayChoices = [...subService.choices[targetDay]]
+            targetDayChoices[existingChoiceIndex] = newChoice
+            subService.choices[targetDay] = targetDayChoices
+          } else {
+            // Append as normal
+            subService.choices[targetDay] = subService.choices[targetDay]
+              ? [...subService.choices[targetDay], newChoice]
+              : [newChoice]
+          }
+
+          subServicesList[subIndex] = subService
+        }
+
+        service.subServices = subServicesList
+        dayServices[serviceIndex] = service
+        updatedStructure[targetDay] = dayServices
+      })
+
+      return updatedStructure
+    })
+
+    toast({ title: "Success", description: `Choice copied to ${selectedTargetDays.length} day(s)` })
+    setIsCopyChoiceModalOpen(false)
+    setSelectedChoiceToCopy(null)
+    setSelectedTargetDays([])
   }
 
   const getFilteredCompanies = () => {
@@ -1042,7 +1325,7 @@ export default function MealPlanStructurePage() {
 
       {/* --- COPY TO BUILDINGS DIALOG --- */}
       <Dialog open={isCopyModalOpen} onOpenChange={setIsCopyModalOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md z-50">
           <DialogHeader>
             <DialogTitle>Copy Meal Plan Structure</DialogTitle>
             <DialogDescription>
@@ -1116,17 +1399,81 @@ export default function MealPlanStructurePage() {
         </DialogContent>
       </Dialog>
 
-      {/* --- CHOICE CREATION MODAL --- */}
-      <Dialog open={isChoiceModalOpen} onOpenChange={setIsChoiceModalOpen}>
-        <DialogContent className="sm:max-w-md max-h-[80vh] flex flex-col z-[99999]">
+      {/* --- COPY CHOICE TO WEEK MODAL --- */}
+      <Dialog open={isCopyChoiceModalOpen} onOpenChange={setIsCopyChoiceModalOpen}>
+        <DialogContent className="max-w-md z-50">
           <DialogHeader>
-            <DialogTitle>
-              {choiceStep === 'quantity' ? 'Select Quantity' : 'Select Meal Plans for Choice'}
-            </DialogTitle>
+            <DialogTitle>Copy Choice to Week Days</DialogTitle>
             <DialogDescription>
-              {choiceStep === 'quantity' 
-                ? 'How many items do you want in this choice?'
-                : 'Choose meal plans and sub-plans for this choice.'}
+              Select which days to copy this choice to in the same sub-service.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="py-4">
+            <div className="flex items-center justify-between mb-2">
+              <Label className="font-semibold">Select Days:</Label>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 text-xs"
+                onClick={() => {
+                  if (selectedChoiceToCopy?.day) {
+                    const otherDays = DAYS.filter((d) => d !== selectedChoiceToCopy.day)
+                    if (selectedTargetDays.length === otherDays.length) {
+                      setSelectedTargetDays([])
+                    } else {
+                      setSelectedTargetDays(otherDays)
+                    }
+                  }
+                }}
+              >
+                Toggle All
+              </Button>
+            </div>
+
+            <ScrollArea className="h-[200px] border rounded-md p-3">
+              <div className="space-y-3">
+                {DAYS.filter((d) => d !== selectedChoiceToCopy?.day).map((day) => (
+                  <div key={day} className="flex items-center space-x-2">
+                    <Checkbox
+                      id={`copy-day-${day}`}
+                      checked={selectedTargetDays.includes(day)}
+                      onCheckedChange={() => {
+                        if (selectedTargetDays.includes(day)) {
+                          setSelectedTargetDays(selectedTargetDays.filter((d) => d !== day))
+                        } else {
+                          setSelectedTargetDays([...selectedTargetDays, day])
+                        }
+                      }}
+                    />
+                    <label htmlFor={`copy-day-${day}`} className="text-sm cursor-pointer capitalize font-medium">
+                      {day}
+                    </label>
+                  </div>
+                ))}
+              </div>
+            </ScrollArea>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsCopyChoiceModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handlePasteChoiceToWeek} disabled={selectedTargetDays.length === 0}>
+              <Copy className="h-3 w-3 mr-2" />
+              Copy to {selectedTargetDays.length} Day{selectedTargetDays.length !== 1 ? 's' : ''}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* --- CHOICE CREATION/EDIT MODAL --- */}
+      <Dialog open={isChoiceModalOpen} onOpenChange={setIsChoiceModalOpen}>
+        <DialogContent className="max-w-md max-h-[80vh] flex flex-col z-50">
+          <DialogHeader>
+            <DialogTitle>{editingChoiceId ? 'Edit Choice' : 'Create New Choice'}</DialogTitle>
+            <DialogDescription>
+              {editingChoiceId ? 'Update the choice details for this day.' : `Create a choice with multiple meal plans for ${choiceContext?.day || 'selected day'}.`}
             </DialogDescription>
           </DialogHeader>
 
@@ -1271,6 +1618,21 @@ export default function MealPlanStructurePage() {
             >
               {choiceStep === 'quantity' ? 'Cancel' : 'Back'}
             </Button>
+            {selectedChoiceToCopy && choiceStep === 'quantity' && (
+              <Button 
+                variant="outline"
+                onClick={() => {
+                  if (selectedChoiceToCopy) {
+                    setChoiceQuantity(selectedChoiceToCopy.quantity)
+                    setChoiceSelections(JSON.parse(JSON.stringify(selectedChoiceToCopy.mealPlans)))
+                    setChoiceStep('selection')
+                  }
+                }}
+              >
+                <ClipboardPaste className="h-3.5 w-3.5 mr-2" />
+                Paste Choice
+              </Button>
+            )}
             <Button 
               onClick={() => {
                 if (choiceStep === 'quantity') {
@@ -1282,8 +1644,90 @@ export default function MealPlanStructurePage() {
               }}
               disabled={choiceStep === 'selection' && choiceSelections.length === 0}
             >
-              {choiceStep === 'quantity' ? 'Next' : 'Create Choice'}
+              {choiceStep === 'quantity' ? 'Next' : (editingChoiceId ? 'Update Choice' : 'Create Choice')}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* --- COPY MEAL PLAN MODAL --- */}
+      <Dialog open={!!copyMpTarget} onOpenChange={(open) => !open && setCopyMpTarget(null)}>
+        <DialogContent className="max-w-md z-50">
+          <DialogHeader>
+             <DialogTitle>Copy Meal Plan to Other Days</DialogTitle>
+             <DialogDescription>
+                Select which days you want to apply this configuration to.
+             </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+             <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-medium">Select Days:</span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 text-xs"
+                  onClick={() => {
+                    const otherDays = DAYS.filter((d) => d !== copyMpTarget?.sourceDay)
+                    if (copyMpSelectedDays.length === otherDays.length) {
+                      setCopyMpSelectedDays([])
+                    } else {
+                      setCopyMpSelectedDays(otherDays)
+                    }
+                  }}
+                >
+                  {copyMpSelectedDays.length === DAYS.filter((d) => d !== copyMpTarget?.sourceDay).length ? 'Uncheck All' : 'Check All'}
+                </Button>
+             </div>
+             <div className="grid grid-cols-2 gap-4">
+                {DAYS.map(d => {
+                   if (d === copyMpTarget?.sourceDay) return null;
+                   return (
+                      <div key={d} className="flex items-center space-x-2">
+                         <Checkbox 
+                           id={`copy-mp-${d}`}
+                           checked={copyMpSelectedDays.includes(d)}
+                           onCheckedChange={(c) => {
+                              if (c) setCopyMpSelectedDays([...copyMpSelectedDays, d]);
+                              else setCopyMpSelectedDays(copyMpSelectedDays.filter(day => day !== d));
+                           }}
+                         />
+                         <label htmlFor={`copy-mp-${d}`} className="text-sm font-medium leading-none cursor-pointer capitalize">{d}</label>
+                      </div>
+                   )
+                })}
+             </div>
+          </div>
+          <DialogFooter>
+             <Button variant="outline" onClick={() => {
+                setCopyMpTarget(null);
+                setCopyMpSelectedDays([]);
+             }}>Cancel</Button>
+             <Button onClick={() => {
+                if (!copyMpTarget) return;
+                const { sourceDay, serviceId, subServiceId, mealPlanId } = copyMpTarget;
+                
+                const sourceSvc = weeklyStructure[sourceDay]?.find(s => s.serviceId === serviceId);
+                const sourceSub = sourceSvc?.subServices.find(ss => ss.subServiceId === subServiceId);
+                const sourceMp = sourceSub?.mealPlans.find(mp => mp.mealPlanId === mealPlanId);
+                
+                if (!sourceMp) return;
+                
+                copyMpSelectedDays.forEach(targetDay => {
+                   if (targetDay === sourceDay) return;
+                   const targetSvc = weeklyStructure[targetDay]?.find(s => s.serviceId === serviceId);
+                   const targetSub = targetSvc?.subServices.find(ss => ss.subServiceId === subServiceId);
+                   let targetPlans = targetSub?.mealPlans ? JSON.parse(JSON.stringify(targetSub.mealPlans)) : [];
+                   
+                   targetPlans = targetPlans.filter((a: any) => a.mealPlanId !== mealPlanId);
+                   targetPlans.push(JSON.parse(JSON.stringify(sourceMp)));
+                   
+                   updateMealPlansForSubService(targetDay, serviceId, subServiceId, targetPlans);
+                });
+                
+                setCopyMpTarget(null);
+                setCopyMpSelectedDays([]);
+                toast({ title: "Copied successfully", description: "Meal plan copied to selected days." });
+             }} disabled={copyMpSelectedDays.length === 0}>Apply</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1310,9 +1754,9 @@ export default function MealPlanStructurePage() {
             <ScrollArea className="h-full w-full">
               <div className="min-w-[1400px] pb-20">
                 <Table className="border-collapse">
-                  <TableHeader className="sticky top-0 z-30 shadow-sm bg-white">
+                  <TableHeader className="sticky top-0 z-40 shadow-sm bg-gray-100 border-b-2 border-gray-200">
                     <TableRow>
-                      <TableHead className="w-[300px] font-bold bg-white border-r border-b text-gray-900 sticky left-0 z-30 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
+                      <TableHead className="w-[300px] font-bold bg-white border-r border-b text-gray-900 sticky left-0 z-50 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
                         Service / Sub-Service
                       </TableHead>
                       {DAYS.map((day) => (
@@ -1376,99 +1820,331 @@ export default function MealPlanStructurePage() {
                           <TableCell colSpan={7} className="border-b bg-blue-50/30"></TableCell>
                         </TableRow>
 
-                        {svc.subServices.map((subSvc) => (
-                          <TableRow key={`${svc.serviceId}-${subSvc.subServiceId}`} className="hover:bg-gray-50 group">
-                            <TableCell className="font-medium text-gray-600 border-r border-b pl-8 sticky left-0 bg-white z-20 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
-                              <div className="flex items-center justify-between gap-2">
-                                <span>{subSvc.subServiceName}</span>
-                                <Dialog>
-                                  <DialogTrigger asChild>
-                                    <Button
-                                      size="sm"
-                                      variant="ghost"
-                                      className="opacity-0 group-hover:opacity-100 transition-opacity h-6 w-6 p-0"
-                                    >
-                                      <Trash2 className="h-3 w-3 text-red-500" />
-                                    </Button>
-                                  </DialogTrigger>
-                                  <DialogContent className="sm:max-w-md">
-                                    <DialogHeader>
-                                      <DialogTitle>Remove Sub-Service</DialogTitle>
-                                      <DialogDescription>
-                                        Are you sure you want to remove <strong>{subSvc.subServiceName}</strong> from <strong>{svc.serviceName}</strong>? This will remove it from all days.
-                                      </DialogDescription>
-                                    </DialogHeader>
-                                    <div className="flex gap-2">
-                                      <Button variant="outline" className="flex-1">Cancel</Button>
-                                      <Button 
-                                        variant="destructive" 
-                                        className="flex-1"
-                                        onClick={() => {
-                                          DAYS.forEach((day) => {
-                                            handleRemoveSubService(day, svc.serviceId, subSvc.subServiceId)
-                                          })
-                                        }}
-                                      >
-                                        Remove
+                        {svc.subServices.map((subSvc) => {
+                          const assignedMpIds = new Set<string>();
+                          DAYS.forEach(day => {
+                             const cSub = weeklyStructure[day]?.find(s => s.serviceId === svc.serviceId)?.subServices.find(ss => ss.subServiceId === subSvc.subServiceId);
+                             cSub?.mealPlans?.forEach(mpData => assignedMpIds.add(mpData.mealPlanId));
+                          });
+                          const unassignedMealPlans = mealPlans.filter(mp => !assignedMpIds.has(mp.id));
+                          
+                          return (
+                          <Fragment key={`${svc.serviceId}-${subSvc.subServiceId}`}>
+                            {/* Sub-Service Header Row */}
+                            <TableRow className="bg-gray-100/80 group border-t-2 border-gray-200">
+                              <TableCell className="font-bold text-gray-700 pl-8 sticky left-0 bg-gray-100/80 z-20 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)] border-r">
+                                <div className="flex items-center justify-between gap-2">
+                                  <span>{subSvc.subServiceName}</span>
+                                  <Dialog>
+                                    <DialogTrigger asChild>
+                                      <Button size="sm" variant="ghost" className="opacity-0 group-hover:opacity-100 transition-opacity h-6 w-6 p-0">
+                                        <Trash2 className="h-3 w-3 text-red-500" />
                                       </Button>
-                                    </div>
-                                  </DialogContent>
-                                </Dialog>
-                              </div>
-                            </TableCell>
+                                    </DialogTrigger>
+                                    <DialogContent className="sm:max-w-md">
+                                      <DialogHeader>
+                                        <DialogTitle>Remove Sub-Service</DialogTitle>
+                                        <DialogDescription>
+                                          Are you sure you want to remove <strong>{subSvc.subServiceName}</strong> from <strong>{svc.serviceName}</strong>? This will remove it from all days.
+                                        </DialogDescription>
+                                      </DialogHeader>
+                                      <div className="flex gap-2">
+                                        <Button variant="outline" className="flex-1">Cancel</Button>
+                                        <Button 
+                                          variant="destructive" 
+                                          className="flex-1"
+                                          onClick={() => {
+                                            DAYS.forEach((day) => {
+                                              handleRemoveSubService(day, svc.serviceId, subSvc.subServiceId)
+                                            })
+                                          }}
+                                        >
+                                          Remove
+                                        </Button>
+                                      </div>
+                                    </DialogContent>
+                                  </Dialog>
+                                </div>
+                              </TableCell>
+                              {DAYS.map(day => {
+                                 const isAvailable = baseStructure[day]?.some(
+                                   (s) =>
+                                     s.serviceId === svc.serviceId &&
+                                     s.subServices.some((ss) => ss.subServiceId === subSvc.subServiceId)
+                                 );
+                                 if (!isAvailable) {
+                                    return <TableCell key={`hdr-${day}`} className="bg-gray-100/50 border-r text-center"><span className="text-gray-300 text-xs italic">N/A</span></TableCell>
+                                 }
 
-                            {DAYS.map((day) => {
-                              const isAvailable = baseStructure[day]?.some(
-                                (s) =>
-                                  s.serviceId === svc.serviceId &&
-                                  s.subServices.some((ss) => ss.subServiceId === subSvc.subServiceId),
-                              )
+                                 const dayData = weeklyStructure[day]?.find(s => s.serviceId === svc.serviceId)?.subServices.find(ss => ss.subServiceId === subSvc.subServiceId);
+                                 
+                                 return (
+                                   <TableCell key={`hdr-${day}`} className={`border-r bg-gray-100/80 text-center transition-colors ${clipboard ? "bg-blue-100/50" : ""}`}>
+                                     <div className="flex justify-center items-center gap-1">
+                                        {clipboard ? (
+                                           <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-blue-600 hover:text-blue-800" onClick={() => handlePaste(day, svc.serviceId, subSvc.subServiceId)} title="Paste here">
+                                               <ClipboardPaste className="h-4 w-4" />
+                                           </Button>
+                                        ) : (
+                                           <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-gray-400 hover:text-gray-700" 
+                                             onClick={() => handleCopy(dayData?.mealPlans || [])} 
+                                             title="Copy configuration for this day">
+                                               <Copy className="h-3 w-3" />
+                                           </Button>
+                                        )}
+                                         <Select 
+                                            onValueChange={(mpId) => {
+                                              const ump = unassignedMealPlans.find(m => m.id === mpId);
+                                              if (ump) {
+                                                const currentSub = weeklyStructure[day]?.find(s => s.serviceId === svc.serviceId)?.subServices.find(ss => ss.subServiceId === subSvc.subServiceId);
+                                                const assignedPlans = currentSub?.mealPlans || [];
+                                                let newPlans = JSON.parse(JSON.stringify(assignedPlans)); 
+                                                newPlans.push({ mealPlanId: ump.id, mealPlanName: ump.name, subMealPlans: [] });
+                                                updateMealPlansForSubService(day, svc.serviceId, subSvc.subServiceId, newPlans);
+                                              }
+                                            }}
+                                            value=""
+                                         >
+                                            <SelectTrigger className="h-6 w-24 text-[10px] bg-white border-blue-200 text-blue-600 font-semibold">
+                                              <span>+ Plan</span>
+                                            </SelectTrigger>
+                                            <SelectContent className="z-50">
+                                              {unassignedMealPlans.length > 0 ? (
+                                                unassignedMealPlans.map(ump => (
+                                                  <SelectItem key={ump.id} value={ump.id} className="text-xs">
+                                                    {ump.name}
+                                                  </SelectItem>
+                                                ))
+                                              ) : (
+                                                <div className="text-xs text-center text-gray-400 py-2 px-4">All plans are set!</div>
+                                              )}
+                                            </SelectContent>
+                                         </Select>
+                                         <Button variant="outline" size="sm" className="h-6 text-[10px] bg-white hover:bg-gray-50 border-amber-200 text-amber-600 shadow-sm font-semibold" onClick={() => handleOpenChoiceModal(day, svc.serviceId, subSvc.subServiceId)}>
+                                            + Choice
+                                         </Button>
+                                     </div>
+                                   </TableCell>
+                                 )
+                              })}
+                            </TableRow>
 
-                              if (!isAvailable) {
-                                return (
-                                  <TableCell
-                                    key={day}
-                                    className="bg-gray-100/50 border-r border-b text-center align-middle"
-                                  >
-                                    <span className="text-gray-300 text-xs italic select-none">N/A</span>
-                                  </TableCell>
-                                )
-                              }
+                            {/* Meal Plan Rows */}
+                            {mealPlans.map(mp => {
+                               const subMeals = subMealPlans.filter(smp => smp.mealPlanId === mp.id);
+                               if (subMeals.length === 0 || !assignedMpIds.has(mp.id)) return null;
+                               
+                               return (
+                                  <TableRow key={`mp-${mp.id}`} className="hover:bg-blue-50/20 transition-colors border-b border-gray-100">
+                                     <TableCell className="pl-12 align-middle text-sm font-semibold text-gray-800 sticky left-0 bg-white z-20 border-r shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
+                                        <div className="flex items-center justify-between gap-2">
+                                          <span>{mp.name}</span>
+                                          <button
+                                            onClick={() => {
+                                              const updatedDays = { ...weeklyStructure };
+                                              DAYS.forEach(day => {
+                                                const dayServices = updatedDays[day] || [];
+                                                const serviceIdx = dayServices.findIndex(s => s.serviceId === svc.serviceId);
+                                                if (serviceIdx !== -1) {
+                                                  const subServiceIdx = dayServices[serviceIdx].subServices.findIndex(ss => ss.subServiceId === subSvc.subServiceId);
+                                                  if (subServiceIdx !== -1) {
+                                                    const newPlans = (dayServices[serviceIdx].subServices[subServiceIdx].mealPlans || []).filter((plan: any) => plan.mealPlanId !== mp.id);
+                                                    dayServices[serviceIdx].subServices[subServiceIdx].mealPlans = newPlans;
+                                                  }
+                                                }
+                                              });
+                                              setWeeklyStructure(updatedDays);
+                                            }}
+                                            className="text-gray-400 hover:text-red-600 p-1 rounded hover:bg-red-50 transition-colors"
+                                            title="Delete this meal plan from all days"
+                                          >
+                                            <Trash2 className="w-4 h-4" />
+                                          </button>
+                                        </div>
+                                     </TableCell>
+                                     {DAYS.map(day => {
+                                        const isAvailable = baseStructure[day]?.some(s => s.serviceId === svc.serviceId && s.subServices.some(ss => ss.subServiceId === subSvc.subServiceId));
+                                        if (!isAvailable) return <TableCell key={day} className="bg-gray-50/50 border-r text-center"><span className="text-gray-200">-</span></TableCell>
+                                        
+                                        const currentService = weeklyStructure[day]?.find((s) => s.serviceId === svc.serviceId);
+                                        const currentSub = currentService?.subServices.find((ss) => ss.subServiceId === subSvc.subServiceId);
+                                        const assignedPlans = currentSub?.mealPlans || [];
+                                        const currentMp = assignedPlans.find(a => a.mealPlanId === mp.id);
+                                        
+                                        return (
+                                           <TableCell key={day} className={`border-r p-2 align-top bg-white transition-colors ${clipboard ? "bg-blue-50/10" : ""}`}>
+                                               <div className="flex flex-col gap-1.5 w-full">
+                                                  {(() => {
+                                                      const selectedSmps = subMeals.filter(smp => currentMp?.subMealPlans?.some(s => s.subMealPlanId === smp.id));
+                                                      const unselectedSmps = subMeals.filter(smp => !currentMp?.subMealPlans?.some(s => s.subMealPlanId === smp.id));
 
-                              const currentService = weeklyStructure[day]?.find((s) => s.serviceId === svc.serviceId)
-                              const currentSub = currentService?.subServices.find(
-                                (ss) => ss.subServiceId === subSvc.subServiceId,
-                              )
-                              const assignedMealPlans = currentSub?.mealPlans || []
-                              const savedChoices = (currentSub?.choices && currentSub.choices[day]) || []
-
-                              return (
-                                <TableCell
-                                  key={day}
-                                  className={`border-r border-b p-2 align-top bg-white transition-colors ${clipboard ? "bg-blue-50/30" : ""}`}
-                                >
-                                  <MealPlanSelector
-                                    availableMealPlans={mealPlans}
-                                    availableSubMealPlans={subMealPlans}
-                                    assignedMealPlans={assignedMealPlans}
-                                    onUpdate={(newPlans) =>
-                                      updateMealPlansForSubService(day, svc.serviceId, subSvc.subServiceId, newPlans)
-                                    }
-                                    clipboardMode={!!clipboard}
-                                    onCopy={() => handleCopy(assignedMealPlans)}
-                                    onPaste={() => handlePaste(day, svc.serviceId, subSvc.subServiceId)}
-                                    day={day}
-                                    serviceId={svc.serviceId}
-                                    subServiceId={subSvc.subServiceId}
-                                    onOpenChoiceModal={handleOpenChoiceModal}
-                                    savedChoices={savedChoices}
-                                    onDeleteChoice={(choiceId) => handleDeleteChoice(day, svc.serviceId, subSvc.subServiceId, choiceId)}
-                                  />
-                                </TableCell>
-                              )
+                                                      return (
+                                                         <>
+                                                            {selectedSmps.length > 0 && (
+                                                               <div className="flex flex-col gap-1.5 w-full">
+                                                                  {selectedSmps.map(smp => {
+                                                                     const freq = currentMp?.subMealPlans?.find(s => s.subMealPlanId === smp.id)?.maxFrequency ?? globalFrequencies[smp.id] ?? 7;
+                                                                     return (
+                                                                        <div key={smp.id} className="flex flex-row items-center justify-between gap-1 p-1 rounded border border-blue-300 bg-blue-50 hover:border-blue-400 transition-colors whitespace-nowrap overflow-hidden">
+                                                                           <div className="flex items-center gap-1.5 overflow-hidden">
+                                                                              <Checkbox 
+                                                                                 id={`chk-${day}-${mp.id}-${smp.id}`}
+                                                                                 checked={true}
+                                                                                 onCheckedChange={(c) => {
+                                                                                    let newPlans = JSON.parse(JSON.stringify(assignedPlans)); 
+                                                                                    let targetMp = newPlans.find((a: any) => a.mealPlanId === mp.id);
+                                                                                    if (targetMp) {
+                                                                                       targetMp.subMealPlans = targetMp.subMealPlans.filter((s: any) => s.subMealPlanId !== smp.id);
+                                                                                       if (targetMp.subMealPlans.length === 0) {
+                                                                                           newPlans = newPlans.filter((a: any) => a.mealPlanId !== mp.id);
+                                                                                       }
+                                                                                       updateMealPlansForSubService(day, svc.serviceId, subSvc.subServiceId, newPlans);
+                                                                                    }
+                                                                                 }}
+                                                                              />
+                                                                              <label htmlFor={`chk-${day}-${mp.id}-${smp.id}`} className="text-xs font-medium cursor-pointer text-blue-900 truncate" title={smp.name}>{smp.name}</label>
+                                                                           </div>
+                                                                           <div className="flex items-center pl-1 border-l border-blue-200 shrink-0">
+                                                                              <Input 
+                                                                                 title="Frequency (times per week)"
+                                                                                 type="number" min="1" max="7" 
+                                                                                 className="h-5 w-10 text-[10px] px-1 bg-white text-center border-blue-200 focus-visible:ring-1 focus-visible:ring-blue-500" 
+                                                                                 value={freq}
+                                                                                 onChange={(e) => {
+                                                                                    const val = parseInt(e.target.value) || 7;
+                                                                                    const newPlans = JSON.parse(JSON.stringify(assignedPlans));
+                                                                                    const tMp = newPlans.find((a: any) => a.mealPlanId === mp.id);
+                                                                                    if (tMp) {
+                                                                                       tMp.subMealPlans = tMp.subMealPlans.map((s: any) => s.subMealPlanId === smp.id ? { ...s, maxFrequency: val } : s);
+                                                                                    }
+                                                                                    updateMealPlansForSubService(day, svc.serviceId, subSvc.subServiceId, newPlans);
+                                                                                 }}
+                                                                              />
+                                                                              <span className="text-[9px] text-gray-500 ml-0.5">/w</span>
+                                                                           </div>
+                                                                        </div>
+                                                                     )
+                                                                  })}
+                                                               </div>
+                                                            )}
+                                                            
+                                                            <div className="flex justify-between items-center mt-0.5 gap-1">
+                                                               {unselectedSmps.length > 0 ? (
+                                                                  <Select
+                                                                    onValueChange={(smpId) => {
+                                                                      const smp = unselectedSmps.find(s => s.id === smpId);
+                                                                      if (smp) {
+                                                                        let newPlans = JSON.parse(JSON.stringify(assignedPlans)); 
+                                                                        let targetMp = newPlans.find((a: any) => a.mealPlanId === mp.id);
+                                                                        if (!targetMp) {
+                                                                          targetMp = { mealPlanId: mp.id, mealPlanName: mp.name, subMealPlans: [] };
+                                                                          newPlans.push(targetMp);
+                                                                        }
+                                                                        if (!targetMp.subMealPlans.some((s: any) => s.subMealPlanId === smp.id)) {
+                                                                          targetMp.subMealPlans.push({ subMealPlanId: smp.id, subMealPlanName: smp.name, maxFrequency: globalFrequencies[smp.id] ?? 7 });
+                                                                          updateMealPlansForSubService(day, svc.serviceId, subSvc.subServiceId, newPlans);
+                                                                        }
+                                                                      }
+                                                                    }}
+                                                                    value=""
+                                                                  >
+                                                                    <SelectTrigger className="h-6 flex-1 text-[10px] px-1.5 border-dashed border-gray-300 justify-start">
+                                                                      <Plus className="h-3 w-3 mr-1" />
+                                                                      <span>Add</span>
+                                                                    </SelectTrigger>
+                                                                    <SelectContent className="z-50">
+                                                                      {unselectedSmps.map(smp => (
+                                                                        <SelectItem key={smp.id} value={smp.id} className="text-xs">
+                                                                          {smp.name}
+                                                                        </SelectItem>
+                                                                      ))}
+                                                                    </SelectContent>
+                                                                  </Select>
+                                                               ) : (
+                                                                  <div className="flex-1"></div>
+                                                               )}
+                                                               
+                                               {selectedSmps.length > 0 && (
+                                                  <div className="flex gap-1">
+                                                    <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-gray-400 hover:text-green-600 shrink-0 bg-gray-50 border border-gray-200 hover:border-green-300 hover:bg-green-50"
+                                                       title="Copy this Meal Plan configuration to other days"
+                                                       onClick={() => {
+                                                          setCopyMpTarget({ sourceDay: day, serviceId: svc.serviceId, subServiceId: subSvc.subServiceId, mealPlanId: mp.id });
+                                                          setCopyMpSelectedDays([]);
+                                                       }}
+                                                    >
+                                                       <Copy className="h-3 w-3" />
+                                                    </Button>
+                                                    <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-gray-400 hover:text-red-600 shrink-0 bg-gray-50 border border-gray-200 hover:border-red-300 hover:bg-red-50"
+                                                       title="Delete this Meal Plan row"
+                                                       onClick={() => {
+                                                          let newPlans = assignedPlans.filter((a: any) => a.mealPlanId !== mp.id);
+                                                          updateMealPlansForSubService(day, svc.serviceId, subSvc.subServiceId, newPlans);
+                                                       }}
+                                                    >
+                                                       <Trash2 className="h-3 w-3" />
+                                                    </Button>
+                                                  </div>
+                                               )}
+                                                            </div>
+                                                         </>
+                                                      )
+                                                  })()}
+                                               </div>
+                                           </TableCell>
+                                        )
+                                     })}
+                                  </TableRow>
+                               )
                             })}
-                          </TableRow>
-                        ))}
+
+                            {/* Choices Display Row - only rendered if there are choices on AT LEAST one day */}
+                            {DAYS.some(day => {
+                                const currentSub = weeklyStructure[day]?.find((s) => s.serviceId === svc.serviceId)?.subServices.find((ss) => ss.subServiceId === subSvc.subServiceId);
+                                return (currentSub?.choices && currentSub.choices[day]?.length > 0);
+                            }) && (
+                                <TableRow className="bg-amber-50/20">
+                                   <TableCell className="pl-12 align-middle text-xs font-semibold text-amber-800 sticky left-0 z-20 border-r bg-amber-50/90 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
+                                      Choices / Options
+                                   </TableCell>
+                                   {DAYS.map(day => {
+                                       const isAvailable = baseStructure[day]?.some(s => s.serviceId === svc.serviceId && s.subServices.some(ss => ss.subServiceId === subSvc.subServiceId));
+                                       if (!isAvailable) return <TableCell key={`choice-${day}`} className="bg-gray-50/50 border-r text-center"><span className="text-gray-200">-</span></TableCell>
+                                       
+                                       const currentSub = weeklyStructure[day]?.find((s) => s.serviceId === svc.serviceId)?.subServices.find((ss) => ss.subServiceId === subSvc.subServiceId);
+                                       const savedChoices = (currentSub?.choices && currentSub.choices[day]) || [];
+                                       
+                                       return (
+                                           <TableCell key={`choices-${day}`} className="border-r p-2 align-top bg-amber-50/10">
+                                              {savedChoices.length > 0 && (
+                                                  <div className="flex flex-col gap-1.5">
+                                                      {savedChoices.map(choice => (
+                                                          <div key={choice.choiceId} className="flex flex-col p-1.5 bg-white border border-amber-200 rounded text-xs shadow-sm">
+                                                              <div className="flex items-start justify-between gap-1">
+                                                                  <div className="font-semibold text-amber-900 leading-tight">
+                                                                      {choice.quantity}x Select
+                                                                  </div>
+                                                                  <div className="flex gap-0.5 justify-end">
+                                                                      <button onClick={() => handleEditChoice({...choice, day, serviceId: svc.serviceId, subServiceId: subSvc.subServiceId})} className="text-blue-500 hover:bg-blue-50 p-1 rounded" title="Edit Choice"><Edit className="w-3 h-3"/></button>
+                                                                      <button onClick={() => handleCopyChoice({...choice, day, serviceId: svc.serviceId, subServiceId: subSvc.subServiceId})} className="text-green-500 hover:bg-green-50 p-1 rounded" title="Copy to other days"><Copy className="w-3 h-3"/></button>
+                                                                      <button onClick={() => handleDeleteChoice(day, svc.serviceId, subSvc.subServiceId, choice.choiceId)} className="text-red-500 hover:bg-red-50 p-1 rounded" title="Delete Choice"><Trash2 className="w-3 h-3"/></button>
+                                                                  </div>
+                                                              </div>
+                                                              <div className="text-[10px] text-amber-700 mt-1 line-clamp-2">
+                                                                  {choice.mealPlans.map(cmp => cmp.subMealPlans?.map(s => subMealPlans.find(all => all.id === s.subMealPlanId)?.name || s.subMealPlanName).join(', ')).join(' | ')}
+                                                              </div>
+                                                          </div>
+                                                      ))}
+                                                  </div>
+                                              )}
+                                           </TableCell>
+                                       )
+                                   })}
+                                </TableRow>
+                            )}
+                          </Fragment>
+                          )
+                        })}
                       </Fragment>
                     ))}
                   </TableBody>
@@ -1878,6 +2554,7 @@ interface MealPlanSelectorProps {
   availableMealPlans: MealPlan[]
   availableSubMealPlans: SubMealPlan[]
   assignedMealPlans: MealPlanStructureData[]
+  globalFrequencies?: Record<string, number>
   onUpdate: (newPlans: MealPlanStructureData[]) => void
   clipboardMode: boolean
   onCopy: () => void
@@ -1888,12 +2565,15 @@ interface MealPlanSelectorProps {
   onOpenChoiceModal?: (day: string, serviceId: string, subServiceId: string) => void
   savedChoices?: MealPlanChoice[]
   onDeleteChoice?: (choiceId: string) => void
+  onEditChoice?: (choice: MealPlanChoice) => void
+  onCopyChoice?: (choice: MealPlanChoice) => void
 }
 
 function MealPlanSelector({
   availableMealPlans,
   availableSubMealPlans,
   assignedMealPlans,
+  globalFrequencies,
   onUpdate,
   clipboardMode,
   onCopy,
@@ -1904,6 +2584,8 @@ function MealPlanSelector({
   onOpenChoiceModal,
   savedChoices = [],
   onDeleteChoice,
+  onEditChoice,
+  onCopyChoice,
 }: MealPlanSelectorProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
@@ -1944,7 +2626,9 @@ function MealPlanSelector({
       if (checked) {
         if (!currentSubs.some((s) => s.subMealPlanId === subMealPlanId)) {
           const smpName = availableSubMealPlans.find((s) => s.id === subMealPlanId)?.name
-          currentSubs.push({ subMealPlanId, subMealPlanName: smpName || "" })
+          // Maintain global frequency or default to 7 if it has never been set anywhere
+          const defaultFreq = globalFrequencies?.[subMealPlanId] ?? 7
+          currentSubs.push({ subMealPlanId, subMealPlanName: smpName || "", maxFrequency: defaultFreq })
         }
       } else {
         return {
@@ -1953,6 +2637,20 @@ function MealPlanSelector({
         }
       }
       return { ...mp, subMealPlans: currentSubs }
+    })
+    onUpdate(newAssignments)
+  }
+
+  const updateSubMealPlanFrequency = (mealPlanId: string, subMealPlanId: string, frequency: number) => {
+    // Update frequency locally first (the parent `updateMealPlansForSubService` will sync it to other days)
+    const newAssignments = assignedMealPlans.map((mp) => {
+      if (mp.mealPlanId !== mealPlanId) return mp
+      return {
+        ...mp,
+        subMealPlans: (mp.subMealPlans || []).map((s) =>
+          s.subMealPlanId === subMealPlanId ? { ...s, maxFrequency: frequency } : s
+        ),
+      }
     })
     onUpdate(newAssignments)
   }
@@ -1971,19 +2669,23 @@ function MealPlanSelector({
             <div className="flex flex-col gap-1 w-full overflow-hidden text-left">
               {hasSelection ? (
                 assignedMealPlans.map((mp) => {
-                  // DYNAMIC LOOKUP FOR DROPDOWN PREVIEW
                   const liveMpName = availableMealPlans.find((p) => p.id === mp.mealPlanId)?.name || mp.mealPlanName;
                   return (
                     <div key={mp.mealPlanId} className="flex flex-col text-xs font-medium border-b border-blue-100 last:border-0 pb-1 last:pb-0 mb-1 last:mb-0">
                       <span className="font-bold text-blue-900">{liveMpName}</span>
                       {mp.subMealPlans.length > 0 && (
-                          <span className="text-[10px] text-blue-500 italic pl-2 text-left">
-                             ↳ {mp.subMealPlans.map(s => {
-                                 // DYNAMIC LOOKUP
+                          <div className="text-[10px] text-blue-500 italic pl-2 text-left space-y-0.5">
+                             {mp.subMealPlans.map(s => {
                                  const liveSubName = availableSubMealPlans.find(sub => sub.id === s.subMealPlanId)?.name || s.subMealPlanName;
-                                 return liveSubName;
-                             }).join(", ")}
-                          </span>
+                                 const freq = s.maxFrequency ?? 7;
+                                 return (
+                                   <div key={s.subMealPlanId} className="flex items-center justify-between gap-2">
+                                     <span>{`\u21b3`} {liveSubName}</span>
+                                     <span className="text-[9px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-bold whitespace-nowrap">{freq}&times;/week</span>
+                                   </div>
+                                 );
+                             })}
+                          </div>
                       )}
                     </div>
                   )
@@ -1996,88 +2698,179 @@ function MealPlanSelector({
           </Button>
         </DialogTrigger>
 
-        <DialogContent className="sm:max-w-md max-h-[80vh] flex flex-col z-[99999]">
-          <DialogHeader>
-            <DialogTitle>Select Meal Plans</DialogTitle>
-            <DialogDescription>Choose meal plans and sub-plans for this service.</DialogDescription>
-          </DialogHeader>
-
-          <div className="px-1">
-            <div className="relative">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-500" />
+        <DialogContent className="!max-w-5xl max-h-[85vh] flex flex-col z-[99999] p-0 gap-0">
+          {/* Header */}
+          <div className="px-5 pt-5 pb-3 border-b bg-gradient-to-r from-slate-50 to-blue-50 shrink-0">
+            <DialogTitle className="text-base font-semibold text-gray-900">Assign Meal Plans</DialogTitle>
+            <DialogDescription className="text-xs text-gray-500 mt-0.5">
+              Check cells to assign combinations. Frequency (×/week) syncs globally across all days.
+            </DialogDescription>
+            <div className="relative mt-3">
+              <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-gray-400" />
               <Input
                 type="search"
                 placeholder="Search meal plans or sub-plans..."
-                className="pl-9"
+                className="pl-8 h-8 text-sm"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
             </div>
           </div>
 
-          <div className="flex-1 overflow-hidden border rounded-md">
-            <ScrollArea className="h-[400px] p-4">
-              <div className="space-y-4">
-                {filteredMealPlans.length === 0 && (
-                  <div className="flex flex-col items-center justify-center py-6 text-center text-gray-500 gap-2">
-                    <AlertCircle className="h-8 w-8 text-yellow-500" />
-                    <p className="text-sm font-medium">No Matching Meal Plans Found</p>
-                  </div>
-                )}
-                {filteredMealPlans.map((mp) => {
-                  const isSelected = assignedMealPlans.some((a) => a.mealPlanId === mp.id)
-                  const currentAssignment = assignedMealPlans.find((a) => a.mealPlanId === mp.id)
-                  const subMealsForPlan = availableSubMealPlans.filter((smp) => smp.mealPlanId === mp.id)
-
-                  return (
-                    <div key={mp.id} className="space-y-1">
-                      <div className="flex items-center space-x-2 py-2 bg-gray-50 rounded px-2">
-                        <Checkbox id={`mp-${mp.id}`} checked={isSelected} onCheckedChange={(c) => toggleMealPlan(mp.id, c as boolean)} />
-                        <label htmlFor={`mp-${mp.id}`} className="text-sm font-medium cursor-pointer flex-1">{mp.name}</label>
-                      </div>
-                      {isSelected && subMealsForPlan.length > 0 && (
-                        <div className="ml-6 space-y-1">
-                          {subMealsForPlan.map((smp) => (
-                            <div key={smp.id} className="flex items-center space-x-2">
-                              <Checkbox id={`smp-${smp.id}`} checked={currentAssignment?.subMealPlans?.some(s => s.subMealPlanId === smp.id)} onCheckedChange={(c) => toggleSubMealPlan(mp.id, smp.id, c as boolean)} />
-                              <label htmlFor={`smp-${smp.id}`} className="text-xs text-gray-600 cursor-pointer">{smp.name}</label>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
+          {/* Excel-like Grid - Compact Layout */}
+          <div className="flex-1 overflow-auto bg-slate-50/30">
+            {filteredMealPlans.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 text-center text-gray-500 gap-2">
+                <AlertCircle className="h-8 w-8 text-yellow-400" />
+                <p className="text-sm font-medium">No Matching Meal Plans Found</p>
               </div>
-            </ScrollArea>
+            ) : (() => {
+              const maxSubMeals = Math.max(
+                1,
+                ...filteredMealPlans.map(mp => 
+                  availableSubMealPlans.filter(smp => smp.mealPlanId === mp.id).length
+                )
+              )
+              const subMealColumns = Array.from({ length: maxSubMeals }, (_, i) => i + 1)
+
+              return (
+                <table className="w-full border-collapse text-sm" style={{ minWidth: `${Math.max(400, maxSubMeals * 140 + 200)}px` }}>
+                  <thead className="sticky top-0 z-10 shadow-sm">
+                    <tr>
+                      <th className="sticky left-0 z-20 bg-slate-800 text-white text-left px-4 py-3 font-semibold text-xs w-[240px] min-w-[240px] border-r border-slate-700">
+                        Meal Plan
+                      </th>
+                      {subMealColumns.map(colNum => (
+                        <th
+                          key={`smp-col-${colNum}`}
+                          className="bg-slate-700 text-white text-left px-4 py-3 font-medium text-xs border-r border-slate-600 min-w-[160px]"
+                        >
+                          Sub Meal Plan {colNum}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredMealPlans.map((mp, mpIdx) => {
+                      const isSelected = assignedMealPlans.some(a => a.mealPlanId === mp.id)
+                      const currentAssignment = assignedMealPlans.find(a => a.mealPlanId === mp.id)
+                      const subMealsForPlan = availableSubMealPlans.filter(smp => smp.mealPlanId === mp.id)
+                      const rowBg = mpIdx % 2 === 0 ? "bg-white" : "bg-slate-50"
+
+                      return (
+                        <tr key={mp.id} className={`border-b border-slate-200 hover:bg-blue-50/40 transition-colors ${rowBg}`}>
+                          <td className={`sticky left-0 z-10 px-4 py-3 border-r border-slate-200 ${rowBg} shadow-[2px_0_5px_-2px_rgba(0,0,0,0.03)] align-top`}>
+                            <div className="flex items-start gap-3 mt-1">
+                              <Checkbox
+                                id={`mp-${mp.id}`}
+                                checked={isSelected}
+                                onCheckedChange={(c) => toggleMealPlan(mp.id, c as boolean)}
+                                className="mt-0.5"
+                              />
+                              <label
+                                htmlFor={`mp-${mp.id}`}
+                                className={`text-sm font-semibold cursor-pointer leading-snug ${isSelected ? "text-blue-800" : "text-gray-700"}`}
+                              >
+                                {mp.name}
+                              </label>
+                            </div>
+                          </td>
+                          
+                          {subMealColumns.map((_, colIdx) => {
+                            const smp = subMealsForPlan[colIdx]
+                            if (!smp) {
+                              return (
+                                <td key={`empty-${mp.id}-${colIdx}`} className="border-r border-slate-100 bg-slate-50/50"></td>
+                              )
+                            }
+                            
+                            const isSubMealSelected = currentAssignment?.subMealPlans?.some(s => s.subMealPlanId === smp.id) || false
+                            const selectedSubMeal = currentAssignment?.subMealPlans?.find(s => s.subMealPlanId === smp.id)
+                            const freq = selectedSubMeal?.maxFrequency ?? 7
+
+                            return (
+                              <td
+                                key={smp.id}
+                                className={`border-r border-slate-100 p-2 align-top transition-colors ${isSubMealSelected ? "bg-blue-50/30" : ""}`}
+                              >
+                                <div className={`flex flex-col gap-2 p-2.5 rounded-md h-full ${
+                                  !isSelected ? "opacity-60 grayscale-[0.5]" : ""
+                                } ${isSubMealSelected ? "bg-white border border-blue-200 shadow-sm" : "bg-transparent border border-transparent hover:border-slate-200"}`}>
+                                  <div className="flex items-start gap-2.5">
+                                    <Checkbox
+                                      id={`smp-${mp.id}-${smp.id}`}
+                                      checked={isSubMealSelected}
+                                      disabled={!isSelected}
+                                      onCheckedChange={(c) => toggleSubMealPlan(mp.id, smp.id, c as boolean)}
+                                      className="mt-0.5 shadow-sm"
+                                    />
+                                    <label
+                                      htmlFor={`smp-${mp.id}-${smp.id}`}
+                                      className={`text-sm font-medium cursor-pointer leading-tight line-clamp-2 ${!isSelected ? "text-gray-500" : isSubMealSelected ? "text-blue-900" : "text-gray-700"}`}
+                                      title={smp.name}
+                                    >
+                                      {smp.name}
+                                    </label>
+                                  </div>
+                                  
+                                  {isSubMealSelected && (
+                                    <div className="flex items-center gap-2 ml-6 pl-2.5 border-l-2 border-blue-200 mt-1">
+                                      <span className="text-xs text-gray-500 font-medium">Freq:</span>
+                                      <div className="flex items-center gap-1.5">
+                                        <Input
+                                          type="number"
+                                          min="1"
+                                          max="7"
+                                          value={freq}
+                                          onChange={(e) => {
+                                            const v = e.target.value ? parseInt(e.target.value) : 7
+                                            updateSubMealPlanFrequency(mp.id, smp.id, v)
+                                          }}
+                                          className="w-14 h-7 text-xs px-2 text-center border-blue-300 focus-visible:ring-blue-500"
+                                        />
+                                        <span className="text-xs text-gray-500 font-medium">/ wk</span>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              </td>
+                            )
+                          })}
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              )
+            })()}
           </div>
 
-          <div className="flex gap-2 border-t pt-2">
-            <Button variant="ghost" size="sm" onClick={onCopy} disabled={!hasSelection} className="flex-1">
-              <Copy className="h-3 w-3 mr-1" /> Copy Cell
-            </Button>
-            <Button variant="ghost" size="sm" onClick={onPaste} disabled={!clipboardMode} className="flex-1">
-              <ClipboardPaste className="h-3 w-3 mr-1" /> Paste
-            </Button>
-            <Button 
-              variant="ghost" 
-              size="sm" 
-              onClick={() => {
-                if (day && serviceId && subServiceId && onOpenChoiceModal) {
-                  onOpenChoiceModal(day, serviceId, subServiceId)
-                  setIsOpen(false)
-                }
-              }} 
-              disabled={!hasSelection || !day || !serviceId || !subServiceId}
-              className="flex-1"
-            >
-              <Plus className="h-3 w-3 mr-1" /> Create Choice
-            </Button>
+          {/* Footer actions */}
+          <div className="flex items-center justify-between gap-2 px-5 py-3 border-t bg-slate-50 shrink-0">
+            <div className="flex gap-2">
+              <Button variant="ghost" size="sm" onClick={onCopy} disabled={!hasSelection} className="text-xs h-8">
+                <Copy className="h-3 w-3 mr-1" /> Copy Cell
+              </Button>
+              <Button variant="ghost" size="sm" onClick={onPaste} disabled={!clipboardMode} className="text-xs h-8">
+                <ClipboardPaste className="h-3 w-3 mr-1" /> Paste
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  if (day && serviceId && subServiceId && onOpenChoiceModal) {
+                    onOpenChoiceModal(day, serviceId, subServiceId)
+                    setIsOpen(false)
+                  }
+                }}
+                disabled={!hasSelection || !day || !serviceId || !subServiceId}
+                className="text-xs h-8"
+              >
+                <Plus className="h-3 w-3 mr-1" /> Create Choice
+              </Button>
+            </div>
+            <Button onClick={() => setIsOpen(false)} size="sm" className="h-8 px-5">Done</Button>
           </div>
-
-          <DialogFooter>
-            <Button onClick={() => setIsOpen(false)} className="w-full">Done</Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
 
@@ -2099,15 +2892,51 @@ function MealPlanSelector({
                   </div>
                 )}
               </div>
-              <button
-                onClick={() => {
-                  if (onDeleteChoice) onDeleteChoice(choice.choiceId)
-                }}
-                className="flex-shrink-0 text-red-500 hover:text-red-700 hover:bg-red-50 p-1 rounded"
-                title="Delete choice"
-              >
-                <Trash2 className="h-3 w-3" />
-              </button>
+              <div className="flex gap-1 flex-shrink-0">
+                <button
+                  onClick={() => {
+                    if (onEditChoice) {
+                      const choiceWithContext = {
+                        ...choice,
+                        day: day || "",
+                        serviceId: serviceId || "",
+                        subServiceId: subServiceId || "",
+                      }
+                      onEditChoice(choiceWithContext)
+                    }
+                  }}
+                  className="text-blue-500 hover:text-blue-700 hover:bg-blue-50 p-1 rounded"
+                  title="Edit choice"
+                >
+                  <Edit className="h-3 w-3" />
+                </button>
+                <button
+                  onClick={() => {
+                    if (onCopyChoice) {
+                      const choiceWithContext = {
+                        ...choice,
+                        day: day || "",
+                        serviceId: serviceId || "",
+                        subServiceId: subServiceId || "",
+                      }
+                      onCopyChoice(choiceWithContext)
+                    }
+                  }}
+                  className="text-green-500 hover:text-green-700 hover:bg-green-50 p-1 rounded"
+                  title="Copy choice to other days"
+                >
+                  <Copy className="h-3 w-3" />
+                </button>
+                <button
+                  onClick={() => {
+                    if (onDeleteChoice) onDeleteChoice(choice.choiceId)
+                  }}
+                  className="text-red-500 hover:text-red-700 hover:bg-red-50 p-1 rounded"
+                  title="Delete choice"
+                >
+                  <Trash2 className="h-3 w-3" />
+                </button>
+              </div>
             </div>
           ))}
         </div>
