@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import { useState, useMemo, useRef, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
@@ -9,23 +9,27 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Spinner } from "@/components/ui/spinner"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Switch } from "@/components/ui/switch" // <--- 1. IMPORT ADDED
-import { Trash2, Edit, Plus, Search, X } from "lucide-react"
+import { Switch } from "@/components/ui/switch"
+import { Trash2, Edit, Plus, Search, X, ChevronDown } from "lucide-react"
 
 interface Column {
   key: string
   label: string
-  // <--- 4. ADDED render prop to support formatting (e.g. Boolean -> "Yes"/"No")
   render?: (value: any, item: any) => React.ReactNode 
 }
 
 interface FormField {
   name: string
   label: string
-  // <--- 2. UPDATED TYPE to include "switch"
-  type: "text" | "select" | "textarea" | "switch" 
+  type: "text" | "select" | "textarea" | "switch" | "searchable-select" 
   required?: boolean
   options?: { value: string; label: string }[]
+  onSearch?: (query: string) => void
+  onLoadMore?: () => void
+  hasMore?: boolean
+  showIf?: (formData: Record<string, any>) => boolean
+  getSelectedLabel?: (value: any) => any // allows returning string or an array of objects for chips
+  isMulti?: boolean 
 }
 
 interface CrudTableProps {
@@ -41,6 +45,148 @@ interface CrudTableProps {
   isEditing?: boolean
   editingId?: string | null
   deletingIds?: Set<string>
+}
+
+// Custom component for the Searchable Select (Supports chunk loading & multi-select chips)
+function SearchableSelectInput({ 
+  field, 
+  value, 
+  onChange 
+}: { 
+  field: FormField
+  value: any
+  onChange: (val: any) => void 
+}) {
+  const [isOpen, setIsOpen] = useState(false)
+  const dropdownRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setIsOpen(false)
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside)
+    return () => document.removeEventListener("mousedown", handleClickOutside)
+  }, [])
+
+  const isMulti = field.isMulti
+  const valueArray = Array.isArray(value) ? value : (value ? [value] : [])
+
+  // Render Logic for Chips vs Single Text
+  let selectedDisplay: React.ReactNode = "Select an option..."
+
+  if (isMulti) {
+    const selectedObjects = field.getSelectedLabel
+      ? field.getSelectedLabel(valueArray) // array of {value, label}
+      : valueArray.map(v => ({ value: v, label: field.options?.find(o => o.value === v)?.label || v }))
+
+    if (Array.isArray(selectedObjects) && selectedObjects.length > 0) {
+      selectedDisplay = (
+        <div className="flex flex-wrap gap-1">
+          {selectedObjects.map((obj: any) => (
+            <span
+              key={obj.value}
+              className="flex items-center gap-1 rounded-md bg-secondary px-2 py-0.5 text-xs font-medium text-secondary-foreground"
+              onClick={(e) => e.stopPropagation()} // Prevent dropdown toggle when clicking on chip area
+            >
+              <span className="max-w-[150px] truncate">{obj.label}</span>
+              <X
+                className="h-3 w-3 cursor-pointer rounded-full hover:bg-muted-foreground/20 hover:text-destructive"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onChange(valueArray.filter(v => v !== obj.value))
+                }}
+              />
+            </span>
+          ))}
+        </div>
+      )
+    } else {
+      selectedDisplay = <span className="text-muted-foreground">Select options...</span>
+    }
+  } else {
+    selectedDisplay = <span className="truncate pr-4">
+      {field.getSelectedLabel 
+        ? field.getSelectedLabel(value)
+        : (field.options?.find(o => o.value === value)?.label || "Select an option...")}
+    </span>
+  }
+
+  return (
+    <div className="relative" ref={dropdownRef}>
+      <div
+        className="flex min-h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background cursor-pointer hover:bg-accent/50"
+        onClick={() => setIsOpen(!isOpen)}
+      >
+        <div className="flex-1">{selectedDisplay}</div>
+        <ChevronDown className="h-4 w-4 opacity-50 shrink-0 ml-2" />
+      </div>
+      
+      {isOpen && (
+        <div className="absolute z-50 mt-1 max-h-60 w-full overflow-hidden rounded-md border bg-popover text-popover-foreground shadow-md outline-none animate-in fade-in-80 zoom-in-95">
+          <div className="p-2 border-b sticky top-0 bg-popover z-10">
+            <div className="relative">
+              <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search..."
+                className="h-9 pl-8"
+                onChange={(e) => field.onSearch && field.onSearch(e.target.value)}
+                autoFocus
+              />
+            </div>
+          </div>
+          <div
+            className="max-h-48 overflow-y-auto p-1"
+            onScroll={(e) => {
+              const target = e.currentTarget
+              if (target.scrollHeight - target.scrollTop <= target.clientHeight + 5) {
+                field.onLoadMore && field.onLoadMore()
+              }
+            }}
+          >
+            {field.options?.map(opt => {
+              const isSelected = isMulti ? valueArray.includes(opt.value) : value === opt.value
+              
+              return (
+                <div
+                  key={opt.value}
+                  className={`relative flex w-full cursor-pointer select-none items-center gap-2 rounded-sm py-2 px-2 text-sm outline-none hover:bg-accent hover:text-accent-foreground ${
+                    isSelected ? 'bg-accent/50 text-accent-foreground font-medium' : ''
+                  }`}
+                  onClick={() => {
+                    if (isMulti) {
+                      if (isSelected) {
+                        onChange(valueArray.filter(v => v !== opt.value))
+                      } else {
+                        onChange([...valueArray, opt.value])
+                      }
+                    } else {
+                      onChange(opt.value)
+                      setIsOpen(false)
+                    }
+                  }}
+                >
+                  {isMulti && (
+                    <Checkbox checked={isSelected} readOnly className="pointer-events-none" />
+                  )}
+                  <span className="flex-1 truncate">{opt.label}</span>
+                </div>
+              )
+            })}
+            {field.options?.length === 0 && (
+              <div className="p-4 text-sm text-muted-foreground text-center">No results found.</div>
+            )}
+            {field.hasMore && (
+              <div className="p-2 text-sm text-muted-foreground text-center animate-pulse flex items-center justify-center gap-2">
+                <Spinner className="h-3 w-3" /> Loading more...
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
 }
 
 export function CrudTable({
@@ -115,7 +261,6 @@ export function CrudTable({
       setLocalEditingId(item.id)
       const initialData: Record<string, any> = {}
       formFields.forEach((field) => {
-        // Handle boolean vs string values differently
         initialData[field.name] = item[field.name] !== undefined ? item[field.name] : ""
       })
       setFormData(initialData)
@@ -123,8 +268,7 @@ export function CrudTable({
       setLocalEditingId(null)
       const initialData: Record<string, any> = {}
       formFields.forEach((field) => {
-        // Default switch to false, others to empty string
-        initialData[field.name] = field.type === "switch" ? false : ""
+        initialData[field.name] = field.type === "switch" ? false : field.isMulti ? [] : ""
       })
       setFormData(initialData)
     }
@@ -158,19 +302,34 @@ export function CrudTable({
   }
 
   const renderFormField = (field: FormField) => {
+    if (field.showIf && !field.showIf(formData)) {
+      return null
+    }
+
     const value = formData[field.name]
 
     switch (field.type) {
       case "switch":
-        // <--- 3. ADDED SWITCH RENDERING LOGIC
         return (
           <div key={field.name} className="flex items-center space-x-2 py-2">
              <Switch
               id={field.name}
-              checked={!!value} // Force boolean
+              checked={!!value} 
               onCheckedChange={(checked) => handleInputChange(field.name, checked)}
             />
             <Label htmlFor={field.name}>{field.label}</Label>
+          </div>
+        )
+
+      case "searchable-select":
+        return (
+          <div key={field.name} className="grid gap-2">
+            <Label htmlFor={field.name}>{field.label}</Label>
+            <SearchableSelectInput 
+              field={field} 
+              value={value} 
+              onChange={(val) => handleInputChange(field.name, val)} 
+            />
           </div>
         )
 
@@ -180,7 +339,7 @@ export function CrudTable({
             <Label htmlFor={field.name}>{field.label}</Label>
             <Select value={value || ""} onValueChange={(val) => handleInputChange(field.name, val)}>
               <SelectTrigger>
-                <SelectValue />
+                <SelectValue placeholder="Select an option" />
               </SelectTrigger>
               <SelectContent>
                 {field.options?.map((option) => (
@@ -192,6 +351,7 @@ export function CrudTable({
             </Select>
           </div>
         )
+        
       case "textarea":
         return (
           <div key={field.name} className="grid gap-2">
@@ -205,8 +365,8 @@ export function CrudTable({
             />
           </div>
         )
+        
       default:
-        // Handles "text" and any others
         return (
           <div key={field.name} className="grid gap-2">
             <Label htmlFor={field.name}>{field.label}</Label>
@@ -281,7 +441,7 @@ export function CrudTable({
         )}
       </div>
 
-      <div className="rounded-md border">
+      <div className="rounded-md border bg-background">
         <Table>
           <TableHeader>
             <TableRow>
@@ -311,7 +471,6 @@ export function CrudTable({
                 </TableCell>
                 {columns.map((column) => (
                   <TableCell key={`${item.id}-${column.key}`}>
-                    {/* <--- 4. UPDATED to use render function if it exists */}
                     {column.render 
                       ? column.render(item[column.key], item) 
                       : item[column.key]
@@ -350,14 +509,14 @@ export function CrudTable({
       </div>
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent>
+        <DialogContent className="max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               {localEditingId ? "Edit" : "Add New"} {title.slice(0, -1)}
             </DialogTitle>
           </DialogHeader>
           <div className="grid gap-4 py-4">{formFields.map((field) => renderFormField(field))}</div>
-          <div className="flex justify-end gap-2">
+          <div className="flex justify-end gap-2 mt-4">
             <Button variant="outline" onClick={handleCloseDialog} disabled={isAdding || isEditing}>
               Cancel
             </Button>

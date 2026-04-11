@@ -47,6 +47,7 @@ import { RemovedItemsModal as ImportedRemovedItemsModal } from "@/components/men
 import { TimelineEntry as ImportedTimelineEntry } from "@/components/menu-edit-modal/timeline-entry"
 import { ServiceNavigationPanel as ImportedServiceNavigationPanel } from "@/components/menu-edit-modal/service-navigation-panel"
 import { LoadingProgress as ImportedLoadingProgress } from "@/components/menu-edit-modal/loading-progress"
+import { DetailedDataScreen as ImportedDetailedDataScreen } from "@/components/menu-edit-modal/detailed-data-screen"
 
 // --- Local Services Definition ---
 // --- Types ---
@@ -2744,7 +2745,7 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
   const [selectedChoiceItems, setSelectedChoiceItems] = useState<Record<string, string[]>>({})
 
   // TABBED INTERFACE STATE
-  const [activeBottomTab, setActiveBottomTab] = useState<'menu' | 'choices' | 'universal'>('menu')
+  const [activeBottomTab, setActiveBottomTab] = useState<'menu' | 'choices' | 'universal' | 'detailed'>('menu')
   const [choiceTabIndex, setChoiceTabIndex] = useState(0)
   const [inlineChoiceSelections, setInlineChoiceSelections] = useState<Record<string, any[]>>({})
 
@@ -3029,7 +3030,67 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
         setMessage("Finalizing...")
 
         const originalData = menuDoc.menuData || {}
+
+        // --- AUTO-FILL DEFAULT ITEMS FOR EMPTY CELLS ---
+        const defaultItemsMap = new Map<string, string[]>()
+        filteredSubMealPlans.forEach(smp => {
+          if (smp.defaultItemId) {
+            // Handle both multi-item arrays and single string IDs safely
+            if (Array.isArray(smp.defaultItemId) && smp.defaultItemId.length > 0) {
+              defaultItemsMap.set(smp.id, smp.defaultItemId)
+            } else if (typeof smp.defaultItemId === 'string' && smp.defaultItemId.trim() !== '') {
+              defaultItemsMap.set(smp.id, [smp.defaultItemId])
+            }
+          }
+        })
+
+        if (defaultItemsMap.size > 0 && mealPlanStructureData) {
+          dates.forEach(({ date, day }) => {
+            const dayKey = day.toLowerCase()
+            mealPlanStructureData.forEach((assignment: any) => {
+              if (assignment.status !== 'active') return;
+              
+              // For company menus, strictly only apply to their own assignments
+              if (menuType === 'company' && menuDoc.companyId && menuDoc.buildingId) {
+                if (assignment.companyId !== menuDoc.companyId || assignment.buildingId !== menuDoc.buildingId) {
+                  return;
+                }
+              }
+              
+              const dayStructure = assignment.weekStructure?.[dayKey] || []
+              dayStructure.forEach((s: any) => {
+                s.subServices?.forEach((ss: any) => {
+                  ss.mealPlans?.forEach((mp: any) => {
+                    mp.subMealPlans?.forEach((smp: any) => {
+                      const defaultItems = defaultItemsMap.get(smp.subMealPlanId)
+                      if (defaultItems) {
+                        // Ensure nested object paths exist to prevent crashes
+                        if (!originalData[date]) originalData[date] = {}
+                        if (!originalData[date][s.serviceId]) originalData[date][s.serviceId] = {}
+                        if (!originalData[date][s.serviceId][ss.subServiceId]) originalData[date][s.serviceId][ss.subServiceId] = {}
+                        if (!originalData[date][s.serviceId][ss.subServiceId][mp.mealPlanId]) originalData[date][s.serviceId][ss.subServiceId][mp.mealPlanId] = {}
+
+                        const cell = originalData[date][s.serviceId][ss.subServiceId][mp.mealPlanId][smp.subMealPlanId]
+
+                        // If cell is completely empty or missing, inject the default items!
+                        if (!cell || !cell.menuItemIds || cell.menuItemIds.length === 0) {
+                          originalData[date][s.serviceId][ss.subServiceId][mp.mealPlanId][smp.subMealPlanId] = {
+                            ...(cell || {}),
+                            menuItemIds: [...defaultItems]
+                          }
+                        }
+                      }
+                    })
+                  })
+                })
+              })
+            })
+          })
+        }
+        // --- END AUTO-FILL ---
+
         setOriginalMenuData(JSON.parse(JSON.stringify(originalData)))
+        
 
         // FIXED: Reconstruct the TRUE original (OG) baseline by reversing all updations
         // OG is the state BEFORE any U-records were created
@@ -5923,6 +5984,20 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
                 )}
               </div>
             )}
+            {activeBottomTab === 'detailed' && (
+              <ImportedDetailedDataScreen
+  companiesWithChoices={companiesWithChoices}
+  services={services}
+  subServices={subServices}       // already passed
+  mealPlans={mealPlans}
+  subMealPlans={subMealPlans}
+  menuItems={menuItems}
+  menuData={menuData}             // ← add this
+  dateRange={dateRange}           // ← add this
+  mealPlanAssignments={mealPlanAssignments}  // ← add this
+  inlineChoiceSelections={inlineChoiceSelections}  // ← this is the new one  
+/>
+            )}
             {/* --- BOTTOM TAB BAR --- */}
             <div className="flex bg-gray-100 border-t border-gray-300 px-4 pt-2 gap-2 z-40 relative shadow-[0_-2px_4px_rgba(0,0,0,0.05)] select-none shrink-0">
               <button 
@@ -5952,6 +6027,14 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
                 disabled={companiesWithChoices.length === 0}
               >
                  Universal Choices
+              </button>
+              <button 
+                onClick={() => setActiveBottomTab('detailed')}
+                className={`px-5 py-2 rounded-t-lg font-semibold text-sm border border-b-0 transition-colors flex flex-col items-center justify-center ${activeBottomTab === 'detailed' ? 'bg-white border-gray-300 text-blue-700 shadow-[0_-2px_6px_rgba(0,0,0,0.08)] relative z-10' : 'bg-gray-200/80 border-transparent text-gray-500 hover:bg-gray-200'} ${companiesWithChoices.length === 0 ? 'opacity-50 cursor-not-allowed' : ''}`}
+                style={{ marginBottom: activeBottomTab === 'detailed' ? '-1px' : '0' }}
+                disabled={companiesWithChoices.length === 0}
+              >
+                Detailed Data Screen
               </button>
             </div>
             </div>
