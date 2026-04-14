@@ -1,19 +1,18 @@
 'use client'
 
 import React, { useMemo, useState } from 'react'
-import { AlertCircle, Building2, Utensils, X } from 'lucide-react'
+import { AlertCircle, Building2, Utensils, X, Clock, CheckCircle2, ChevronDown, ChevronRight } from 'lucide-react'
 
 interface DetailedDataScreenProps {
   companiesWithChoices: any[]
   services: any[]
-  subServices: any        // Map<string, SubService[]> OR SubService[]
+  subServices: any
   mealPlans: any[]
   subMealPlans: any[]
   menuItems: any[]
   menuData?: any
   dateRange?: Array<{ date: string; day: string }>
   mealPlanAssignments?: any[]
-  // Live selections from Choice Selection / Universal tabs
   inlineChoiceSelections?: Record<string, any[]>
 }
 
@@ -28,12 +27,91 @@ interface CompanyEntry {
 interface CellData {
   itemId: string
   itemName: string
+  // Companies that will receive this item (default + choice-selected)
   companies: CompanyEntry[]
   totalCompanies: number
   choiceCompanies: number
   nonChoiceCompanies: number
+  // Companies governed by a choice for this cell but whose choice set
+  // is NOT yet fully filled (i.e. they still have pending slots)
+  pendingChoiceCompanies: number
+  pendingChoiceCompanyList: Array<{
+    companyName: string
+    buildingName: string
+    companyId: string
+    buildingId: string
+    selectedSoFar: number
+    totalSlots: number
+  }>
 }
 
+// ─── Summary bar shown at the top of the screen ──────────────────────────────
+function SummaryBar({
+  totalItems,
+  totalCompanyAssignments,
+  choiceCompanyAssignments,
+  defaultCompanyAssignments,
+  pendingSlots,
+}: {
+  totalItems: number
+  totalCompanyAssignments: number
+  choiceCompanyAssignments: number
+  defaultCompanyAssignments: number
+  pendingSlots: number
+}) {
+  const stats = [
+    {
+      label: 'Total Items',
+      value: totalItems,
+      bg: 'bg-slate-100',
+      text: 'text-slate-700',
+      border: 'border-slate-200',
+    },
+    {
+      label: 'Default Deliveries',
+      value: defaultCompanyAssignments,
+      bg: 'bg-gray-50',
+      text: 'text-gray-700',
+      border: 'border-gray-200',
+      dot: 'bg-gray-400',
+    },
+    {
+      label: 'Choice Selections',
+      value: choiceCompanyAssignments,
+      bg: 'bg-amber-50',
+      text: 'text-amber-700',
+      border: 'border-amber-200',
+      dot: 'bg-amber-400',
+    },
+    {
+      label: 'Pending Choices',
+      value: pendingSlots,
+      bg: pendingSlots > 0 ? 'bg-orange-50' : 'bg-green-50',
+      text: pendingSlots > 0 ? 'text-orange-700' : 'text-green-700',
+      border: pendingSlots > 0 ? 'border-orange-200' : 'border-green-200',
+      dot: pendingSlots > 0 ? 'bg-orange-400' : 'bg-green-400',
+    },
+  ]
+
+  return (
+    <div className="shrink-0 px-4 py-2.5 bg-white border-b border-gray-100 flex items-center gap-3 flex-wrap">
+      {stats.map((s) => (
+        <div
+          key={s.label}
+          className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-semibold ${s.bg} ${s.text} ${s.border}`}
+        >
+          {s.dot && (
+            <span className={`h-2 w-2 rounded-full ${s.dot} shrink-0`} />
+          )}
+          <span className="font-bold text-sm">{s.value}</span>
+          <span className="font-medium opacity-80">{s.label}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ─── Modal showing company breakdown for a single item ────────────────────────
 function CompanyDetailModal({
   cellData,
   day,
@@ -45,64 +123,117 @@ function CompanyDetailModal({
 }) {
   return (
     <div
-      className="fixed inset-0 bg-black/40 z-[9999] flex items-center justify-center p-4"
+      className="fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center p-4"
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden border border-gray-200"
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border border-gray-200"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="bg-slate-700 px-4 py-3 flex items-center justify-between">
+        {/* Header */}
+        <div className="bg-gradient-to-r from-slate-800 to-slate-700 px-5 py-4 flex items-start justify-between">
           <div>
-            <p className="text-white font-semibold text-sm">{cellData.itemName}</p>
-            <p className="text-slate-300 text-xs mt-0.5 capitalize">{day}</p>
+            <p className="text-white font-bold text-base leading-tight">{cellData.itemName}</p>
+            <p className="text-slate-300 text-xs mt-1 capitalize font-medium">{day}</p>
           </div>
-          <button onClick={onClose} className="text-slate-300 hover:text-white p-1 rounded">
+          <button
+            onClick={onClose}
+            className="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-white/10 transition-colors"
+          >
             <X className="h-4 w-4" />
           </button>
         </div>
-        <div className="p-3">
-          <div className="flex gap-2 mb-3 flex-wrap">
-            <span className="text-xs font-semibold px-2 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
-              {cellData.totalCompanies} total
+
+        {/* Stats row */}
+        <div className="px-5 py-3 bg-slate-50 border-b border-gray-100 flex gap-2 flex-wrap">
+          <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-slate-200 text-slate-700">
+            {cellData.totalCompanies} receiving
+          </span>
+          {cellData.choiceCompanies > 0 && (
+            <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-amber-100 text-amber-700 border border-amber-200">
+              {cellData.choiceCompanies} via choice
             </span>
-            {cellData.choiceCompanies > 0 && (
-              <span className="text-xs font-semibold px-2 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
-                {cellData.choiceCompanies} from choice
-              </span>
-            )}
-            {cellData.nonChoiceCompanies > 0 && (
-              <span className="text-xs font-semibold px-2 py-1 rounded-full bg-gray-50 text-gray-700 border border-gray-200">
-                {cellData.nonChoiceCompanies} default
-              </span>
-            )}
-          </div>
-          <div className="space-y-1.5 max-h-64 overflow-y-auto">
-            {cellData.companies.map((c, i) => (
-              <div
-                key={i}
-                className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-xs ${
-                  c.isFromChoice ? 'bg-amber-50 border-amber-200' : 'bg-gray-50 border-gray-200'
-                }`}
-              >
-                <Building2
-                  className={`h-3.5 w-3.5 shrink-0 ${c.isFromChoice ? 'text-amber-600' : 'text-gray-500'}`}
-                />
-                <div className="min-w-0">
-                  <p className="font-semibold text-gray-800 truncate">{c.companyName}</p>
-                  <p className="text-gray-500 truncate">{c.buildingName}</p>
-                </div>
-                {c.isFromChoice && (
-                  <span className="ml-auto shrink-0 text-[10px] font-bold text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded">
-                    choice
-                  </span>
-                )}
+          )}
+          {cellData.nonChoiceCompanies > 0 && (
+            <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-gray-100 text-gray-700 border border-gray-200">
+              {cellData.nonChoiceCompanies} default
+            </span>
+          )}
+          {cellData.pendingChoiceCompanies > 0 && (
+            <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-orange-100 text-orange-700 border border-orange-200 flex items-center gap-1">
+              <Clock className="h-3 w-3" />
+              {cellData.pendingChoiceCompanies} pending
+            </span>
+          )}
+        </div>
+
+        {/* Receiving companies */}
+        <div className="px-5 py-3">
+          {cellData.companies.length > 0 && (
+            <>
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">
+                Receiving this item
+              </p>
+              <div className="space-y-1.5 max-h-44 overflow-y-auto pr-1">
+                {cellData.companies.map((c, i) => (
+                  <div
+                    key={i}
+                    className={`flex items-center gap-2.5 px-3 py-2 rounded-xl border text-xs ${
+                      c.isFromChoice
+                        ? 'bg-amber-50 border-amber-200'
+                        : 'bg-gray-50 border-gray-200'
+                    }`}
+                  >
+                    <Building2
+                      className={`h-3.5 w-3.5 shrink-0 ${
+                        c.isFromChoice ? 'text-amber-500' : 'text-gray-400'
+                      }`}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className="font-bold text-gray-800 truncate">{c.companyName}</p>
+                      <p className="text-gray-400 truncate text-[10px]">{c.buildingName}</p>
+                    </div>
+                    {c.isFromChoice && (
+                      <span className="shrink-0 text-[9px] font-bold text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded-full border border-amber-200">
+                        choice ✓
+                      </span>
+                    )}
+                  </div>
+                ))}
               </div>
-            ))}
-            {cellData.companies.length === 0 && (
-              <p className="text-xs text-gray-400 italic text-center py-4">No company data available</p>
-            )}
-          </div>
+            </>
+          )}
+
+          {/* Pending section */}
+          {cellData.pendingChoiceCompanyList.length > 0 && (
+            <div className="mt-3 pt-3 border-t border-dashed border-orange-200">
+              <p className="text-[10px] font-bold text-orange-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                <Clock className="h-3 w-3" />
+                Still deciding — hasn't filled choice quota yet
+              </p>
+              <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                {cellData.pendingChoiceCompanyList.map((c, i) => (
+                  <div
+                    key={i}
+                    className="flex items-center gap-2.5 px-3 py-2 rounded-xl border border-orange-200 bg-orange-50/80 text-xs"
+                  >
+                    <Clock className="h-3.5 w-3.5 shrink-0 text-orange-400" />
+                    <div className="min-w-0 flex-1">
+                      <p className="font-bold text-orange-800 truncate">{c.companyName}</p>
+                      <p className="text-orange-400 truncate text-[10px]">{c.buildingName}</p>
+                    </div>
+                    <span className="shrink-0 text-[9px] font-bold text-orange-600 bg-white px-1.5 py-0.5 rounded-full border border-orange-300">
+                      {c.selectedSoFar}/{c.totalSlots}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {cellData.companies.length === 0 && cellData.pendingChoiceCompanyList.length === 0 && (
+            <p className="text-xs text-gray-300 italic text-center py-6">No company assignments found</p>
+          )}
         </div>
       </div>
     </div>
@@ -123,7 +254,7 @@ export function DetailedDataScreen({
 }: DetailedDataScreenProps) {
   const [modalData, setModalData] = useState<{ cell: CellData; day: string } | null>(null)
 
-  // Flatten subServices regardless of Map or array
+  // ─── Flatten helpers ───────────────────────────────────────────────────────
   const subServicesArray = useMemo(() => {
     if (!subServices) return []
     if (subServices instanceof Map) {
@@ -149,7 +280,210 @@ export function DetailedDataScreen({
     [menuItems]
   )
 
-  // ─── Build structure groups ───────────────────────────────────────────────
+  // ─── Choice def lookups ────────────────────────────────────────────────────
+  const choiceDefMap = useMemo(() => {
+    const map = new Map<string, any>()
+    companiesWithChoices?.forEach?.((company: any) => {
+      company.choices?.forEach?.((choice: any) => {
+        if (!map.has(choice.choiceId)) map.set(choice.choiceId, choice)
+      })
+    })
+    return map
+  }, [companiesWithChoices])
+
+  const companyInfoMap = useMemo(() => {
+    const map = new Map<string, { companyName: string; buildingName: string; companyId: string; buildingId: string }>()
+    companiesWithChoices?.forEach?.((company: any) => {
+      const key = `${company.companyId}-${company.buildingId}`
+      if (!map.has(key)) {
+        map.set(key, {
+          companyId: company.companyId,
+          companyName: company.companyName || 'Unknown',
+          buildingId: company.buildingId,
+          buildingName: company.buildingName || 'Unknown',
+        })
+      }
+    })
+    return map
+  }, [companiesWithChoices])
+
+  // ─── KEY LOGIC: Per-company, per-choice quota tracking ────────────────────
+  // For each "companyId-buildingId-choiceId" key, how many slots are filled?
+  const companyChoiceQuota = useMemo(() => {
+    // map: "companyId-buildingId-choiceId" -> { selectedCount, totalSlots }
+    const quotaMap = new Map<string, { selectedCount: number; totalSlots: number }>()
+
+    // Populate total slots from choice definitions
+    Object.entries(inlineChoiceSelections).forEach(([selKey]) => {
+      const parts = selKey.split('-')
+      const companyId = parts[0]
+      const buildingId = parts[1]
+      const choiceId = parts.slice(2).join('-')
+      const choiceDef = choiceDefMap.get(choiceId)
+      if (!choiceDef) return
+
+      const qKey = selKey // "companyId-buildingId-choiceId"
+      if (!quotaMap.has(qKey)) {
+        quotaMap.set(qKey, { selectedCount: 0, totalSlots: choiceDef.quantity || 1 })
+      }
+    })
+
+    // Fill selectedCount from actual selections
+    Object.entries(inlineChoiceSelections).forEach(([selKey, selItems]) => {
+      if (!selItems?.length) return
+      const existing = quotaMap.get(selKey)
+      if (existing) {
+        existing.selectedCount = selItems.length
+      }
+    })
+
+    return quotaMap
+  }, [inlineChoiceSelections, choiceDefMap])
+
+  // For each company/building, is their choice quota FULLY filled?
+  // Key: "companyId-buildingId-choiceId" -> boolean
+  const isQuotaFilled = useMemo(() => {
+    const map = new Map<string, boolean>()
+    companyChoiceQuota.forEach((v, k) => {
+      map.set(k, v.selectedCount >= v.totalSlots)
+    })
+    return map
+  }, [companyChoiceQuota])
+
+  // ─── Live choice map: which companies selected THIS specific item ──────────
+  // Key: "date|serviceId|subServiceId|mealPlanId|subMealPlanId|itemId" -> CompanyEntry[]
+  const liveChoiceMap = useMemo(() => {
+    const map = new Map<string, CompanyEntry[]>()
+
+    Object.entries(inlineChoiceSelections).forEach(([selKey, selItems]) => {
+      if (!selItems?.length) return
+
+      const parts = selKey.split('-')
+      const companyId = parts[0]
+      const buildingId = parts[1]
+      const choiceId = parts.slice(2).join('-')
+
+      const choiceDef = choiceDefMap.get(choiceId)
+      if (!choiceDef) return
+
+      const choiceDay = choiceDef.choiceDay?.toLowerCase() || ''
+      const serviceId = choiceDef.serviceId || ''
+      const subServiceId = choiceDef.subServiceId || ''
+
+      const matchingDate = dateRange.find((d) => d.day.toLowerCase() === choiceDay)
+      if (!matchingDate) return
+      const date = matchingDate.date
+
+      const companyInfo = companyInfoMap.get(`${companyId}-${buildingId}`)
+      if (!companyInfo) return
+
+      selItems.forEach((sel: any) => {
+        const itemId = sel.selectedItemId
+        const mealPlanId = sel.mealPlanId
+        const subMealPlanId = sel.subMealPlanId
+        if (!itemId || !mealPlanId || !subMealPlanId) return
+
+        const key = `${date}|${serviceId}|${subServiceId}|${mealPlanId}|${subMealPlanId}|${itemId}`
+        if (!map.has(key)) map.set(key, [])
+        const list = map.get(key)!
+        const exists = list.some((c) => c.companyId === companyId && c.buildingId === buildingId)
+        if (!exists) {
+          list.push({
+            companyId,
+            companyName: companyInfo.companyName,
+            buildingId,
+            buildingName: companyInfo.buildingName,
+            isFromChoice: true,
+          })
+        }
+      })
+    })
+
+    return map
+  }, [inlineChoiceSelections, choiceDefMap, companyInfoMap, dateRange])
+
+  // ─── Choice-governed cells: which companies have a choice for this cell ───
+  // Key: "date|serviceId|subServiceId|mealPlanId|subMealPlanId"
+  //   -> Map<"companyId-buildingId", { companyInfo, choiceKey }>
+  const choiceGovernedInfoMap = useMemo(() => {
+    const map = new Map<string, Map<string, { companyName: string; buildingName: string; companyId: string; buildingId: string; choiceKey: string }>>()
+
+    Object.entries(inlineChoiceSelections).forEach(([selKey]) => {
+      const parts = selKey.split('-')
+      const companyId = parts[0]
+      const buildingId = parts[1]
+      const choiceId = parts.slice(2).join('-')
+
+      const choiceDef = choiceDefMap.get(choiceId)
+      if (!choiceDef) return
+
+      const choiceDay = choiceDef.choiceDay?.toLowerCase() || ''
+      const serviceId = choiceDef.serviceId || ''
+      const subServiceId = choiceDef.subServiceId || ''
+      const matchingDate = dateRange.find((d) => d.day.toLowerCase() === choiceDay)
+      if (!matchingDate) return
+      const date = matchingDate.date
+
+      const companyInfo = companyInfoMap.get(`${companyId}-${buildingId}`)
+      if (!companyInfo) return
+
+      choiceDef.mealPlans?.forEach((mp: any) => {
+        mp.subMealPlans?.forEach((smp: any) => {
+          const cellKey = `${date}|${serviceId}|${subServiceId}|${mp.mealPlanId}|${smp.subMealPlanId}`
+          if (!map.has(cellKey)) map.set(cellKey, new Map())
+          map.get(cellKey)!.set(`${companyId}-${buildingId}`, {
+            ...companyInfo,
+            choiceKey: selKey,
+          })
+        })
+      })
+    })
+
+    return map
+  }, [inlineChoiceSelections, choiceDefMap, companyInfoMap, dateRange])
+
+  // ─── Default company map from mealPlanAssignments ─────────────────────────
+  const defaultCompanyMap = useMemo(() => {
+    const map = new Map<string, CompanyEntry[]>()
+    if (!mealPlanAssignments?.length) return map
+
+    dateRange.forEach(({ date, day }) => {
+      const dayKey = day.toLowerCase()
+      mealPlanAssignments.forEach((assignment: any) => {
+        const dayStructure = assignment.weekStructure?.[dayKey] || []
+        dayStructure.forEach((service: any) => {
+          service.subServices?.forEach((ss: any) => {
+            ss.mealPlans?.forEach((mp: any) => {
+              mp.subMealPlans?.forEach((smp: any) => {
+                const cell = menuData?.[date]?.[service.serviceId]?.[ss.subServiceId]?.[mp.mealPlanId]?.[smp.subMealPlanId]
+                const itemIds: string[] = cell?.menuItemIds || []
+                itemIds.forEach((itemId) => {
+                  const key = `${date}|${service.serviceId}|${ss.subServiceId}|${mp.mealPlanId}|${smp.subMealPlanId}|${itemId}`
+                  if (!map.has(key)) map.set(key, [])
+                  const list = map.get(key)!
+                  const exists = list.some(
+                    (c) => c.companyId === assignment.companyId && c.buildingId === assignment.buildingId
+                  )
+                  if (!exists) {
+                    list.push({
+                      companyId: assignment.companyId,
+                      companyName: assignment.companyName || 'Unknown',
+                      buildingId: assignment.buildingId,
+                      buildingName: assignment.buildingName || 'Unknown',
+                      isFromChoice: false,
+                    })
+                  }
+                })
+              })
+            })
+          })
+        })
+      })
+    })
+    return map
+  }, [mealPlanAssignments, menuData, dateRange])
+
+  // ─── Build structure groups ────────────────────────────────────────────────
   const buildGroupsFromAssignments = (assignments: any[]) => {
     const groupMap = new Map<string, {
       serviceId: string; serviceName: string
@@ -210,14 +544,13 @@ export function DetailedDataScreen({
     [mealPlanAssignments, dateRange, servicesArray, subServicesArray, mealPlans, subMealPlans]
   )
 
-  // Fallback: build from companiesWithChoices
-  const choiceGroups = useMemo(() => {
+  const choiceGroupsFallback = useMemo(() => {
     if (assignmentGroups.length > 0) return []
     if (!companiesWithChoices?.length) return []
     const pseudoAssignments: any[] = []
     const seen = new Set<string>()
     companiesWithChoices.forEach((company: any) => {
-      company.choices?.forEach((choice: any) => {
+      company.choices?.forEach?.((choice: any) => {
         const sId = choice.serviceId || 'unknown'
         const ssId = choice.subServiceId || 'unknown'
         const day = choice.choiceDay || 'monday'
@@ -242,224 +575,9 @@ export function DetailedDataScreen({
     return buildGroupsFromAssignments(pseudoAssignments)
   }, [assignmentGroups.length, companiesWithChoices, servicesArray, subServicesArray, mealPlans, subMealPlans, dateRange])
 
-  const activeGroups = assignmentGroups.length > 0 ? assignmentGroups : choiceGroups
+  const activeGroups = assignmentGroups.length > 0 ? assignmentGroups : choiceGroupsFallback
 
-  // ─── LIVE CHOICE COMPANY MAP ──────────────────────────────────────────────
-  // This is the key: for each (date, serviceId, subServiceId, mealPlanId, subMealPlanId, itemId)
-  // we compute which companies have selected that specific item via inlineChoiceSelections.
-  //
-  // inlineChoiceSelections keys: "companyId-buildingId-choiceId"
-  // Each value: Array<{ mealPlanId, subMealPlanId, selectedItemId, selectedItemName, ... }>
-  //
-  // A company "chose" item X for a cell if:
-  //   - They have a selection entry where selectedItemId === X
-  //   - AND the choice's choiceDay matches the date's day
-  //   - AND the choice's serviceId/subServiceId matches the cell's service/subservice
-  //   - AND the selection's mealPlanId/subMealPlanId matches the cell's mealPlan/subMealPlan
-
-  // Build a lookup: choiceId -> choice definition (day, serviceId, subServiceId)
-  const choiceDefMap = useMemo(() => {
-    const map = new Map<string, any>()
-    companiesWithChoices?.forEach?.((company: any) => {
-      company.choices?.forEach?.((choice: any) => {
-        if (!map.has(choice.choiceId)) {
-          map.set(choice.choiceId, choice)
-        }
-      })
-    })
-    return map
-  }, [companiesWithChoices])
-
-  // Build a lookup: companyId-buildingId -> { companyName, buildingName }
-  const companyInfoMap = useMemo(() => {
-    const map = new Map<string, { companyName: string; buildingName: string; companyId: string; buildingId: string }>()
-    companiesWithChoices?.forEach?.((company: any) => {
-      const key = `${company.companyId}-${company.buildingId}`
-      if (!map.has(key)) {
-        map.set(key, {
-          companyId: company.companyId,
-          companyName: company.companyName || 'Unknown',
-          buildingId: company.buildingId,
-          buildingName: company.buildingName || 'Unknown',
-        })
-      }
-    })
-    return map
-  }, [companiesWithChoices])
-
-  // liveChoiceMap: "date|serviceId|subServiceId|mealPlanId|subMealPlanId|itemId" -> CompanyEntry[]
-  // Companies that have THIS item selected live in the choice modal
-  const liveChoiceMap = useMemo(() => {
-    const map = new Map<string, CompanyEntry[]>()
-
-    Object.entries(inlineChoiceSelections).forEach(([selKey, selItems]) => {
-      if (!selItems?.length) return
-
-      // selKey = "companyId-buildingId-choiceId"
-      const parts = selKey.split('-')
-      const companyId = parts[0]
-      const buildingId = parts[1]
-      const choiceId = parts.slice(2).join('-')
-
-      const choiceDef = choiceDefMap.get(choiceId)
-      if (!choiceDef) return
-
-      const choiceDay = choiceDef.choiceDay?.toLowerCase() || ''
-      const serviceId = choiceDef.serviceId || ''
-      const subServiceId = choiceDef.subServiceId || ''
-
-      const matchingDate = dateRange.find((d) => d.day.toLowerCase() === choiceDay)
-      if (!matchingDate) return
-      const date = matchingDate.date
-
-      const companyInfo = companyInfoMap.get(`${companyId}-${buildingId}`)
-      if (!companyInfo) return
-
-      selItems.forEach((sel: any) => {
-        const itemId = sel.selectedItemId
-        const mealPlanId = sel.mealPlanId
-        const subMealPlanId = sel.subMealPlanId
-        if (!itemId || !mealPlanId || !subMealPlanId) return
-
-        const key = `${date}|${serviceId}|${subServiceId}|${mealPlanId}|${subMealPlanId}|${itemId}`
-        if (!map.has(key)) map.set(key, [])
-        const list = map.get(key)!
-        const exists = list.some((c) => c.companyId === companyId && c.buildingId === buildingId)
-        if (!exists) {
-          list.push({
-            companyId,
-            companyName: companyInfo.companyName,
-            buildingId,
-            buildingName: companyInfo.buildingName,
-            isFromChoice: true,
-          })
-        }
-      })
-    })
-
-    return map
-  }, [inlineChoiceSelections, choiceDefMap, companyInfoMap, dateRange])
-
-  // For each cell item, which companies have a choice for that cell (regardless of what they picked)?
-  // These companies are "choice-governed" — they won't appear as default for that cell
-  // because their item is determined by their selection, not by the default menu.
-  const choiceGoverned = useMemo(() => {
-    // Map: "date|serviceId|subServiceId|mealPlanId|subMealPlanId" -> Set<"companyId-buildingId">
-    const map = new Map<string, Set<string>>()
-
-    Object.entries(inlineChoiceSelections).forEach(([selKey]) => {
-      const parts = selKey.split('-')
-      const companyId = parts[0]
-      const buildingId = parts[1]
-      const choiceId = parts.slice(2).join('-')
-
-      const choiceDef = choiceDefMap.get(choiceId)
-      if (!choiceDef) return
-
-      const choiceDay = choiceDef.choiceDay?.toLowerCase() || ''
-      const serviceId = choiceDef.serviceId || ''
-      const subServiceId = choiceDef.subServiceId || ''
-      const matchingDate = dateRange.find((d) => d.day.toLowerCase() === choiceDay)
-      if (!matchingDate) return
-      const date = matchingDate.date
-
-      // This company is governed by a choice for ALL mealPlan/subMealPlan combos in this choice
-      choiceDef.mealPlans?.forEach((mp: any) => {
-        mp.subMealPlans?.forEach((smp: any) => {
-          const cellKey = `${date}|${serviceId}|${subServiceId}|${mp.mealPlanId}|${smp.subMealPlanId}`
-          if (!map.has(cellKey)) map.set(cellKey, new Set())
-          map.get(cellKey)!.add(`${companyId}-${buildingId}`)
-        })
-      })
-    })
-
-    return map
-  }, [inlineChoiceSelections, choiceDefMap, dateRange])
-
-  // Default company map from mealPlanAssignments
-  const defaultCompanyMap = useMemo(() => {
-    const map = new Map<string, CompanyEntry[]>()
-    if (!mealPlanAssignments?.length) return map
-
-    dateRange.forEach(({ date, day }) => {
-      const dayKey = day.toLowerCase()
-      mealPlanAssignments.forEach((assignment: any) => {
-        const dayStructure = assignment.weekStructure?.[dayKey] || []
-        dayStructure.forEach((service: any) => {
-          service.subServices?.forEach((ss: any) => {
-            ss.mealPlans?.forEach((mp: any) => {
-              mp.subMealPlans?.forEach((smp: any) => {
-                const cell = menuData?.[date]?.[service.serviceId]?.[ss.subServiceId]?.[mp.mealPlanId]?.[smp.subMealPlanId]
-                const itemIds: string[] = cell?.menuItemIds || []
-                itemIds.forEach((itemId) => {
-                  const key = `${date}|${service.serviceId}|${ss.subServiceId}|${mp.mealPlanId}|${smp.subMealPlanId}|${itemId}`
-                  if (!map.has(key)) map.set(key, [])
-                  const list = map.get(key)!
-                  const exists = list.some(
-                    (c) => c.companyId === assignment.companyId && c.buildingId === assignment.buildingId
-                  )
-                  if (!exists) {
-                    list.push({
-                      companyId: assignment.companyId,
-                      companyName: assignment.companyName || 'Unknown',
-                      buildingId: assignment.buildingId,
-                      buildingName: assignment.buildingName || 'Unknown',
-                      isFromChoice: false,
-                    })
-                  }
-                })
-              })
-            })
-          })
-        })
-      })
-    })
-    return map
-  }, [mealPlanAssignments, menuData, dateRange])
-
-  // Fallback: build default companies from companiesWithChoices when no mealPlanAssignments
-  const fallbackDefaultMap = useMemo(() => {
-    if (mealPlanAssignments?.length > 0) return new Map<string, CompanyEntry[]>()
-    const map = new Map<string, CompanyEntry[]>()
-
-    companiesWithChoices?.forEach?.((company: any) => {
-      company.choices?.forEach?.((choice: any) => {
-        const serviceId = choice.serviceId || ''
-        const subServiceId = choice.subServiceId || ''
-        const choiceDay = choice.choiceDay?.toLowerCase() || ''
-        const matchingDate = dateRange.find((d) => d.day.toLowerCase() === choiceDay)
-        if (!matchingDate) return
-        const date = matchingDate.date
-
-        choice.mealPlans?.forEach((mp: any) => {
-          mp.subMealPlans?.forEach((smp: any) => {
-            const cell = menuData?.[date]?.[serviceId]?.[subServiceId]?.[mp.mealPlanId]?.[smp.subMealPlanId]
-            const itemIds: string[] = cell?.menuItemIds || []
-            itemIds.forEach((itemId) => {
-              const key = `${date}|${serviceId}|${subServiceId}|${mp.mealPlanId}|${smp.subMealPlanId}|${itemId}`
-              if (!map.has(key)) map.set(key, [])
-              const list = map.get(key)!
-              const exists = list.some(
-                (c) => c.companyId === company.companyId && c.buildingId === company.buildingId
-              )
-              if (!exists) {
-                list.push({
-                  companyId: company.companyId,
-                  companyName: company.companyName || 'Unknown',
-                  buildingId: company.buildingId,
-                  buildingName: company.buildingName || 'Unknown',
-                  isFromChoice: false,
-                })
-              }
-            })
-          })
-        })
-      })
-    })
-    return map
-  }, [mealPlanAssignments, companiesWithChoices, menuData, dateRange])
-
-  // ─── CORE: compute cell data with LIVE choice awareness ───────────────────
+  // ─── CORE: compute cell data ───────────────────────────────────────────────
   const getCellData = (
     date: string,
     serviceId: string,
@@ -472,31 +590,74 @@ export function DetailedDataScreen({
     if (itemIds.length === 0) return []
 
     const cellKey = `${date}|${serviceId}|${subServiceId}|${mealPlanId}|${subMealPlanId}`
-    // Companies governed by a choice for this cell
-    const governedCompanyKeys = choiceGoverned.get(cellKey) || new Set<string>()
+    const governedInfoMap = choiceGovernedInfoMap.get(cellKey) || new Map<string, any>()
 
     return itemIds.map((itemId) => {
       const item = menuItemMap.get(itemId)
       const itemName = item?.name || itemId
       const fullKey = `${cellKey}|${itemId}`
 
-      // 1. Companies that LIVE-selected this specific item in the choice modal
+      // 1. Companies that LIVE-chose this specific item
       const liveChoiceComps = liveChoiceMap.get(fullKey) || []
       const liveChoiceKeys = new Set(liveChoiceComps.map((c) => `${c.companyId}-${c.buildingId}`))
 
-      // 2. Default companies (from mealPlanAssignments or fallback)
-      //    BUT exclude any company that is choice-governed for this cell
-      //    (because their item is determined by their choice selection, not defaults)
-      const allDefaults = defaultCompanyMap.get(fullKey) || fallbackDefaultMap.get(fullKey) || []
+      // 2. Default companies — exclude those governed by a choice
+      const allDefaults = defaultCompanyMap.get(fullKey) || []
       const nonChoiceComps = allDefaults.filter((c) => {
         const cbKey = `${c.companyId}-${c.buildingId}`
-        // Exclude if they are choice-governed (they'll only appear if they picked this item)
-        return !governedCompanyKeys.has(cbKey)
+        return !governedInfoMap.has(cbKey) && !liveChoiceKeys.has(cbKey)
       })
-      // Also exclude any that are already in liveChoice (avoid duplicates)
-      const filteredNonChoice = nonChoiceComps.filter((c) => !liveChoiceKeys.has(`${c.companyId}-${c.buildingId}`))
 
-      const allCompanies = [...liveChoiceComps, ...filteredNonChoice]
+      const allCompanies = [...liveChoiceComps, ...nonChoiceComps]
+
+      // 3. Pending: governed companies whose quota is NOT yet fully filled
+      //    Note: if a company's quota is filled (they chose OTHER items from the same
+      //    set), this item is simply "not chosen" — not "pending". Pending means
+      //    the company still has open choice slots they haven't filled yet.
+      const pendingList: Array<{
+        companyName: string
+        buildingName: string
+        companyId: string
+        buildingId: string
+        selectedSoFar: number
+        totalSlots: number
+      }> = []
+
+      governedInfoMap.forEach((info, cbKey) => {
+        // Skip if this company already selected this specific item
+        if (liveChoiceKeys.has(cbKey)) return
+
+        // Check if their choice quota is fully filled
+        const choiceKey = info.choiceKey // "companyId-buildingId-choiceId"
+        const quota = companyChoiceQuota.get(choiceKey)
+
+        if (!quota) {
+          // No quota info = no selections at all yet = pending
+          pendingList.push({
+            companyId: info.companyId,
+            companyName: info.companyName,
+            buildingId: info.buildingId,
+            buildingName: info.buildingName,
+            selectedSoFar: 0,
+            totalSlots: 1,
+          })
+          return
+        }
+
+        // Quota not fully filled = still pending (they have open slots)
+        if (quota.selectedCount < quota.totalSlots) {
+          pendingList.push({
+            companyId: info.companyId,
+            companyName: info.companyName,
+            buildingId: info.buildingId,
+            buildingName: info.buildingName,
+            selectedSoFar: quota.selectedCount,
+            totalSlots: quota.totalSlots,
+          })
+        }
+        // If quota IS filled, they chose OTHER items — this item is simply not theirs.
+        // Do NOT add to pending.
+      })
 
       return {
         itemId,
@@ -504,22 +665,47 @@ export function DetailedDataScreen({
         companies: allCompanies,
         totalCompanies: allCompanies.length,
         choiceCompanies: liveChoiceComps.length,
-        nonChoiceCompanies: filteredNonChoice.length,
+        nonChoiceCompanies: nonChoiceComps.length,
+        pendingChoiceCompanies: pendingList.length,
+        pendingChoiceCompanyList: pendingList,
       }
     })
   }
+
+  // ─── Global summary stats ─────────────────────────────────────────────────
+  const globalStats = useMemo(() => {
+    let totalItems = 0
+    let choiceAssignments = 0
+    let defaultAssignments = 0
+    let pendingSlots = 0
+
+    activeGroups.forEach((service) => {
+      service.subServices.forEach((subService) => {
+        subService.rows.forEach((row) => {
+          dateRange.forEach(({ date }) => {
+            const items = getCellData(date, service.serviceId, subService.subServiceId, row.mealPlanId, row.subMealPlanId)
+            items.forEach((item) => {
+              totalItems++
+              choiceAssignments += item.choiceCompanies
+              defaultAssignments += item.nonChoiceCompanies
+              pendingSlots += item.pendingChoiceCompanies
+            })
+          })
+        })
+      })
+    })
+
+    return { totalItems, choiceAssignments, defaultAssignments, pendingSlots }
+  }, [activeGroups, dateRange, getCellData])
 
   if (!activeGroups.length) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center text-gray-500 bg-gray-50">
         <AlertCircle className="h-12 w-12 text-gray-300 mb-4" />
         <h3 className="text-lg font-medium text-gray-700 mb-1">No Structure Found</h3>
-        <p className="text-sm text-center max-w-xs">
+        <p className="text-sm text-center max-w-xs text-gray-400">
           Make sure <code className="bg-gray-100 px-1 rounded text-xs">mealPlanAssignments</code> and{' '}
           <code className="bg-gray-100 px-1 rounded text-xs">dateRange</code> are passed as props.
-        </p>
-        <p className="text-xs text-gray-400 mt-3">
-          companies: {companiesWithChoices?.length ?? 0} · assignments: {mealPlanAssignments?.length ?? 0} · dates: {dateRange?.length ?? 0}
         </p>
       </div>
     )
@@ -527,38 +713,54 @@ export function DetailedDataScreen({
 
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden bg-white">
-      {/* Header */}
-      <div className="shrink-0 bg-blue-50 border-b border-blue-200 shadow-sm px-4 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <AlertCircle className="h-5 w-5 text-blue-600" />
-          <span className="font-semibold text-blue-800">Detailed Data Screen</span>
-          <span className="text-xs text-blue-600 font-medium ml-2 bg-white px-2 py-0.5 rounded-full border border-blue-200">
-            Live company-wise distribution
-          </span>
+      {/* ── Header ── */}
+      <div className="shrink-0 bg-gradient-to-r from-slate-800 to-slate-700 px-5 py-3 flex items-center justify-between">
+        <div className="flex items-center gap-2.5">
+          <div className="h-8 w-8 rounded-lg bg-white/10 flex items-center justify-center">
+            <Building2 className="h-4 w-4 text-white" />
+          </div>
+          <div>
+            <h3 className="font-bold text-white text-sm">Detailed Data Screen</h3>
+            <p className="text-slate-400 text-[10px] mt-0.5">Live company-wise distribution per item</p>
+          </div>
         </div>
-        <div className="flex items-center gap-3 text-xs">
-          <span className="flex items-center gap-1.5 text-amber-700 bg-amber-50 px-2 py-1 rounded border border-amber-200">
+        {/* Legend */}
+        <div className="flex items-center gap-2 text-[10px]">
+          <span className="flex items-center gap-1.5 text-amber-300 bg-amber-900/30 px-2 py-1 rounded border border-amber-700/40">
             <span className="h-2 w-2 rounded-full bg-amber-400 inline-block" />
-            from choice (live)
+            from choice
           </span>
-          <span className="flex items-center gap-1.5 text-gray-600 bg-gray-50 px-2 py-1 rounded border border-gray-200">
-            <span className="h-2 w-2 rounded-full bg-gray-400 inline-block" />
+          <span className="flex items-center gap-1.5 text-slate-300 bg-white/10 px-2 py-1 rounded border border-white/10">
+            <span className="h-2 w-2 rounded-full bg-slate-400 inline-block" />
             default
+          </span>
+          <span className="flex items-center gap-1.5 text-orange-300 bg-orange-900/30 px-2 py-1 rounded border border-orange-700/40">
+            <Clock className="h-3 w-3" />
+            pending
           </span>
         </div>
       </div>
 
-      {/* Scrollable grid */}
+      {/* ── Summary stats bar ── */}
+      <SummaryBar
+        totalItems={globalStats.totalItems}
+        totalCompanyAssignments={globalStats.choiceAssignments + globalStats.defaultAssignments}
+        choiceCompanyAssignments={globalStats.choiceAssignments}
+        defaultCompanyAssignments={globalStats.defaultAssignments}
+        pendingSlots={globalStats.pendingSlots}
+      />
+
+      {/* ── Scrollable grid ── */}
       <div className="flex-1 overflow-auto bg-gray-100 px-4 py-4 space-y-6">
         {activeGroups.map((service) =>
           service.subServices.map((subService) => (
             <div
               key={`${service.serviceId}|${subService.subServiceId}`}
-              className="rounded-xl border border-gray-200 shadow-sm bg-white overflow-hidden"
+              className="rounded-2xl border border-gray-200 shadow-sm bg-white overflow-hidden"
               style={{ minWidth: 'max-content' }}
             >
               {/* Service / SubService header */}
-              <div className="sticky top-0 z-[40] bg-gradient-to-r from-slate-700 to-slate-800 px-5 py-3 flex items-center gap-3 rounded-t-xl">
+              <div className="sticky top-0 z-[40] bg-gradient-to-r from-slate-700 to-slate-800 px-5 py-3 flex items-center gap-3 rounded-t-2xl">
                 <div className="h-8 w-8 rounded-lg bg-white/15 flex items-center justify-center shrink-0">
                   <Utensils className="h-4 w-4 text-white" />
                 </div>
@@ -573,7 +775,7 @@ export function DetailedDataScreen({
                 </div>
               </div>
 
-              {/* Grid table */}
+              {/* Table */}
               <table
                 className="border-collapse bg-white"
                 style={{ minWidth: 'max-content', width: '100%' }}
@@ -588,7 +790,7 @@ export function DetailedDataScreen({
                     {dateRange.map((d) => (
                       <th
                         key={d.date}
-                        className="border-b-2 border-r border-gray-300 px-4 py-3 text-center min-w-[220px] bg-gray-50"
+                        className="border-b-2 border-r border-gray-300 px-4 py-3 text-center min-w-[240px] bg-gray-50"
                       >
                         <div className="text-xs font-bold text-gray-700 uppercase">{d.day}</div>
                         <div className="text-[10px] text-gray-400 mt-0.5">{d.date}</div>
@@ -618,13 +820,13 @@ export function DetailedDataScreen({
                             key={`${row.mealPlanId}-${row.subMealPlanId}`}
                             className={`transition-colors hover:bg-blue-50/30 ${isEven ? 'bg-white' : 'bg-gray-50/40'}`}
                           >
-                            {/* Left sticky label */}
+                            {/* Sticky label */}
                             <td
                               className={`sticky left-0 z-10 px-5 py-3 min-w-[260px] border-r-2 border-gray-300 ${!isLast ? 'border-b border-gray-200' : ''} ${isEven ? 'bg-white' : 'bg-gray-50'}`}
                             >
                               <div className="ml-2">
                                 {rowInMp === 0 && (
-                                  <div className="font-semibold text-gray-800 text-sm leading-tight">
+                                  <div className="font-bold text-gray-800 text-sm leading-tight">
                                     {row.mealPlanName}
                                   </div>
                                 )}
@@ -647,60 +849,95 @@ export function DetailedDataScreen({
                               return (
                                 <td
                                   key={d.date}
-                                  className={`relative px-3 py-2.5 align-top min-w-[220px] border-r border-gray-200 ${!isLast ? 'border-b border-gray-200' : ''}`}
+                                  className={`relative px-3 py-2.5 align-top min-w-[240px] border-r border-gray-200 ${!isLast ? 'border-b border-gray-200' : ''}`}
                                 >
                                   {cellItems.length === 0 ? (
-                                    <div className="text-[10px] text-gray-300 text-center py-3">—</div>
+                                    <div className="text-[10px] text-gray-300 text-center py-4">—</div>
                                   ) : (
-                                    <div className="space-y-1.5">
-                                      {cellItems.map((cellItem) => (
-                                        <button
-                                          key={cellItem.itemId}
-                                          onClick={() => setModalData({ cell: cellItem, day: d.day })}
-                                          className="w-full text-left"
-                                        >
-                                          <div
-                                            className={`flex items-start justify-between gap-2 px-2.5 py-1.5 rounded-md border transition-colors ${
-                                              cellItem.choiceCompanies > 0
-                                                ? 'bg-amber-50/60 border-amber-200 hover:bg-amber-50 hover:border-amber-300'
-                                                : 'bg-gray-50 border-gray-200 hover:bg-blue-50 hover:border-blue-200'
-                                            }`}
+                                    <div className="space-y-2">
+                                      {cellItems.map((cellItem) => {
+                                        // Total pending across all companies for this item
+                                        const hasPending = cellItem.pendingChoiceCompanies > 0
+                                        const hasChoice = cellItem.choiceCompanies > 0
+                                        const hasDefault = cellItem.nonChoiceCompanies > 0
+
+                                        return (
+                                          <button
+                                            key={cellItem.itemId}
+                                            onClick={() => setModalData({ cell: cellItem, day: d.day })}
+                                            className="w-full text-left group"
                                           >
-                                            <span className="text-[11px] text-gray-700 font-medium leading-tight truncate flex-1">
-                                              {cellItem.itemName}
-                                            </span>
-                                            <div className="flex items-center gap-1 shrink-0 ml-1">
-                                              {/* Choice companies — amber */}
-                                              {cellItem.choiceCompanies > 0 && (
-                                                <span className="inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 border border-amber-200">
-                                                  <Building2 className="h-2.5 w-2.5" />
-                                                  {cellItem.choiceCompanies}
-                                                </span>
-                                              )}
-                                              {/* Default companies — gray */}
-                                              {cellItem.nonChoiceCompanies > 0 && (
-                                                <span className="inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-600 border border-gray-200">
-                                                  <Building2 className="h-2.5 w-2.5" />
-                                                  {cellItem.nonChoiceCompanies}
-                                                </span>
-                                              )}
-                                              {/* Total if both */}
-                                              {cellItem.choiceCompanies > 0 && cellItem.nonChoiceCompanies > 0 && (
-                                                <span className="text-[9px] text-gray-400 font-medium">
-                                                  /{cellItem.totalCompanies}
-                                                </span>
-                                              )}
-                                              {/* Zero state — choice-governed but none selected this item */}
-                                              {cellItem.totalCompanies === 0 && (
-                                                <span className="inline-flex items-center gap-0.5 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-red-50 text-red-400 border border-red-100">
-                                                  <Building2 className="h-2.5 w-2.5" />
-                                                  0
-                                                </span>
-                                              )}
+                                            <div
+                                              className={`rounded-xl border transition-all ${
+                                                hasPending
+                                                  ? 'border-orange-200 hover:border-orange-300 hover:shadow-sm'
+                                                  : hasChoice
+                                                  ? 'border-amber-200 hover:border-amber-300 hover:shadow-sm'
+                                                  : 'border-gray-200 hover:border-blue-200 hover:shadow-sm'
+                                              }`}
+                                            >
+                                              {/* Item name row */}
+                                              <div
+                                                className={`px-3 py-2 rounded-t-xl text-[11px] font-semibold text-gray-800 leading-tight ${
+                                                  hasPending
+                                                    ? 'bg-orange-50/60'
+                                                    : hasChoice
+                                                    ? 'bg-amber-50/60'
+                                                    : 'bg-gray-50/80'
+                                                }`}
+                                              >
+                                                {cellItem.itemName}
+                                              </div>
+
+                                              {/* Three-section breakdown */}
+                                              <div className="flex divide-x divide-gray-100 rounded-b-xl overflow-hidden">
+                                                {/* DEFAULT */}
+                                                <div
+                                                  className={`flex-1 flex flex-col items-center justify-center py-1.5 px-1 ${
+                                                    hasDefault ? 'bg-white' : 'bg-gray-50/40'
+                                                  }`}
+                                                >
+                                                  <span className={`text-base font-black leading-none ${hasDefault ? 'text-gray-700' : 'text-gray-300'}`}>
+                                                    {cellItem.nonChoiceCompanies}
+                                                  </span>
+                                                  <span className="text-[8px] text-gray-400 font-medium mt-0.5 uppercase tracking-wide">
+                                                    default
+                                                  </span>
+                                                </div>
+
+                                                {/* CHOICE SELECTED */}
+                                                <div
+                                                  className={`flex-1 flex flex-col items-center justify-center py-1.5 px-1 ${
+                                                    hasChoice ? 'bg-amber-50' : 'bg-gray-50/40'
+                                                  }`}
+                                                >
+                                                  <span className={`text-base font-black leading-none ${hasChoice ? 'text-amber-600' : 'text-gray-300'}`}>
+                                                    {cellItem.choiceCompanies}
+                                                  </span>
+                                                  <span className="text-[8px] text-amber-500 font-medium mt-0.5 uppercase tracking-wide">
+                                                    {hasChoice ? 'chosen ✓' : 'chosen'}
+                                                  </span>
+                                                </div>
+
+                                                {/* PENDING */}
+                                                <div
+                                                  className={`flex-1 flex flex-col items-center justify-center py-1.5 px-1 ${
+                                                    hasPending ? 'bg-orange-50' : 'bg-gray-50/40'
+                                                  }`}
+                                                >
+                                                  <span className={`text-base font-black leading-none ${hasPending ? 'text-orange-500' : 'text-gray-300'}`}>
+                                                    {cellItem.pendingChoiceCompanies}
+                                                  </span>
+                                                  <span className={`text-[8px] font-medium mt-0.5 uppercase tracking-wide flex items-center gap-0.5 ${hasPending ? 'text-orange-400' : 'text-gray-300'}`}>
+                                                    {hasPending && <Clock className="h-2 w-2" />}
+                                                    pending
+                                                  </span>
+                                                </div>
+                                              </div>
                                             </div>
-                                          </div>
-                                        </button>
-                                      ))}
+                                          </button>
+                                        )
+                                      })}
                                     </div>
                                   )}
                                 </td>
