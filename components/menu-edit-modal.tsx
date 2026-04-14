@@ -5999,44 +5999,7 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
 />
             )}
             {/* --- BOTTOM TAB BAR --- */}
-            <div className="flex bg-gray-100 border-t border-gray-300 px-4 pt-2 gap-2 z-40 relative shadow-[0_-2px_4px_rgba(0,0,0,0.05)] select-none shrink-0">
-              <button 
-                onClick={() => setActiveBottomTab('menu')}
-                className={`px-5 py-2 rounded-t-lg font-semibold text-sm border border-b-0 transition-colors flex flex-col items-center justify-center ${activeBottomTab === 'menu' ? 'bg-white border-gray-300 text-blue-700 shadow-[0_-2px_6px_rgba(0,0,0,0.08)] relative z-10' : 'bg-gray-200/80 border-transparent text-gray-500 hover:bg-gray-200'}`}
-                style={{ marginBottom: activeBottomTab === 'menu' ? '-1px' : '0' }}
-              >
-                Menu Edit
-              </button>
-              <button 
-                onClick={() => setActiveBottomTab('choices')}
-                className={`px-5 py-2 rounded-t-lg font-semibold text-sm border border-b-0 transition-colors flex flex-col items-center justify-center ${activeBottomTab === 'choices' ? 'bg-white border-gray-300 text-blue-700 shadow-[0_-2px_6px_rgba(0,0,0,0.08)] relative z-10' : 'bg-gray-200/80 border-transparent text-gray-500 hover:bg-gray-200'} ${companiesWithChoices.length === 0 ? 'opacity-50 cursor-not-allowed' : ''}`}
-                style={{ marginBottom: activeBottomTab === 'choices' ? '-1px' : '0' }}
-                disabled={companiesWithChoices.length === 0}
-              >
-                <div className="flex items-center gap-2">
-                  Choice Selection
-                  {companiesWithChoices.length > 0 && (
-                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${activeBottomTab === 'choices' ? 'bg-blue-100 text-blue-700' : 'bg-gray-300 text-gray-600'}`}>{companiesWithChoices.length}</span>
-                  )}
-                </div>
-              </button>
-              <button 
-                onClick={() => setActiveBottomTab('universal')}
-                className={`px-5 py-2 rounded-t-lg font-semibold text-sm border border-b-0 transition-colors flex flex-col items-center justify-center ${activeBottomTab === 'universal' ? 'bg-white border-gray-300 text-blue-700 shadow-[0_-2px_6px_rgba(0,0,0,0.08)] relative z-10' : 'bg-gray-200/80 border-transparent text-gray-500 hover:bg-gray-200'} ${companiesWithChoices.length === 0 ? 'opacity-50 cursor-not-allowed' : ''}`}
-                style={{ marginBottom: activeBottomTab === 'universal' ? '-1px' : '0' }}
-                disabled={companiesWithChoices.length === 0}
-              >
-                 Universal Choices
-              </button>
-              <button 
-                onClick={() => setActiveBottomTab('detailed')}
-                className={`px-5 py-2 rounded-t-lg font-semibold text-sm border border-b-0 transition-colors flex flex-col items-center justify-center ${activeBottomTab === 'detailed' ? 'bg-white border-gray-300 text-blue-700 shadow-[0_-2px_6px_rgba(0,0,0,0.08)] relative z-10' : 'bg-gray-200/80 border-transparent text-gray-500 hover:bg-gray-200'} ${companiesWithChoices.length === 0 ? 'opacity-50 cursor-not-allowed' : ''}`}
-                style={{ marginBottom: activeBottomTab === 'detailed' ? '-1px' : '0' }}
-                disabled={companiesWithChoices.length === 0}
-              >
-                Detailed Data Screen
-              </button>
-            </div>
+            
             </div>
           )}
         </div>
@@ -6055,6 +6018,46 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
               ZIP Companies
             </Button>
           )}
+          <div className="flex px-4 pt-2 gap-2 z-40  select-none shrink-0">
+              <button 
+                onClick={() => setActiveBottomTab('menu')}
+                className={`px-5 py-2 rounded-t-lg font-semibold text-sm border border-b-0 transition-colors flex flex-col items-center justify-center ${activeBottomTab === 'menu' ? 'bg-white border-gray-300 text-blue-700 shadow-[0_-2px_6px_rgba(0,0,0,0.08)] relative z-10' : 'bg-gray-200/80 border-transparent text-gray-500 hover:bg-gray-200'}`}
+                style={{ marginBottom: activeBottomTab === 'menu' ? '-1px' : '0' }}
+              >
+                Menu Edit
+              </button>
+
+ <button 
+                onClick={() => setActiveBottomTab('universal')}
+                className={`px-5 py-2 rounded-t-lg font-semibold text-sm border border-b-0 transition-colors flex flex-col items-center justify-center ${activeBottomTab === 'universal' ? 'bg-white border-gray-300 text-blue-700 shadow-[0_-2px_6px_rgba(0,0,0,0.08)] relative z-10' : 'bg-gray-200/80 border-transparent text-gray-500 hover:bg-gray-200'} ${companiesWithChoices.length === 0 ? 'opacity-50 cursor-not-allowed' : ''}`}
+                style={{ marginBottom: activeBottomTab === 'universal' ? '-1px' : '0' }}
+                disabled={companiesWithChoices.length === 0}
+              >
+                 Universal Choices
+              </button>
+              <button 
+                onClick={() => setActiveBottomTab('choices')}
+                className={`px-5 py-2 rounded-t-lg font-semibold text-sm border border-b-0 transition-colors flex flex-col items-center justify-center ${activeBottomTab === 'choices' ? 'bg-white border-gray-300 text-blue-700 shadow-[0_-2px_6px_rgba(0,0,0,0.08)] relative z-10' : 'bg-gray-200/80 border-transparent text-gray-500 hover:bg-gray-200'} ${companiesWithChoices.length === 0 ? 'opacity-50 cursor-not-allowed' : ''}`}
+                style={{ marginBottom: activeBottomTab === 'choices' ? '-1px' : '0' }}
+                disabled={companiesWithChoices.length === 0}
+              >
+                <div className="flex items-center gap-2">
+                  Choice Selection
+                  {companiesWithChoices.length > 0 && (
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${activeBottomTab === 'choices' ? 'bg-blue-100 text-blue-700' : 'bg-gray-300 text-gray-600'}`}>{companiesWithChoices.length}</span>
+                  )}
+                </div>
+              </button>
+             
+              <button 
+                onClick={() => setActiveBottomTab('detailed')}
+                className={`px-5 py-2 rounded-t-lg font-semibold text-sm border border-b-0 transition-colors flex flex-col items-center justify-center ${activeBottomTab === 'detailed' ? 'bg-white border-gray-300 text-blue-700 shadow-[0_-2px_6px_rgba(0,0,0,0.08)] relative z-10' : 'bg-gray-200/80 border-transparent text-gray-500 hover:bg-gray-200'} ${companiesWithChoices.length === 0 ? 'opacity-50 cursor-not-allowed' : ''}`}
+                style={{ marginBottom: activeBottomTab === 'detailed' ? '-1px' : '0' }}
+                disabled={companiesWithChoices.length === 0}
+              >
+                Detailed Data Screen
+              </button>
+            </div>
           {/* ------------------------------------------ */}
           {/* Push to Other Buildings Checkbox - Only show for company-wise menus */}
           {menuType === 'company' && (

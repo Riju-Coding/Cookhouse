@@ -27,13 +27,10 @@ interface CompanyEntry {
 interface CellData {
   itemId: string
   itemName: string
-  // Companies that will receive this item (default + choice-selected)
   companies: CompanyEntry[]
   totalCompanies: number
   choiceCompanies: number
   nonChoiceCompanies: number
-  // Companies governed by a choice for this cell but whose choice set
-  // is NOT yet fully filled (i.e. they still have pending slots)
   pendingChoiceCompanies: number
   pendingChoiceCompanyList: Array<{
     companyName: string
@@ -308,27 +305,21 @@ export function DetailedDataScreen({
   }, [companiesWithChoices])
 
   // ─── KEY LOGIC: Per-company, per-choice quota tracking ────────────────────
-  // For each "companyId-buildingId-choiceId" key, how many slots are filled?
   const companyChoiceQuota = useMemo(() => {
-    // map: "companyId-buildingId-choiceId" -> { selectedCount, totalSlots }
     const quotaMap = new Map<string, { selectedCount: number; totalSlots: number }>()
 
-    // Populate total slots from choice definitions
     Object.entries(inlineChoiceSelections).forEach(([selKey]) => {
       const parts = selKey.split('-')
-      const companyId = parts[0]
-      const buildingId = parts[1]
       const choiceId = parts.slice(2).join('-')
       const choiceDef = choiceDefMap.get(choiceId)
       if (!choiceDef) return
 
-      const qKey = selKey // "companyId-buildingId-choiceId"
+      const qKey = selKey
       if (!quotaMap.has(qKey)) {
         quotaMap.set(qKey, { selectedCount: 0, totalSlots: choiceDef.quantity || 1 })
       }
     })
 
-    // Fill selectedCount from actual selections
     Object.entries(inlineChoiceSelections).forEach(([selKey, selItems]) => {
       if (!selItems?.length) return
       const existing = quotaMap.get(selKey)
@@ -340,18 +331,7 @@ export function DetailedDataScreen({
     return quotaMap
   }, [inlineChoiceSelections, choiceDefMap])
 
-  // For each company/building, is their choice quota FULLY filled?
-  // Key: "companyId-buildingId-choiceId" -> boolean
-  const isQuotaFilled = useMemo(() => {
-    const map = new Map<string, boolean>()
-    companyChoiceQuota.forEach((v, k) => {
-      map.set(k, v.selectedCount >= v.totalSlots)
-    })
-    return map
-  }, [companyChoiceQuota])
-
   // ─── Live choice map: which companies selected THIS specific item ──────────
-  // Key: "date|serviceId|subServiceId|mealPlanId|subMealPlanId|itemId" -> CompanyEntry[]
   const liveChoiceMap = useMemo(() => {
     const map = new Map<string, CompanyEntry[]>()
 
@@ -402,9 +382,7 @@ export function DetailedDataScreen({
     return map
   }, [inlineChoiceSelections, choiceDefMap, companyInfoMap, dateRange])
 
-  // ─── Choice-governed cells: which companies have a choice for this cell ───
-  // Key: "date|serviceId|subServiceId|mealPlanId|subMealPlanId"
-  //   -> Map<"companyId-buildingId", { companyInfo, choiceKey }>
+  // ─── Choice-governed cells ─────────────────────────────────────────────────
   const choiceGovernedInfoMap = useMemo(() => {
     const map = new Map<string, Map<string, { companyName: string; buildingName: string; companyId: string; buildingId: string; choiceKey: string }>>()
 
@@ -443,6 +421,7 @@ export function DetailedDataScreen({
   }, [inlineChoiceSelections, choiceDefMap, companyInfoMap, dateRange])
 
   // ─── Default company map from mealPlanAssignments ─────────────────────────
+  // NOTE: This builds the BASE list — customAssignments in getCellData OVERRIDES this per-item.
   const defaultCompanyMap = useMemo(() => {
     const map = new Map<string, CompanyEntry[]>()
     if (!mealPlanAssignments?.length) return map
@@ -578,6 +557,9 @@ export function DetailedDataScreen({
   const activeGroups = assignmentGroups.length > 0 ? assignmentGroups : choiceGroupsFallback
 
   // ─── CORE: compute cell data ───────────────────────────────────────────────
+  // KEY CHANGE: customAssignments from the cell OVERRIDES the default company list per item.
+  // If customAssignments[itemId] exists and has entries → use ONLY those companies (not defaults).
+  // If customAssignments[itemId] is missing or empty → fall back to defaults from mealPlanAssignments.
   const getCellData = (
     date: string,
     serviceId: string,
@@ -592,28 +574,60 @@ export function DetailedDataScreen({
     const cellKey = `${date}|${serviceId}|${subServiceId}|${mealPlanId}|${subMealPlanId}`
     const governedInfoMap = choiceGovernedInfoMap.get(cellKey) || new Map<string, any>()
 
+    // customAssignments from the cell — this is the checkbox override data
+    const customAssignments: Record<string, Array<{ companyId: string; buildingId: string }>> =
+      cell?.customAssignments || {}
+
     return itemIds.map((itemId) => {
       const item = menuItemMap.get(itemId)
       const itemName = item?.name || itemId
       const fullKey = `${cellKey}|${itemId}`
 
-      // 1. Companies that LIVE-chose this specific item
+      // 1. Companies that LIVE-chose this specific item via the choice selection tab
       const liveChoiceComps = liveChoiceMap.get(fullKey) || []
       const liveChoiceKeys = new Set(liveChoiceComps.map((c) => `${c.companyId}-${c.buildingId}`))
 
-      // 2. Default companies — exclude those governed by a choice
-      const allDefaults = defaultCompanyMap.get(fullKey) || []
-      const nonChoiceComps = allDefaults.filter((c) => {
-        const cbKey = `${c.companyId}-${c.buildingId}`
-        return !governedInfoMap.has(cbKey) && !liveChoiceKeys.has(cbKey)
-      })
+      // 2. Resolve base company list for this item:
+      //    - If customAssignments[itemId] has entries → those companies replace defaults entirely
+      //    - If customAssignments[itemId] is absent or empty → use mealPlanAssignment defaults
+      const itemCustom = customAssignments[itemId]
+      const hasCustomOverride = itemCustom && Array.isArray(itemCustom) && itemCustom.length > 0
 
-      const allCompanies = [...liveChoiceComps, ...nonChoiceComps]
+      let baseNonChoiceComps: CompanyEntry[]
+
+      if (hasCustomOverride) {
+        // Checkbox override: use ONLY the explicitly assigned companies
+        baseNonChoiceComps = itemCustom
+          .filter((a) => {
+            const cbKey = `${a.companyId}-${a.buildingId}`
+            // Exclude companies already counted as choice-selected
+            return !liveChoiceKeys.has(cbKey) && !governedInfoMap.has(cbKey)
+          })
+          .map((a) => {
+            // Try to resolve a human-readable name from mealPlanAssignments
+            const assignmentInfo = mealPlanAssignments?.find(
+              (ma: any) => ma.companyId === a.companyId && ma.buildingId === a.buildingId
+            )
+            return {
+              companyId: a.companyId,
+              companyName: assignmentInfo?.companyName || a.companyId,
+              buildingId: a.buildingId,
+              buildingName: assignmentInfo?.buildingName || a.buildingId,
+              isFromChoice: false,
+            }
+          })
+      } else {
+        // No custom override: use defaults from mealPlanAssignments, excluding choice-governed
+        const allDefaults = defaultCompanyMap.get(fullKey) || []
+        baseNonChoiceComps = allDefaults.filter((c) => {
+          const cbKey = `${c.companyId}-${c.buildingId}`
+          return !governedInfoMap.has(cbKey) && !liveChoiceKeys.has(cbKey)
+        })
+      }
+
+      const allCompanies = [...liveChoiceComps, ...baseNonChoiceComps]
 
       // 3. Pending: governed companies whose quota is NOT yet fully filled
-      //    Note: if a company's quota is filled (they chose OTHER items from the same
-      //    set), this item is simply "not chosen" — not "pending". Pending means
-      //    the company still has open choice slots they haven't filled yet.
       const pendingList: Array<{
         companyName: string
         buildingName: string
@@ -624,15 +638,12 @@ export function DetailedDataScreen({
       }> = []
 
       governedInfoMap.forEach((info, cbKey) => {
-        // Skip if this company already selected this specific item
         if (liveChoiceKeys.has(cbKey)) return
 
-        // Check if their choice quota is fully filled
-        const choiceKey = info.choiceKey // "companyId-buildingId-choiceId"
+        const choiceKey = info.choiceKey
         const quota = companyChoiceQuota.get(choiceKey)
 
         if (!quota) {
-          // No quota info = no selections at all yet = pending
           pendingList.push({
             companyId: info.companyId,
             companyName: info.companyName,
@@ -644,7 +655,6 @@ export function DetailedDataScreen({
           return
         }
 
-        // Quota not fully filled = still pending (they have open slots)
         if (quota.selectedCount < quota.totalSlots) {
           pendingList.push({
             companyId: info.companyId,
@@ -655,8 +665,6 @@ export function DetailedDataScreen({
             totalSlots: quota.totalSlots,
           })
         }
-        // If quota IS filled, they chose OTHER items — this item is simply not theirs.
-        // Do NOT add to pending.
       })
 
       return {
@@ -665,7 +673,7 @@ export function DetailedDataScreen({
         companies: allCompanies,
         totalCompanies: allCompanies.length,
         choiceCompanies: liveChoiceComps.length,
-        nonChoiceCompanies: nonChoiceComps.length,
+        nonChoiceCompanies: baseNonChoiceComps.length,
         pendingChoiceCompanies: pendingList.length,
         pendingChoiceCompanyList: pendingList,
       }
@@ -696,7 +704,7 @@ export function DetailedDataScreen({
     })
 
     return { totalItems, choiceAssignments, defaultAssignments, pendingSlots }
-  }, [activeGroups, dateRange, getCellData])
+  }, [activeGroups, dateRange, menuData, inlineChoiceSelections])
 
   if (!activeGroups.length) {
     return (
@@ -856,7 +864,6 @@ export function DetailedDataScreen({
                                   ) : (
                                     <div className="space-y-2">
                                       {cellItems.map((cellItem) => {
-                                        // Total pending across all companies for this item
                                         const hasPending = cellItem.pendingChoiceCompanies > 0
                                         const hasChoice = cellItem.choiceCompanies > 0
                                         const hasDefault = cellItem.nonChoiceCompanies > 0
