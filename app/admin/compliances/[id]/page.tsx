@@ -28,6 +28,7 @@ const initialFormState: Omit<ComplianceForm, "id" | "createdAt" | "updatedAt"> =
   companyId: "",
   buildingId: "",
   cafetariaId: "",
+  areaId: "",
   frequency: 'daily',
   assignedRole: "",
   status: 'active',
@@ -64,6 +65,7 @@ export default function CreateEditCompliancePage() {
   const [companies, setCompanies] = useState<any[]>([])
   const [buildings, setBuildings] = useState<any[]>([])
   const [cafeterias, setCafeterias] = useState<any[]>([])
+  const [areas, setAreas] = useState<any[]>([])
   const [roles, setRoles] = useState<any[]>([])
 
   useEffect(() => {
@@ -78,17 +80,19 @@ export default function CreateEditCompliancePage() {
 
   const fetchRelatedData = async () => {
     try {
-      const [vSnap, cSnap, bSnap, cafSnap, rSnap] = await Promise.all([
+      const [vSnap, cSnap, bSnap, cafSnap, areaSnap, rSnap] = await Promise.all([
         getDocs(collection(db, 'vendors')),
         getDocs(collection(db, 'companies')),
         getDocs(collection(db, 'buildings')),
         getDocs(collection(db, 'cafetarias')),
+        getDocs(collection(db, 'areas')),
         getDocs(collection(db, 'roles'))
       ])
       setVendors(vSnap.docs.map(d => ({ id: d.id, ...d.data() })))
       setCompanies(cSnap.docs.map(d => ({ id: d.id, ...d.data() })))
       setBuildings(bSnap.docs.map(d => ({ id: d.id, ...d.data() })))
       setCafeterias(cafSnap.docs.map(d => ({ id: d.id, ...d.data() })))
+      setAreas(areaSnap.docs.map(d => ({ id: d.id, ...d.data() })))
       setRoles(rSnap.docs.map(d => ({ id: d.id, ...d.data() })))
     } catch (error) {
       console.error("Error fetching related data:", error)
@@ -132,6 +136,11 @@ export default function CreateEditCompliancePage() {
     return cafeterias.filter(c => c.buildingId === mainFormData.buildingId && c.vendorId === mainFormData.vendorId);
   }, [cafeterias, mainFormData.buildingId, mainFormData.vendorId]);
 
+  const filteredAreas = useMemo(() => {
+    if (!mainFormData.cafetariaId) return [];
+    return areas.filter(a => a.cafeteriaId === mainFormData.cafetariaId);
+  }, [areas, mainFormData.cafetariaId]);
+
   // --- CASCADING RESET HANDLERS FOR MAIN FORM ---
   const handleVendorChange = (vendorId: string) => {
     setMainFormData(prev => ({
@@ -155,6 +164,15 @@ export default function CreateEditCompliancePage() {
       ...prev,
       buildingId,
       cafetariaId: "",
+      areaId: "",
+    }));
+  };
+
+  const handleCafeteriaChange = (cafetariaId: string) => {
+    setMainFormData(prev => ({
+      ...prev,
+      cafetariaId,
+      areaId: "",
     }));
   };
 
@@ -287,7 +305,7 @@ export default function CreateEditCompliancePage() {
 
           <div className="space-y-2">
             <Label htmlFor="cafeteria">Cafeteria *</Label>
-            <Select value={mainFormData.cafetariaId} onValueChange={val => setMainFormData({...mainFormData, cafetariaId: val})} disabled={!mainFormData.buildingId || !mainFormData.vendorId}>
+            <Select value={mainFormData.cafetariaId} onValueChange={handleCafeteriaChange} disabled={!mainFormData.buildingId || !mainFormData.vendorId}>
               <SelectTrigger><SelectValue placeholder="Select Cafeteria" /></SelectTrigger>
               <SelectContent>
                 {filteredCafeterias.length === 0 ? <SelectItem value="none" disabled>No matching cafeterias</SelectItem> :
@@ -297,6 +315,24 @@ export default function CreateEditCompliancePage() {
             {mainFormData.buildingId && mainFormData.vendorId && filteredCafeterias.length === 0 && (
               <p className="text-xs text-red-500">No cafeterias in this building assigned to selected vendor.</p>
             )}
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="area">Area <span className="text-gray-400 font-normal">(optional)</span></Label>
+            <Select
+              value={mainFormData.areaId || ""}
+              onValueChange={val => setMainFormData({ ...mainFormData, areaId: val === "__none__" ? "" : val })}
+              disabled={!mainFormData.cafetariaId}
+            >
+              <SelectTrigger><SelectValue placeholder="Select Area" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">— No specific area —</SelectItem>
+                {filteredAreas.length === 0
+                  ? <SelectItem value="no-areas" disabled>No areas for this cafeteria</SelectItem>
+                  : filteredAreas.map(a => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)
+                }
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="space-y-2">

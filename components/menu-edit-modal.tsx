@@ -6,6 +6,9 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { ChevronLeft , Globe2  } from "lucide-react";
 import { createPortal } from 'react-dom' // <--- ADD THIS IMPORT
+import { useAuth } from "@/hooks/use-auth"
+import { useMenuPresence } from "@/hooks/use-menu-presence"
+import { useLiveMenuEdits } from "@/hooks/use-live-menu-edits"
 import {
   Loader2,
   Save,
@@ -1570,12 +1573,14 @@ const MenuGridCell = memo(function MenuGridCell({
   onExcludeMealPlan,
   onUpdateCustomAssignments,  // <--- MAKE SURE THIS IS HERE!
   externalCompanyChangedItems, // <--- (Keep this if you added it earlier)
-  liveChanges,  // <--- ADD THIS TO DESTRUCTURING
-  originalMenuData,  // <--- ADD THIS
-  menuType = "combined",  // <--- NEW
-  selectedChoiceItems = {}  // <--- NEW
+  liveChanges,
+  originalMenuData,
+  menuType = "combined",
+  selectedChoiceItems = {},
+  activeEditorNames = [] // <--- ADDED
 }) {
   const [isOpen, setIsOpen] = useState(false)
+
   const [isCompanyOpen, setIsCompanyOpen] = useState(false)
   const [isLogOpen, setIsLogOpen] = useState(false)
   const [search, setSearch] = useState("")
@@ -1911,11 +1916,17 @@ const MenuGridCell = memo(function MenuGridCell({
       }}
       className={`border border-gray-300 p-2 align-top min-w-[200px] transition-all duration-150 relative 
             ${isActive ? "ring-2 ring-blue-500 bg-white z-[60]" : "bg-white hover:bg-gray-50"} 
+            ${activeEditorNames.length > 0 ? "ring-2 ring-amber-500 ring-inset relative !z-[55]" : ""}
             ${isDragHover ? "ring-2 ring-blue-300 bg-blue-50" : ""}
             ${cellLogs.length > 0 && !isActive ? "bg-red-50" : ""} 
             ${isRedState ? "bg-red-50 !border-red-300 shadow-inner" : ""}
           `}
     >
+      {activeEditorNames.length > 0 && (
+        <div className="absolute -top-3 right-2 bg-amber-500 text-white text-[10px] px-1.5 py-0.5 rounded shadow-sm z-50 animate-pulse whitespace-nowrap">
+          {activeEditorNames.join(", ")} editing...
+        </div>
+      )}
       {isRedState && (
         <div className="absolute inset-0 bg-red-500/5 pointer-events-none flex items-center justify-center">
           <AlertCircle className="h-8 w-8 text-red-100 opacity-50" />
@@ -2686,6 +2697,28 @@ const LoadingProgress = ImportedLoadingProgress
 // --- Main Modal Component ---
 export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, preloadedMenuItems, mode = "edit", createStartDate, createEndDate }: MenuEditModalProps) {
   const isCreateMode = mode === "create";
+  const { user } = useAuth();
+  const userName = user?.email?.split('@')[0] || "Unknown User";
+
+  // Collaborative Hooks
+  const liveMenuId = isOpen && menuId && !isCreateMode ? menuId : "";
+  const { activeEditors, updateActiveCell } = useMenuPresence(liveMenuId, user?.uid, userName);
+  const { broadcastEdit, clearDrafts } = useLiveMenuEdits(liveMenuId, (remoteChanges) => {
+    setRawMenuData((prev: any) => {
+      // Merge remote changes at the deepest cell level to prevent overwriting other cells
+      const nextData = { ...prev };
+      Object.keys(remoteChanges).forEach(key => {
+        const [date, serviceId, subServiceId, mealPlanId, subMealPlanId] = key.split('|');
+        if (!nextData[date]) nextData[date] = {};
+        if (!nextData[date][serviceId]) nextData[date][serviceId] = {};
+        if (!nextData[date][serviceId][subServiceId]) nextData[date][serviceId][subServiceId] = {};
+        if (!nextData[date][serviceId][subServiceId][mealPlanId]) nextData[date][serviceId][subServiceId][mealPlanId] = {};
+        nextData[date][serviceId][subServiceId][mealPlanId][subMealPlanId] = remoteChanges[key];
+      });
+      return nextData;
+    });
+  });
+
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [progress, setProgress] = useState(0)
@@ -2694,7 +2727,42 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
   const [liveChanges, setLiveChanges] = useState<Record<string, any[]>>({});
 
   const [menu, setMenu] = useState<MenuData | null>(null)
-  const [menuData, setMenuData] = useState<any>({})
+  
+  // To avoid circular hook rewriting on menuData changes, we proxy setMenuData
+  const [rawMenuData, setRawMenuData] = useState<any>({})
+
+  // Stale-closure prevention for setMenuData proxy
+  const liveMenuIdRef = useRef(liveMenuId);
+  const broadcastEditRef = useRef(broadcastEdit);
+  useEffect(() => {
+    liveMenuIdRef.current = liveMenuId;
+    broadcastEditRef.current = broadcastEdit;
+  }, [liveMenuId, broadcastEdit]);
+
+  const setMenuData = useCallback((valOrFn: any) => {
+    setRawMenuData((prev: any) => {
+      const nextState = typeof valOrFn === 'function' ? valOrFn(prev) : valOrFn;
+      
+      // Calculate diff to broadcast using detectMenuChanges
+      // detectMenuChanges relies on menuItemsMap to find names, but we can pass an empty map
+      // because we only care about the bare structure changed.
+      const diffs = detectMenuChanges(prev, nextState, new Map());
+      if (diffs.length > 0 && liveMenuIdRef.current) {
+        diffs.forEach(change => {
+           const cellKey = `${change.date}|${change.serviceId}|${change.subServiceId}|${change.mealPlanId}|${change.subMealPlanId}`;
+           const cellData = nextState[change.date]?.[change.serviceId]?.[change.subServiceId]?.[change.mealPlanId]?.[change.subMealPlanId];
+           if (cellData !== undefined) {
+             broadcastEditRef.current(cellKey, cellData);
+           }
+        });
+      }
+      
+      return nextState;
+    });
+  }, []); // <--- Empty dependencies ensure it NEVER captures stale closures from child components
+  
+  // Remap rawMenuData to menuData for the rest of the file
+  const menuData = rawMenuData;
   const [originalMenuData, setOriginalMenuData] = useState<any>({})
   // FIXED: Separate state for the TRUE original (OG) baseline that is locked forever
   // This is set ONCE on initial load and NEVER updated, ensuring OG items always remain the same
@@ -2723,7 +2791,12 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
   const [mealPlanAssignments, setMealPlanAssignments] = useState<any[]>([])
   const [allStructureAssignments, setAllStructureAssignments] = useState<any[]>([])
 
-  const [activeCell, setActiveCell] = useState<string | null>(null)
+  const [internalActiveCell, setInternalActiveCell] = useState<string | null>(null)
+  const activeCell = internalActiveCell;
+  const setActiveCell = useCallback((cellId: string | null) => {
+    setInternalActiveCell(cellId);
+    updateActiveCell(cellId);
+  }, [updateActiveCell]);
 
   const [visibleDates, setVisibleDates] = useState(0)
   const CHUNK_SIZE = 7
@@ -3024,7 +3097,7 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
         let filteredMealPlans = mealPlansData.filter((mp) => mp.status === "active").sort((a, b) => (a.order || 999) - (b.order || 999))
         let filteredSubMealPlans = subMealPlansData.filter((smp) => smp.status === "active").sort((a, b) => (a.order || 999) - (b.order || 999))
         // Don't filter menu items by status - use all items so confirmation modal can display items in cells
-        const filteredMenuItems = menuItemsData.sort((a, b) => (a.order || 999) - (b.order || 999))
+        let filteredMenuItems = menuItemsData.sort((a, b) => (a.order || 999) - (b.order || 999))
 
         setProgress(90)
         setMessage("Finalizing...")
@@ -3088,6 +3161,74 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
           })
         }
         // --- END AUTO-FILL ---
+
+        // Ensure menuItems includes any IDs referenced in menuData even when preloadedMenuItems is stale.
+        // This fixes cases where a newly created menu-item is saved into a cell, but vanishes on reopen
+        // until a full page reload refreshes the preloaded list.
+        const collectMenuItemIdsFromMenuData = (data: any): string[] => {
+          const ids = new Set<string>()
+          if (!data || typeof data !== "object") return []
+
+          for (const dateKey of Object.keys(data)) {
+            const dayMenu = (data as any)[dateKey]
+            if (!dayMenu || typeof dayMenu !== "object") continue
+
+            for (const serviceId of Object.keys(dayMenu)) {
+              const serviceObj = dayMenu[serviceId]
+              if (!serviceObj || typeof serviceObj !== "object") continue
+
+              for (const subServiceId of Object.keys(serviceObj)) {
+                const subServiceObj = serviceObj[subServiceId]
+                if (!subServiceObj || typeof subServiceObj !== "object") continue
+
+                for (const mealPlanId of Object.keys(subServiceObj)) {
+                  const mealPlanObj = subServiceObj[mealPlanId]
+                  if (!mealPlanObj || typeof mealPlanObj !== "object") continue
+
+                  for (const subMealPlanId of Object.keys(mealPlanObj)) {
+                    const cell = mealPlanObj[subMealPlanId]
+                    const cellItemIds = cell?.menuItemIds
+                    if (Array.isArray(cellItemIds)) {
+                      for (const id of cellItemIds) {
+                        if (typeof id === "string" && id.trim() !== "") ids.add(id)
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+
+          return Array.from(ids)
+        }
+
+        const referencedItemIds = collectMenuItemIdsFromMenuData(originalData)
+        if (referencedItemIds.length > 0) {
+          const existingIds = new Set(filteredMenuItems.map((i) => i.id))
+          const missingIds = referencedItemIds.filter((id) => !existingIds.has(id))
+
+          if (missingIds.length > 0) {
+            const fetched = await Promise.all(
+              missingIds.map(async (id) => {
+                try {
+                  const snap = await getDoc(doc(db, "menuItems", id))
+                  if (!snap.exists()) return null
+                  return ({ id: snap.id, ...(snap.data() as any) } as MenuItem)
+                } catch {
+                  return null
+                }
+              }),
+            )
+
+            const missingItems = fetched.filter(Boolean) as MenuItem[]
+            if (missingItems.length > 0) {
+              const dedupedToAdd = missingItems.filter((i) => !existingIds.has(i.id))
+              if (dedupedToAdd.length > 0) {
+                filteredMenuItems = [...filteredMenuItems, ...dedupedToAdd].sort((a, b) => (a.order || 999) - (b.order || 999))
+              }
+            }
+          }
+        }
 
         setOriginalMenuData(JSON.parse(JSON.stringify(originalData)))
         
@@ -4323,8 +4464,11 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
           toast({ title: "Draft Saved", description: "Combined menu saved as draft." })
         }
 
-        onSave?.()
-        onClose()
+         // Only call onSave and onClose for a final save, not a draft.
+        if (!isDraft) {
+          onSave?.()
+          onClose()
+        }
         return
       }
 
@@ -5201,8 +5345,12 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
 
 
       setPendingSaveAction(null)
-      onSave?.()
-      onClose()
+      // Only call onSave and onClose for a final save, not a draft.
+      if (!isDraft) {
+        clearDrafts()
+        onSave?.()
+        onClose()
+      }
     } catch (error) {
       console.error("Error saving menu:", error)
       toast({ title: "Error", description: "Failed to save menu", variant: "destructive" })
@@ -5746,6 +5894,10 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
                                 {/* DATE CELLS */}
                                 {dateRange.slice(0, visibleDates).map(({ date, day }) => {
                                   const cellKey = `${date}-${selectedService.id}-${selectedSubService.id}-${mealPlan.id}-${subMealPlan.id}`
+                                  const activeEditorNames = Object.values(activeEditors || {})
+                                        .filter((e: any) => e.activeCell === cellKey && e.name !== userName)
+                                        .map((e: any) => e.name);
+
                                   const menuCell = menuData[date]?.[selectedService.id]?.[selectedSubService.id]?.[mealPlan.id]?.[subMealPlan.id]
                                   const choiceMetadata = menuCell?.choiceMetadata || {}
                                   
@@ -5833,6 +5985,7 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
                                       liveChanges={liveChanges}
                                       // FIXED: Pass ogMenuData (locked OG baseline) instead of originalMenuData
                                       originalMenuData={ogMenuData}
+                                      activeEditorNames={activeEditorNames}
                                     />
                                   )
                                 })}

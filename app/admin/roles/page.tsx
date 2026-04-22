@@ -6,7 +6,7 @@ import { permissionsService, type Permission } from "@/lib/firestore/permissions
 import { toast } from "@/hooks/use-toast"
 
 // Icons
-import { Plus, MoreHorizontal, Pencil, Trash2, Lock, Ban } from "lucide-react"
+import { Plus, Pencil, Trash2, Lock, Ban, CheckCircle, Loader2 } from "lucide-react"
 
 // UI Components
 import { Button } from "@/components/ui/button"
@@ -17,7 +17,6 @@ import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Switch } from "@/components/ui/switch"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 
 const initialRoleState: Omit<Role, "id" | "createdAt" | "updatedAt"> = {
@@ -43,6 +42,8 @@ export default function RoleManagementPage() {
   const [roleFormData, setRoleFormData] = useState(initialRoleState)
   const [editingRoleId, setEditingRoleId] = useState<string | null>(null)
   const [isSavingRole, setIsSavingRole] = useState(false)
+  const [deletingRoleId, setDeletingRoleId] = useState<string | null>(null)
+  const [togglingRoleId, setTogglingRoleId] = useState<string | null>(null)
 
   // --- PERMISSIONS STATE ---
   const [availablePermissions, setAvailablePermissions] = useState<Permission[]>([])
@@ -153,24 +154,30 @@ export default function RoleManagementPage() {
   const handleToggleRoleStatus = async (role: Role) => {
     const newStatus = role.status === 'active' ? 'inactive' : 'active';
     try {
+      setTogglingRoleId(role.id)
       await rolesService.update(role.id, { status: newStatus });
       toast({ title: "Success", description: `Role ${newStatus === 'active' ? 'enabled' : 'disabled'}` });
       const rolesRes = await rolesService.getAll();
       setData(rolesRes);
     } catch (error) {
       toast({ title: "Error", description: "Failed to update status", variant: "destructive" });
+    } finally {
+      setTogglingRoleId(null)
     }
   };
 
   const handleDeleteRole = async (id: string) => {
     if (!confirm("Are you sure? This action cannot be undone.")) return;
     try {
-        await rolesService.delete(id);
-        toast({ title: "Success", description: "Role deleted" });
-        const rolesRes = await rolesService.getAll();
-        setData(rolesRes);
+      setDeletingRoleId(id)
+      await rolesService.delete(id);
+      toast({ title: "Success", description: "Role deleted" });
+      const rolesRes = await rolesService.getAll();
+      setData(rolesRes);
     } catch (error) {
-        toast({ title: "Error", description: "Delete failed", variant: "destructive" });
+      toast({ title: "Error", description: "Delete failed", variant: "destructive" });
+    } finally {
+      setDeletingRoleId(null)
     }
   }
 
@@ -258,18 +265,42 @@ export default function RoleManagementPage() {
                   </Badge>
                 </TableCell>
                 <TableCell className="text-right">
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild><Button variant="ghost" className="h-8 w-8 p-0"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => handleEditRole(role)}><Pencil className="mr-2 h-4 w-4" /> Edit</DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => handleToggleRoleStatus(role)}>
-                        <Ban className="mr-2 h-4 w-4" />
-                        {role.status === 'active' ? 'Disable' : 'Enable'}
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem className="text-red-600" onClick={() => handleDeleteRole(role.id)}><Trash2 className="mr-2 h-4 w-4" /> Delete</DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                  <div className="flex items-center justify-end gap-1">
+                    <Button
+                      variant="ghost"
+                      className="h-8 w-8 p-0 text-blue-600 hover:text-blue-800 hover:bg-blue-50"
+                      title="Edit Role"
+                      onClick={() => handleEditRole(role)}
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      className={`h-8 w-8 p-0 ${role.status === 'active' ? 'text-orange-500 hover:text-orange-700 hover:bg-orange-50' : 'text-green-600 hover:text-green-800 hover:bg-green-50'}`}
+                      title={role.status === 'active' ? 'Disable Role' : 'Enable Role'}
+                      onClick={() => handleToggleRoleStatus(role)}
+                      disabled={togglingRoleId === role.id}
+                    >
+                      {togglingRoleId === role.id
+                        ? <Loader2 className="h-4 w-4 animate-spin" />
+                        : role.status === 'active'
+                          ? <Ban className="h-4 w-4" />
+                          : <CheckCircle className="h-4 w-4" />
+                      }
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      className="h-8 w-8 p-0 text-red-600 hover:text-red-800 hover:bg-red-50"
+                      title="Delete Role"
+                      onClick={() => handleDeleteRole(role.id)}
+                      disabled={deletingRoleId === role.id}
+                    >
+                      {deletingRoleId === role.id
+                        ? <Loader2 className="h-4 w-4 animate-spin" />
+                        : <Trash2 className="h-4 w-4" />
+                      }
+                    </Button>
+                  </div>
                 </TableCell>
               </TableRow>
             ))}

@@ -25,6 +25,7 @@ export default function ComplianceManagementPage() {
   const [companies, setCompanies] = useState<any[]>([])
   const [buildings, setBuildings] = useState<any[]>([])
   const [cafeterias, setCafeterias] = useState<any[]>([])
+  const [areas, setAreas] = useState<any[]>([])
   const [roles, setRoles] = useState<any[]>([])
 
   useEffect(() => {
@@ -34,12 +35,13 @@ export default function ComplianceManagementPage() {
   const fetchInitialData = async () => {
     try {
       setLoading(true)
-      const [formsRes, vSnap, cSnap, bSnap, cafSnap, rSnap] = await Promise.all([
+      const [formsRes, vSnap, cSnap, bSnap, cafSnap, areaSnap, rSnap] = await Promise.all([
         complianceFormsService.getAll(),
         getDocs(collection(db, 'vendors')),
         getDocs(collection(db, 'companies')),
         getDocs(collection(db, 'buildings')),
         getDocs(collection(db, 'cafetarias')),
+        getDocs(collection(db, 'areas')),
         getDocs(collection(db, 'roles')) // Assuming roles are also fetched for `assignedRole` display
       ])
 
@@ -48,6 +50,7 @@ export default function ComplianceManagementPage() {
       setCompanies(cSnap.docs.map(d => ({ id: d.id, ...d.data() })))
       setBuildings(bSnap.docs.map(d => ({ id: d.id, ...d.data() })))
       setCafeterias(cafSnap.docs.map(d => ({ id: d.id, ...d.data() })))
+      setAreas(areaSnap.docs.map(d => ({ id: d.id, ...d.data() })))
       setRoles(rSnap.docs.map(d => ({ id: d.id, ...d.data() })))
       
     } catch (error) {
@@ -127,7 +130,10 @@ export default function ComplianceManagementPage() {
                 <TableCell className="text-sm">
                   <div className="flex flex-col">
                     <span>{getName(companies, form.companyId)}</span>
-                    <span className="text-xs text-gray-400">{getName(buildings, form.buildingId)} - {getName(cafeterias, form.cafetariaId)}</span>
+                    <span className="text-xs text-gray-400">
+                      {getName(buildings, form.buildingId)} — {getName(cafeterias, form.cafetariaId)}
+                      {form.areaId && <> — <span className="text-purple-500">{getName(areas, form.areaId)}</span></>}
+                    </span>
                   </div>
                 </TableCell>
                 <TableCell className="text-sm">{getName(vendors, form.vendorId)}</TableCell>

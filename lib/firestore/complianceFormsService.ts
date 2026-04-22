@@ -19,6 +19,7 @@ export interface ComplianceForm {
   companyId: string;
   buildingId: string;
   cafetariaId: string;
+  areaId?: string;
   frequency: 'daily' | 'weekly' | 'monthly' | 'custom'; // Added more options for completeness
   assignedRole: string; // roleId here, assuming a user role exists
   status: 'active' | 'inactive';

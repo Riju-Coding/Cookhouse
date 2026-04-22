@@ -2,12 +2,14 @@
   import { initializeApp } from "firebase/app"
   import { getAuth } from "firebase/auth"
   import { getFirestore } from "firebase/firestore"
+  import { getDatabase } from "firebase/database"
   import { getAnalytics } from "firebase/analytics"
 
   // Your web app's Firebase configuration
   const firebaseConfig = {
     apiKey: "AIzaSyAQAQw5i-ZQSCdEAUgMnk970vSh7SES1Kk",
     authDomain: "cookhouse-main.firebaseapp.com",
+    databaseURL: "https://cookhouse-main-default-rtdb.firebaseio.com",
     projectId: "cookhouse-main",
     storageBucket: "cookhouse-main.firebasestorage.app",
     messagingSenderId: "884440480404",
@@ -23,6 +25,9 @@
 
   // Initialize Cloud Firestore and get a reference to the service
   export const db = getFirestore(app)
+  
+  // Initialize Realtime Database and get a reference to the service
+  export const rtdb = getDatabase(app)
 
   // Initialize Analytics (only in browser)
   export const analytics = typeof window !== "undefined" ? getAnalytics(app) : null
