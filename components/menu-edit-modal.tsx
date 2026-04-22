@@ -469,8 +469,10 @@ const ItemCompanyAssignmentModal = memo(function ItemCompanyAssignmentModal({
     return selectedMenuItemIds;
   }, [selectedMenuItemIds, itemToFocus]);
 
+  const isInitializedRef = useRef(false);
+
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && !isInitializedRef.current) {
       setLoading(true)
       const initialAssignments: Record<string, Set<string>> = {}
 
@@ -489,6 +491,9 @@ const ItemCompanyAssignmentModal = memo(function ItemCompanyAssignmentModal({
 
       setTempAssignments(initialAssignments)
       setLoading(false)
+      isInitializedRef.current = true;
+    } else if (!isOpen) {
+      isInitializedRef.current = false;
     }
   }, [isOpen, itemsForModal, defaultAssignedStructures, currentCustomAssignments])
 
@@ -2520,20 +2525,20 @@ const MenuGridCell = memo(function MenuGridCell({
         selectedMenuItemIds={selectedMenuItemIds}
         itemToFocus={itemToFocus}
         allMenuItems={allMenuItems}
-        defaultAssignedStructures={assignedCompanies.map(c => ({
+        defaultAssignedStructures={useMemo(() => assignedCompanies.map(c => ({
           companyId: c.companyId || "",
           companyName: c.companyName || "",
           buildingId: c.buildingId || "",
           buildingName: c.buildingName || ""
-        }))}
+        })), [assignedCompanies])}
         allActiveStructures={allActiveStructures}
         // Filter customAssignments to remove any entries for items that are no longer in the cell
         // (This handles the case where items were removed due to choice conflicts)
-        currentCustomAssignments={Object.fromEntries(
+        currentCustomAssignments={useMemo(() => Object.fromEntries(
           Object.entries(menuCell?.customAssignments || {}).filter(([itemId]) =>
             selectedMenuItemIds.includes(itemId) || menuCell?.menuItemIds?.includes(itemId)
           )
-        )}
+        ), [menuCell?.customAssignments, selectedMenuItemIds, menuCell?.menuItemIds])}
         onSave={(assignments) => {
           console.log("[v0] Saving custom assignments via state update:", assignments)
           onUpdateCustomAssignments?.(assignments)
@@ -2767,6 +2772,34 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
   // FIXED: Separate state for the TRUE original (OG) baseline that is locked forever
   // This is set ONCE on initial load and NEVER updated, ensuring OG items always remain the same
   const [ogMenuData, setOgMenuData] = useState<any>({})
+
+  const handleRequestClose = useCallback(() => {
+    // Calculate if there are unsaved changes
+    const diffs = detectMenuChanges(ogMenuData, menuData, new Map());
+    if (diffs.length > 0) {
+      if (window.confirm("You have unsaved changes. Your progress will be gone. Are you sure you want to close?")) {
+        clearDrafts();
+        onClose();
+      }
+    } else {
+      clearDrafts();
+      onClose();
+    }
+  }, [ogMenuData, menuData, clearDrafts, onClose]);
+
+  // Window beforeunload alert for unsaved draft reloads
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      const diffs = detectMenuChanges(ogMenuData, menuData, new Map());
+      if (diffs.length > 0) {
+        e.preventDefault();
+        e.returnValue = "You have unsaved changes. Your progress will be gone.";
+        return e.returnValue;
+      }
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [ogMenuData, menuData]);
   const [dateRange, setDateRange] = useState<Array<{ date: string; day: string }>>([])
   const [services, setServices] = useState<Service[]>([])
   const [subServices, setSubServices] = useState<Map<string, SubService[]>>(new Map())
@@ -5790,7 +5823,7 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
                 <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => setCopyBuffer(null)}><X className="h-3 w-3" /></Button>
               </div>
             )}
-            <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
+            <button onClick={handleRequestClose} className="text-gray-500 hover:text-gray-700">
               <X className="h-6 w-6" />
             </button>
           </div>
@@ -6238,7 +6271,7 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
               {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
               Save as Draft
             </Button>
-            <Button variant="outline" onClick={onClose} disabled={saving}>
+            <Button variant="outline" onClick={handleRequestClose} disabled={saving}>
               Cancel
             </Button>
             <Button onClick={() => handleSave(false)} disabled={saving || loading}>
