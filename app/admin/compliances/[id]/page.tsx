@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useEffect, useMemo } from "react"
+import React, { useState, useEffect, useMemo } from "react" //some details 
 import { useParams, useRouter } from "next/navigation"
 import { db } from "@/lib/firebase"
 import { collection, getDocs } from "firebase/firestore"
