@@ -1,5 +1,6 @@
 import { AdminLayout } from "@/components/admin/admin-layout"
 import { ProtectedRoute } from "@/components/auth/protected-route"
+import { RouteGuard } from "@/components/auth/route-guard"
 
 export default function Layout({
   children,
@@ -8,7 +9,7 @@ export default function Layout({
 }) {
   return (
   <ProtectedRoute>
-  <AdminLayout>{children}</AdminLayout>
+  <AdminLayout><RouteGuard>{children}</RouteGuard></AdminLayout>
   </ProtectedRoute>
   )
   

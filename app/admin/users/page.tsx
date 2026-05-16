@@ -24,6 +24,7 @@ const initialUserState: Omit<User, "id" | "createdAt" | "updatedAt"> = {
   name: "",
   email: "",
   phone: "",
+  userType: 'super_admin',
   roleId: "",
   roleKey: "",
   vendorId: "",
@@ -148,6 +149,7 @@ export default function UserManagementPage() {
       name: user.name,
       email: user.email,
       phone: user.phone || "",
+      userType: user.userType || 'super_admin',
       roleId: user.roleId,
       roleKey: user.roleKey,
       vendorId: user.vendorId || "none",
@@ -315,6 +317,20 @@ export default function UserManagementPage() {
             <div className="space-y-2">
               <Label>Phone Number</Label>
               <Input value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} placeholder="9876543210" />
+            </div>
+            <div className="space-y-2">
+              <Label>User Type *</Label>
+              <Select value={formData.userType || 'super_admin'} onValueChange={(val: any) => setFormData({...formData, userType: val})}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select user type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="super_admin">Super Admin</SelectItem>
+                  <SelectItem value="vendor_staff">Vendor Staff</SelectItem>
+                  <SelectItem value="company_user">Company User</SelectItem>
+                  <SelectItem value="employee">Employee</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-2">
               <Label>Role *</Label>

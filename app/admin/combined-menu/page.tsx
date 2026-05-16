@@ -153,11 +153,15 @@ const combinedMenusService = {
     return { id: docRef.id }
   },
   async checkDuplicate(startDate: string, endDate: string): Promise<string | null> {
-    const snapshot = await getDocs(collection(db, "combinedMenus"))
+    const q = query(
+      collection(db, "combinedMenus"),
+      where("startDate", "==", startDate),
+      where("endDate", "==", endDate)
+    )
+    const snapshot = await getDocs(q)
     const duplicate = snapshot.docs.find((doc) => {
       const data = doc.data()
-      // Check for exact date match and exclude archived menus
-      return data.startDate === startDate && data.endDate === endDate && data.status !== "archived"
+      return data.status !== "archived"
     })
     return duplicate ? duplicate.id : null
   },
@@ -1804,6 +1808,7 @@ export default function CombinedMenuCreationPage() {
 
   // New State for duplicate handling
   const [duplicateMenuId, setDuplicateMenuId] = useState<string | null>(null)
+  const [currentMenuId, setCurrentMenuId] = useState<string | null>(null)
   const [showEditModal, setShowEditModal] = useState(false)
   const [showCreateModal, setShowCreateModal] = useState(false)
 
@@ -2100,17 +2105,19 @@ export default function CombinedMenuCreationPage() {
         updatedAt: serverTimestamp(),
       }
 
-      // Check if a draft already exists for this date range
-      const existingDraft = await combinedMenusService.getDraftByDateRange(startDate, endDate, userCompanyId)
+      // Check if any menu already exists for this date range
+      const existingMenuId = currentMenuId || await combinedMenusService.checkDuplicate(startDate, endDate)
 
-      if (existingDraft && existingDraft.id) {
-        // Update existing draft
-        const draftRef = doc(db, "combinedMenus", existingDraft.id)
-        await updateDoc(draftRef, draftData)
+      if (existingMenuId) {
+        // Update existing menu
+        const menuRef = doc(db, "combinedMenus", existingMenuId)
+        await updateDoc(menuRef, draftData)
+        setCurrentMenuId(existingMenuId)
         toast({ title: "Success", description: "Draft updated successfully" })
       } else {
         // Create new draft
-        await combinedMenusService.add(draftData)
+        const savedDraft = await combinedMenusService.add(draftData)
+        setCurrentMenuId(savedDraft.id)
         toast({ title: "Success", description: "Menu saved as draft successfully" })
       }
 
@@ -2863,8 +2870,21 @@ export default function CombinedMenuCreationPage() {
       // Prepare menu data for Firebase (keeps original nested structure + custom assignments if any)
       const preparedMenuData = prepareMenuDataForSave(filtered)
       const combinedMenuData = { startDate, endDate, menuData: preparedMenuData, status: "active" }
-      const savedMenu = await combinedMenusService.add(combinedMenuData)
-      await generateCompanyMenus(savedMenu.id, filtered)
+      
+      const existingMenuId = currentMenuId || await combinedMenusService.checkDuplicate(startDate, endDate)
+      let savedMenuId = ""
+
+      if (existingMenuId) {
+        const menuRef = doc(db, "combinedMenus", existingMenuId)
+        await updateDoc(menuRef, { ...combinedMenuData, updatedAt: serverTimestamp() })
+        savedMenuId = existingMenuId
+      } else {
+        const savedMenu = await combinedMenusService.add(combinedMenuData)
+        savedMenuId = savedMenu.id
+      }
+      
+      setCurrentMenuId(savedMenuId)
+      await generateCompanyMenus(savedMenuId, filtered)
       toast({ title: "Success", description: "Combined menu saved and company menus generated successfully" })
       setShowModal(false)
       setStartDate("")
@@ -2877,6 +2897,7 @@ export default function CombinedMenuCreationPage() {
       repetitionLogKeysRef.current.clear()
       setCopyBuffer(null)
       setHasDraft(false)
+      setCurrentMenuId(null)
     } catch (error) {
       console.error("Error saving combined menu:", error)
       toast({ title: "Error", description: "Failed to save combined menu", variant: "destructive" })

@@ -10,7 +10,7 @@ interface ProtectedRouteProps {
 }
 
 export function ProtectedRoute({ children }: ProtectedRouteProps) {
-  const { user, isAdmin, loading } = useAuth()
+  const { user, userProfile, loading } = useAuth()
 
   if (loading) {
     return (
@@ -20,8 +20,23 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
     )
   }
 
-  if (!user || !isAdmin) {
+  // Not authenticated or no profile in users collection
+  if (!user || !userProfile) {
     return <LoginForm />
+  }
+
+  // User account is disabled
+  if (userProfile.status === "inactive") {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center space-y-3 max-w-md p-8">
+          <h2 className="text-xl font-bold text-gray-900">Account Disabled</h2>
+          <p className="text-sm text-gray-500">
+            Your account has been disabled. Please contact your administrator.
+          </p>
+        </div>
+      </div>
+    )
   }
 
   return <>{children}</>

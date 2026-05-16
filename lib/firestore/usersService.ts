@@ -8,14 +8,18 @@ import {
   deleteDoc, 
   serverTimestamp,
   query,
-  orderBy
+  orderBy,
+  where
 } from "firebase/firestore"
+
+export type UserType = "super_admin" | "vendor_staff" | "company_user" | "employee"
 
 export interface User {
   id: string;
   name: string;
   email: string;
   phone: string;
+  userType: UserType;
   roleId: string;
   roleKey: string;
   vendorId: string;
@@ -33,6 +37,24 @@ const usersCollection = collection(db, 'users')
 export const usersService = {
   getAll: async (): Promise<User[]> => {
     const q = query(usersCollection, orderBy("name"));
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    } as User));
+  },
+
+  getByVendor: async (vendorId: string): Promise<User[]> => {
+    const q = query(usersCollection, where("vendorId", "==", vendorId), orderBy("name"));
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    } as User));
+  },
+
+  getByCompany: async (companyId: string): Promise<User[]> => {
+    const q = query(usersCollection, where("companyIds", "array-contains", companyId), orderBy("name"));
     const snapshot = await getDocs(q);
     return snapshot.docs.map(doc => ({
       id: doc.id,

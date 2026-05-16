@@ -23,7 +23,7 @@ import { MenuEditModal } from "@/components/menu-edit-modal"
 import type { MenuItem } from "@/lib/types"
 import { menuItemsService } from "@/lib/services"
 import React from "react" 
-
+import { useEntityScope } from "@/hooks/use-entity-scope"
 interface CompanyMenu {
   id: string
   companyId: string
@@ -65,10 +65,11 @@ export default function CompanyMenusPage() {
   const [groupToDelete, setGroupToDelete] = useState<MenuGroup | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
 
+  const { isSuperAdmin, entityId, entityType, assignedCompanyIds, filterByScope } = useEntityScope()
   const [menuItems, setMenuItems] = useState<MenuItem[]>([])
   const [menuItemsLoading, setMenuItemsLoading] = useState(false)
 
-  useEffect(() => { loadCompanyMenus() }, [combinedMenuIdParam])
+  useEffect(() => { loadCompanyMenus() }, [combinedMenuIdParam, entityId, entityType])
   useEffect(() => { preloadMenuItems() }, [])
 
   // Navigation update function (Browser history stack maintain karne ke liye)
@@ -93,10 +94,32 @@ export default function CompanyMenusPage() {
       setLoading(true)
       const { clearCacheKey } = await import("@/lib/services")
       clearCacheKey("companyMenus-")
-      let q = combinedMenuIdParam ? query(collection(db, "companyMenus"), where("combinedMenuId", "==", combinedMenuIdParam)) : collection(db, "companyMenus")
+      
+      const constraints: any[] = []
+      
+      if (combinedMenuIdParam) {
+        constraints.push(where("combinedMenuId", "==", combinedMenuIdParam))
+      }
+      
+      // Entity Scoping
+      if (entityType === "company_user" && entityId) {
+        constraints.push(where("companyId", "==", entityId))
+      } else if (entityType === "vendor_staff" && assignedCompanyIds.length > 0) {
+        // If many companies, we might need multiple queries or use in operator
+        if (assignedCompanyIds.length <= 10) {
+            constraints.push(where("companyId", "in", assignedCompanyIds))
+        }
+      }
+
+      let q = query(collection(db, "companyMenus"), ...constraints)
       const snapshot = await getDocs(q)
-      const menusData = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }) as CompanyMenu)
-        .sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime())
+      
+      let menusData = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }) as CompanyMenu)
+      
+      // Client side secondary filter for safety
+      menusData = filterByScope(menusData)
+      
+      menusData.sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime())
       setMenus(menusData)
     } finally { setLoading(false) }
   }

@@ -95,17 +95,31 @@ export function LoginForm() {
               {loading ? "Signing in..." : "Sign In"}
             </Button>
           </form>
-
-          {/* Register link */}
-          <p className="mt-4 text-center text-sm text-gray-600">
-            Not registered?{" "}
-            <span
-              onClick={() => router.push("/register")}
-              className="text-blue-600 hover:underline cursor-pointer"
-            >
-              Register now
-            </span>
-          </p>
+          {/* Portal Links */}
+          <div className="mt-6 space-y-3">
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-white px-2 text-gray-400">Other Portals</span>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={() => router.push("/company/login")}
+                className="text-sm text-center py-2 px-3 rounded-md border border-gray-200 hover:bg-blue-50 hover:border-blue-200 hover:text-blue-700 transition-colors"
+              >
+                🏢 Company Login
+              </button>
+              <button
+                onClick={() => router.push("/vendor/login")}
+                className="text-sm text-center py-2 px-3 rounded-md border border-gray-200 hover:bg-orange-50 hover:border-orange-200 hover:text-orange-700 transition-colors"
+              >
+                👨‍🍳 Vendor Login
+              </button>
+            </div>
+          </div>
         </CardContent>
       </Card>
     </div>

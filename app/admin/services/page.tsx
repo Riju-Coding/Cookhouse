@@ -4,6 +4,7 @@ import React, { useState, useEffect } from "react"
 import { CrudTable } from "@/components/admin/crud-table"
 import { servicesService, vendorsService, type Service, type Vendor } from "@/lib/firestore"
 import { toast } from "@/hooks/use-toast"
+import { useEntityScope } from "@/hooks/use-entity-scope"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { GripVertical, Loader2, UserPlus, CheckCircle2 } from "lucide-react"
@@ -31,9 +32,10 @@ export default function ServicesPage() {
   const [reorderingId, setReorderingId] = useState<string | null>(null)
 
   // Selection & Vendor Assignment State
+  const { isSuperAdmin, entityId, filterByScope, injectEntityId } = useEntityScope()
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false)
-  const [selectedVendorIds, setSelectedVendorIds] = useState<string[]>([])
+  const [selectedVendorId, setSelectedVendorId] = useState<string>("")
   const [isAssigning, setIsAssigning] = useState(false)
 
   const fetchData = async () => {
@@ -44,7 +46,8 @@ export default function ServicesPage() {
         vendorsService.getAll()
       ])
       
-      const sortedData = servicesData.sort((a, b) => (a.order || 999) - (b.order || 999))
+      const scopedServices = filterByScope(servicesData)
+      const sortedData = scopedServices.sort((a, b) => (a.order || 999) - (b.order || 999))
       setServices(sortedData)
       setVendors(vendorsData)
     } catch (error) {
@@ -86,24 +89,24 @@ export default function ServicesPage() {
   }
 
   const handleSaveVendorAssignment = async () => {
-    if (selectedVendorIds.length === 0) {
-      toast({ title: "Error", description: "Select at least one vendor", variant: "destructive" })
+    if (!selectedVendorId) {
+      toast({ title: "Error", description: "Select a vendor", variant: "destructive" })
       return
     }
 
     try {
       setIsAssigning(true)
       const updatePromises = Array.from(selectedIds).map(id => 
-        servicesService.update(id, { vendorIds: selectedVendorIds } as any)
+        servicesService.update(id, { vendorId: selectedVendorId } as any)
       )
 
       await Promise.all(updatePromises)
-      toast({ title: "Success", description: `Assigned vendors to ${selectedIds.size} services.` })
+      toast({ title: "Success", description: `Assigned vendor to ${selectedIds.size} services.` })
       setIsAssignModalOpen(false)
       setSelectedIds(new Set())
       fetchData()
     } catch (error) {
-      toast({ title: "Error", description: "Failed to assign vendors", variant: "destructive" })
+      toast({ title: "Error", description: "Failed to assign vendor", variant: "destructive" })
     } finally {
       setIsAssigning(false)
     }
@@ -156,7 +159,8 @@ export default function ServicesPage() {
   const handleAdd = async (data: any) => {
     setIsAdding(true)
     try {
-      const finalData = { ...data, color: data.color || "#3b82f6" }
+      const scopedData = injectEntityId(data)
+      const finalData = { ...scopedData, color: data.color || "#3b82f6" }
       await servicesService.add(finalData)
       await fetchData()
       toast({ title: "Success", description: "Service added" })
@@ -226,10 +230,10 @@ export default function ServicesPage() {
       <div className="flex items-center justify-between">
         <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg flex-1 mr-4">
             <p className="text-sm text-blue-800">
-                <strong>Management:</strong> Drag items to reorder. Select items to assign catering vendors.
+                <strong>Management:</strong> {isSuperAdmin ? "Drag items to reorder. Select items to assign catering vendors." : "Manage your services. New services will be automatically associated with your account."}
             </p>
         </div>
-        {selectedIds.size > 0 && (
+        {isSuperAdmin && selectedIds.size > 0 && (
             <Button onClick={handleOpenAssignVendors} className="bg-blue-600 hover:bg-blue-700">
                 <UserPlus className="mr-2 h-4 w-4" /> Assign Vendor ({selectedIds.size})
             </Button>
@@ -251,7 +255,7 @@ export default function ServicesPage() {
         <CardContent>
           <div className="space-y-2">
             {services.map((service) => {
-              const assignedVendors = vendors.filter(v => (service as any).vendorIds?.includes(v.id))
+              const assignedVendor = vendors.find(v => (service as any).vendorId === v.id)
               return (
                 <div
                   key={service.id}
@@ -288,11 +292,11 @@ export default function ServicesPage() {
                       <div className="w-3 h-3 rounded-full" style={{ backgroundColor: service.color }} />
                     </div>
                     <div className="flex flex-wrap gap-1 mt-1">
-                        {assignedVendors.map(v => (
-                            <Badge key={v.id} variant="outline" className="text-[10px] bg-green-50 text-green-700 border-green-200">
-                                {v.name}
+                        {assignedVendor && (
+                            <Badge variant="outline" className="text-[10px] bg-green-50 text-green-700 border-green-200">
+                                {assignedVendor.name}
                             </Badge>
-                        ))}
+                        )}
                     </div>
                   </div>
                   <Badge variant={service.status === 'active' ? 'default' : 'outline'}>{service.status}</Badge>
@@ -333,10 +337,10 @@ export default function ServicesPage() {
                   <div key={vendor.id} className="flex items-center space-x-3 mb-4 last:mb-0">
                     <Checkbox 
                       id={`v-${vendor.id}`} 
-                      checked={selectedVendorIds.includes(vendor.id)}
+                      checked={selectedVendorId === vendor.id}
                       onCheckedChange={(checked) => {
-                          if (checked) setSelectedVendorIds([...selectedVendorIds, vendor.id])
-                          else setSelectedVendorIds(selectedVendorIds.filter(id => id !== vendor.id))
+                          if (checked) setSelectedVendorId(vendor.id)
+                          else setSelectedVendorId("")
                       }}
                     />
                     <Label htmlFor={`v-${vendor.id}`} className="text-sm font-medium leading-none cursor-pointer">

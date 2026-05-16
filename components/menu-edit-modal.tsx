@@ -2905,6 +2905,7 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
   }, [companiesWithChoices])
 
   const [updations, setUpdations] = useState<UpdationRecord[]>([])
+  const [createdDraftId, setCreatedDraftId] = useState<string | null>(null)
 
   const mountedRef = useRef(true)
 
@@ -3500,7 +3501,15 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
             setCompaniesWithChoices(data)
             // Also load initial selections from existing saved choices
             let currentSelections: Record<string, any[]> = {}
-            if (menuType === 'company' && menuData) {
+            
+            // PRIORITY 1: Check for savedChoices in the menu document (persisted from draft/final saves)
+            // This works for BOTH company and combined menus
+            if (menu && (menu as any).savedChoices && Object.keys((menu as any).savedChoices).length > 0) {
+              currentSelections = JSON.parse(JSON.stringify((menu as any).savedChoices))
+              console.log("[v0-LOAD] Restored choice selections from savedChoices:", Object.keys(currentSelections).length, "keys")
+            }
+            // PRIORITY 2: Fallback — reconstruct from itemChoiceMarks in menu cells (company menus only)
+            else if (menuType === 'company' && menuData) {
               data.forEach(companyChoice => {
                 for (const choice of companyChoice.choices) {
                   const choiceKey = `${companyChoice.companyId}-${companyChoice.buildingId}-${choice.choiceId}`
@@ -3540,8 +3549,6 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
                   }
                 }
               })
-            } else if (menuType === 'combined' && menu && (menu as any).savedChoices) {
-              currentSelections = (menu as any).savedChoices
             }
             setInitialChoiceSelections(currentSelections)
             setInlineChoiceSelections(currentSelections)
@@ -4405,8 +4412,13 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
       return
     }
 
-    // Proceed with actual save
-    await executeSave(isDraft)
+    // Proceed with actual save — pass inlineChoiceSelections for drafts too so they persist
+    const hasInlineSelections = Object.values(inlineChoiceSelections).some(items => items.length > 0)
+    if (isDraft && hasInlineSelections) {
+      await executeSave(isDraft, inlineChoiceSelections)
+    } else {
+      await executeSave(isDraft)
+    }
   }
 
   const handleChoiceConfirm = async (data: any) => {
@@ -4463,7 +4475,20 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
           createdAt: new Date(),
           updatedAt: new Date(),
         }
-        const newDocRef = await addDoc(collection(db, "combinedMenus"), newMenuDoc)
+
+        let newDocRefId = createdDraftId
+
+        if (newDocRefId) {
+            await updateDoc(doc(db, "combinedMenus", newDocRefId), {
+                status: isDraft ? "draft" : "active",
+                menuData: sanitizedData,
+                updatedAt: new Date(),
+            })
+        } else {
+            const newDocRef = await addDoc(collection(db, "combinedMenus"), newMenuDoc)
+            newDocRefId = newDocRef.id
+            setCreatedDraftId(newDocRefId)
+        }
 
         if (!isDraft) {
           // Generate company menus from the new combined menu
@@ -4491,7 +4516,7 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
             if (Object.keys(filteredDay).length > 0) filtered[date] = filteredDay
           })
 
-          const count = await generateCompanyMenus(newDocRef.id, filtered)
+          const count = await generateCompanyMenus(newDocRefId, filtered)
           toast({ title: "Complete!", description: `Created combined menu and ${count} company menus.` })
         } else {
           toast({ title: "Draft Saved", description: "Combined menu saved as draft." })
@@ -4747,13 +4772,13 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
         }
       }
       
-      // Also attach saved choices to combined menus so the modal pre-fills next time!
+      // Also attach saved choices so the modal pre-fills next time (works for both draft & final saves)
       const updatePayload: any = {
         menuData: sanitizedMenuData,
         status: shouldSyncCompanyMenus ? "active" : statusToSave,
         updatedAt: new Date(),
       }
-      if (menuType === 'combined' && choiceSelectionsData && Object.keys(choiceSelectionsData).length > 0) {
+      if (choiceSelectionsData && Object.keys(choiceSelectionsData).length > 0) {
         updatePayload.savedChoices = choiceSelectionsData;
       }
 

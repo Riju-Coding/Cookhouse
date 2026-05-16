@@ -18,12 +18,15 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Switch } from "@/components/ui/switch"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 const initialRoleState: Omit<Role, "id" | "createdAt" | "updatedAt"> = {
   name: "",
   key: "",
+  userType: 'super_admin',
   permissions: {},
   status: 'active',
+  isSystem: false,
 }
 
 const initialPermissionState: Omit<Permission, "id" | "createdAt" | "updatedAt"> = {
@@ -128,8 +131,10 @@ export default function RoleManagementPage() {
       const payload = {
         name: roleFormData.name,
         key: roleFormData.key,
+        userType: roleFormData.userType || 'super_admin' as const,
         permissions: roleFormData.permissions,
         status: roleFormData.status,
+        isSystem: roleFormData.isSystem || false,
       }
 
       if (editingRoleId) {
@@ -245,6 +250,7 @@ export default function RoleManagementPage() {
           <TableHeader className="bg-gray-50">
             <TableRow>
               <TableHead>Role Name</TableHead>
+              <TableHead>User Type</TableHead>
               <TableHead>Permissions Count</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="text-right">Actions</TableHead>
@@ -256,6 +262,9 @@ export default function RoleManagementPage() {
             ) : data.map((role) => (
               <TableRow key={role.id} className={role.status === 'inactive' ? 'bg-gray-50 text-gray-500' : ''}>
                 <TableCell className="font-semibold">{role.name}</TableCell>
+                <TableCell>
+                  <Badge variant="outline" className="text-[10px] uppercase">{role.userType || 'super_admin'}</Badge>
+                </TableCell>
                 <TableCell>
                   <Badge variant="outline">{Object.keys(role.permissions || {}).length} enabled</Badge>
                 </TableCell>
@@ -318,6 +327,22 @@ export default function RoleManagementPage() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2"><Label>Role Name *</Label><Input value={roleFormData.name} onChange={handleRoleNameChange} /></div>
               <div className="space-y-2"><Label>Role Key</Label><Input value={roleFormData.key} readOnly className="bg-gray-100" /></div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>User Type *</Label>
+              <Select value={roleFormData.userType || 'super_admin'} onValueChange={(val: any) => setRoleFormData({...roleFormData, userType: val})}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select user type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="super_admin">Super Admin</SelectItem>
+                  <SelectItem value="vendor_staff">Vendor Staff</SelectItem>
+                  <SelectItem value="company_user">Company User</SelectItem>
+                  <SelectItem value="employee">Employee</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-gray-400">Determines which portal this role applies to.</p>
             </div>
 
             <div className="space-y-3">

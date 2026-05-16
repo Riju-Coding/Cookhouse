@@ -6,7 +6,7 @@ import { toast } from "@/hooks/use-toast"
 import { Switch } from "@/components/ui/switch"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Loader2, Pencil, Trash2, Plus, Layers, FolderPlus } from "lucide-react"
+import { Loader2, Pencil, Trash2, Plus, Layers, FolderPlus, GripHorizontal } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -56,6 +56,11 @@ export default function SubServicesPage() {
     color: "#3b82f6" // Default blue color
   })
 
+  // --- DRAG AND DROP STATE ---
+  const [draggedId, setDraggedId] = useState<string | null>(null)
+  const [dragOverId, setDragOverId] = useState<string | null>(null)
+  const [isUpdatingOrder, setIsUpdatingOrder] = useState(false)
+
   // --- DATA LOADING ---
   const loadData = async () => {
     try {
@@ -100,6 +105,89 @@ export default function SubServicesPage() {
   useEffect(() => {
     loadData()
   }, [])
+
+  // ==========================================
+  //         DRAG & DROP HANDLERS
+  // ==========================================
+  const handleDragStart = (e: React.DragEvent, id: string) => {
+    setDraggedId(id)
+    e.dataTransfer.effectAllowed = "move"
+  }
+
+  const handleDragOver = (e: React.DragEvent, id: string) => {
+    e.preventDefault() // Necessary to allow dropping
+    if (dragOverId !== id) {
+      setDragOverId(id)
+    }
+  }
+
+  const handleDrop = async (e: React.DragEvent, serviceId: string, targetId: string) => {
+    e.preventDefault()
+    setDragOverId(null)
+    
+    if (!draggedId || draggedId === targetId) {
+      setDraggedId(null)
+      return
+    }
+    
+    // Find the items within this specific service group and sort them currently
+    const groupItems = subServices
+      .filter((s) => s.serviceId === serviceId)
+      .sort((a, b) => (a.order || 999) - (b.order || 999))
+    
+    const draggedIdx = groupItems.findIndex((s) => s.id === draggedId)
+    const targetIdx = groupItems.findIndex((s) => s.id === targetId)
+    
+    if (draggedIdx === -1 || targetIdx === -1) {
+      setDraggedId(null)
+      return
+    }
+    
+    // Reorder the array
+    const newGroupItems = [...groupItems]
+    const [draggedItem] = newGroupItems.splice(draggedIdx, 1)
+    newGroupItems.splice(targetIdx, 0, draggedItem)
+    
+    // Assign new orders (1-based index)
+    const updatedItems = newGroupItems.map((item, index) => ({
+      ...item,
+      order: index + 1,
+    }))
+    
+    // Update local state immediately for snappy UI
+    setSubServices((prev) =>
+      prev.map((p) => {
+        if (p.serviceId === serviceId) {
+          const updated = updatedItems.find((u) => u.id === p.id)
+          return updated ? { ...p, order: updated.order } : p
+        }
+        return p
+      })
+    )
+    
+    // Save to Firebase
+    try {
+      setIsUpdatingOrder(true)
+      const updatePromises = updatedItems.map((item) =>
+        subServicesService.update(item.id, { order: item.order })
+      )
+      await Promise.all(updatePromises)
+      toast({ title: "Order saved", description: "Sub-services reordered successfully" })
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to save new order", variant: "destructive" })
+      loadData() // Revert to server state on error
+    } finally {
+      setIsUpdatingOrder(false)
+      setDraggedId(null)
+    }
+  }
+
+  const handleDragEnd = () => {
+    setDraggedId(null)
+    setDragOverId(null)
+  }
+
+
 
 
   // ==========================================
@@ -279,7 +367,9 @@ export default function SubServicesPage() {
       {/* Render Each Service as a distinct Group/Card */}
       <div className="space-y-8">
         {services.map((service) => {
-          const serviceSubServices = subServices.filter((s) => s.serviceId === service.id)
+          const serviceSubServices = subServices
+            .filter((s) => s.serviceId === service.id)
+            .sort((a, b) => (a.order || 999) - (b.order || 999))
 
           return (
             <Card key={service.id} className="overflow-hidden border-slate-200 shadow-sm">
@@ -353,13 +443,27 @@ export default function SubServicesPage() {
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {serviceSubServices.map((item) => (
-                        <tr key={item.id} className="bg-white hover:bg-slate-50/60 transition-colors">
+                        <tr 
+                          key={item.id} 
+                          draggable
+                          onDragStart={(e) => handleDragStart(e, item.id)}
+                          onDragOver={(e) => handleDragOver(e, item.id)}
+                          onDrop={(e) => handleDrop(e, service.id, item.id)}
+                          onDragEnd={handleDragEnd}
+                          className={`bg-white transition-colors cursor-move 
+                            ${draggedId === item.id ? 'opacity-50 bg-slate-100' : 'hover:bg-slate-50/60'}
+                            ${dragOverId === item.id ? 'border-t-2 border-t-blue-500' : ''}
+                          `}
+                        >
                           
-                          {/* Order */}
+                          {/* Order / Grip */}
                           <td className="px-6 py-3 text-center">
-                            <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-slate-100 text-xs font-medium text-slate-600">
-                              {item.order}
-                            </span>
+                            <div className="flex items-center justify-center gap-2">
+                              <GripHorizontal className="h-4 w-4 text-slate-400 cursor-grab active:cursor-grabbing" />
+                              <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-slate-100 text-xs font-medium text-slate-600">
+                                {item.order || '-'}
+                              </span>
+                            </div>
                           </td>
 
                           {/* Name */}

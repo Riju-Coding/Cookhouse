@@ -1,5 +1,6 @@
-import { collection, addDoc, updateDoc, deleteDoc, doc, getDocs, query, orderBy, Timestamp } from "firebase/firestore"
+import { collection, addDoc, updateDoc, deleteDoc, doc, getDocs, query, orderBy, Timestamp, where } from "firebase/firestore"
 import { db } from "./firebase"
+import { requireAuth } from "./auth-guard"
 
 export interface BaseEntity {
   id: string
@@ -89,6 +90,7 @@ export class FirestoreService<T extends BaseEntity> {
   }
 
   async add(data: Omit<T, "id" | "createdAt" | "updatedAt">): Promise<string> {
+    requireAuth() // Security: ensure user is authenticated before write
     const docRef = await addDoc(collection(db, this.collectionName), {
       ...data,
       createdAt: Timestamp.now(),
@@ -98,6 +100,7 @@ export class FirestoreService<T extends BaseEntity> {
   }
 
   async update(id: string, data: Partial<Omit<T, "id" | "createdAt">>): Promise<void> {
+    requireAuth() // Security: ensure user is authenticated before write
     const docRef = doc(db, this.collectionName, id)
     await updateDoc(docRef, {
       ...data,
@@ -106,8 +109,41 @@ export class FirestoreService<T extends BaseEntity> {
   }
 
   async delete(id: string): Promise<void> {
+    requireAuth() // Security: ensure user is authenticated before write
     const docRef = doc(db, this.collectionName, id)
     await deleteDoc(docRef)
+  }
+
+  async getWhere(field: string, operator: any, value: any): Promise<T[]> {
+    const q = query(
+      collection(db, this.collectionName), 
+      where(field, operator, value),
+      orderBy("createdAt", "desc")
+    )
+    const querySnapshot = await getDocs(q)
+    return querySnapshot.docs.map(
+      (doc) =>
+        ({
+          id: doc.id,
+          ...doc.data(),
+        }) as T,
+    )
+  }
+
+  async getMany(filters: { field: string; operator: any; value: any }[]): Promise<T[]> {
+    let q = query(collection(db, this.collectionName))
+    filters.forEach(f => {
+      q = query(q, where(f.field, f.operator, f.value))
+    })
+    q = query(q, orderBy("createdAt", "desc"))
+    const querySnapshot = await getDocs(q)
+    return querySnapshot.docs.map(
+      (doc) =>
+        ({
+          id: doc.id,
+          ...doc.data(),
+        }) as T,
+    )
   }
 }
 
@@ -191,6 +227,7 @@ export interface MealPlan extends BaseEntity {
   name: string
   description?: string
   status: string
+  vendorId?: string
 }
 
 export interface SubMealPlan extends BaseEntity {
@@ -199,6 +236,7 @@ export interface SubMealPlan extends BaseEntity {
   mealPlanName?: string
   description?: string
   status: string
+  vendorId?: string
 }
 
 export const mealPlansService = new FirestoreService<MealPlan>("mealPlans")
@@ -208,6 +246,7 @@ export interface Service extends BaseEntity {
   name: string
   description?: string
   status: string
+  vendorId?: string
 }
 
 export interface SubService extends BaseEntity {
@@ -217,6 +256,7 @@ export interface SubService extends BaseEntity {
   description?: string
   status: string
   showConfirmation?: boolean
+  vendorId?: string
 }
 
 export const servicesService = new FirestoreService<Service>("services")

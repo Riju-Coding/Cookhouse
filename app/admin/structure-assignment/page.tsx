@@ -38,6 +38,7 @@ import {
 } from "@/lib/services"
 import type { Service, SubService } from "@/lib/types"
 import { toast } from "@/hooks/use-toast"
+import { useEntityScope } from "@/hooks/use-entity-scope"
 
 import { addDoc, updateDoc, doc, collection, getDocs, query, where } from "firebase/firestore"
 import { db } from "@/lib/firebase"
@@ -86,6 +87,7 @@ export default function StructureAssignmentPage() {
   const [buildingSearch, setBuildingSearch] = useState("")
 
   // State for Bulk Copy
+  const { isSuperAdmin, entityId, entityType, assignedCompanyIds, filterByScope } = useEntityScope()
   const [isCopyDialogOpen, setIsCopyDialogOpen] = useState(false)
   const [selectedTargetBuildings, setSelectedTargetBuildings] = useState<string[]>([])
 
@@ -103,18 +105,23 @@ export default function StructureAssignmentPage() {
         subServicesService.getAll(),
       ])
 
-      const sortedCompanies = companiesData
+      const sortedCompanies = filterByScope(companiesData)
         .filter((c) => c.status === "active")
         .sort((a, b) => a.name.localeCompare(b.name))
       
-      const sortedBuildings = buildingsData
+      const sortedBuildings = filterByScope(buildingsData)
         .filter((b) => b.status === "active")
         .sort((a, b) => a.name.localeCompare(b.name))
 
       setCompanies(sortedCompanies)
       setBuildings(sortedBuildings)
-      setServices(servicesData.filter((s) => s.status === "active"))
-      setSubServices(subServicesData.filter((s) => s.status === "active"))
+      setServices(filterByScope(servicesData).filter((s) => s.status === "active"))
+      setSubServices(filterByScope(subServicesData).filter((s) => s.status === "active"))
+      
+      // Auto-select company for company users
+      if (entityType === "company_user" && entityId) {
+          setSelectedCompany(entityId)
+      }
     } catch (error) {
       toast({ title: "Error", description: "Failed to load data", variant: "destructive" })
     } finally {

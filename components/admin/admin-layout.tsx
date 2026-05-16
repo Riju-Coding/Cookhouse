@@ -1,9 +1,7 @@
 "use client"
 
 import type React from "react"
-// 1. Import NextTopLoader
 import NextTopLoader from 'nextjs-toploader';
-
 import { useState, useMemo, useRef, useCallback, useEffect } from "react"
 import { useAuth } from "@/hooks/use-auth"
 import { Button } from "@/components/ui/button"
@@ -27,6 +25,7 @@ import {
   ChevronDown,
   ChevronRight,
   Calendar,
+  MonitorUp,
 } from "lucide-react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
@@ -38,6 +37,7 @@ interface AdminLayoutProps {
 
 const navigation = [
   { name: "Dashboard", href: "/admin", icon: LayoutDashboard, category: "main" },
+  { name: "Team Management", href: "/admin/team-management", icon: Users, category: "main" },
   { name: "Ingredients", href: "/admin/ingredients", icon: Package, category: "ingredients" },
   { name: "GP", href: "/admin/gp", icon: Layers, category: "ingredients" },
   { name: "SubGp", href: "/admin/subgp", icon: Grid3X3, category: "ingredients" },
@@ -58,13 +58,19 @@ const navigation = [
   { name: "Buildings", href: "/admin/buildings", icon: Building, category: "organization" },
   { name: "Combined Menu Creation", href: "/admin/combined-menu", icon: Building2, category: "menu-management" },
   { name: "Combined Menu Management", href: "/admin/combined-menu-management", icon: Building2, category: "menu-management" },
-   { name: "Menu Tracker", href: "/admin/updations", icon: Building2, category: "menu-management" },
+  { name: "Menu Tracker", href: "/admin/updations", icon: Building2, category: "menu-management" },
   { name: "Company Wise Menu", href: "/admin/company-menus", icon: Building, category: "menu-management" },
+  { name: "Presentation", href: "/admin/presentation", icon: MonitorUp, category: "menu-management" },
+  { name: "Corporate Deck (PDF)", href: "/admin/corporate-deck", icon: FileText, category: "menu-management" },
   { name: "Corporate Calendar", href: "/admin/corporate-calendar", icon: Calendar, category: "organization" },
   { name: "Structure Assignment", href: "/admin/structure-assignment", icon: Calendar, category: "organization" },
   { name: "Structure Management", href: "/admin/structure-management", icon: Settings, category: "organization" },
   { name: "Meal Plan Structure", href: "/admin/meal-plan-structure", icon: FileText, category: "organization" },
   { name: "Vendors Management", href: "/admin/vendors", icon: FileText, category: "vendors" },
+  { name: "Access Management", href: "/admin/access-management", icon: Settings, category: "system-admin" },
+  { name: "Roles", href: "/admin/roles", icon: Users, category: "system-admin" },
+  { name: "Permissions", href: "/admin/permissions", icon: Settings, category: "system-admin" },
+  { name: "Users", href: "/admin/users", icon: Users, category: "system-admin" },
 ]
 
 const categories = [
@@ -76,6 +82,7 @@ const categories = [
   { key: "organization", label: "Organization", icon: Building2 },
   { key: "menu-management", label: "Menu Management", icon: Building2 },
   { key: "vendors", label: "Vendors Management", icon: Building2 },
+  { key: "system-admin", label: "System Administration", icon: Settings },
 ]
 
 export function AdminLayout({ children }: AdminLayoutProps) {
@@ -83,15 +90,30 @@ export function AdminLayout({ children }: AdminLayoutProps) {
   const [searchQuery, setSearchQuery] = useState("")
   const [showSearchResults, setShowSearchResults] = useState(false)
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({})
+  const [isIframe, setIsIframe] = useState(false)
   const sidebarScrollRef = useRef<HTMLElement>(null)
   const sidebarScrollPositionRef = useRef(0)
-  const { signOut } = useAuth()
+  const { signOut, hasRouteAccess, isSuperAdmin } = useAuth()
   const pathname = usePathname()
 
+  useEffect(() => {
+    setIsIframe(window.self !== window.top)
+  }, [])
+
+  // Filter navigation based on user's allowed routes
+  const accessFilteredNavigation = useMemo(() => {
+    if (isSuperAdmin) return navigation
+    return navigation.filter((item) => {
+      // Dashboard is always visible
+      if (item.href === "/admin") return true
+      return hasRouteAccess(item.href)
+    })
+  }, [isSuperAdmin, hasRouteAccess])
+
   const filteredNavigation = useMemo(() => {
-    if (!searchQuery.trim()) return navigation
-    return navigation.filter((item) => item.name.toLowerCase().includes(searchQuery.toLowerCase()))
-  }, [searchQuery])
+    if (!searchQuery.trim()) return accessFilteredNavigation
+    return accessFilteredNavigation.filter((item) => item.name.toLowerCase().includes(searchQuery.toLowerCase()))
+  }, [searchQuery, accessFilteredNavigation])
 
   const handleSignOut = async () => {
     await signOut()
@@ -135,7 +157,8 @@ export function AdminLayout({ children }: AdminLayoutProps) {
   const NavigationContent = ({ isMobile = false, navRef, onScroll }: { isMobile?: boolean; navRef?: React.Ref<HTMLElement>; onScroll?: () => void }) => (
     <nav ref={navRef} onScroll={onScroll} className="flex-1 overflow-y-auto px-2 py-4 space-y-1">
       {categories.map((category) => {
-        const categoryItems = navigation.filter((item) => item.category === category.key)
+        const categoryItems = accessFilteredNavigation.filter((item) => item.category === category.key)
+        if (categoryItems.length === 0) return null // Hide empty categories
         const isCollapsed = collapsedSections[category.key]
         const CategoryIcon = category.icon
 
@@ -181,9 +204,29 @@ export function AdminLayout({ children }: AdminLayoutProps) {
     </nav>
   )
 
+  if (isIframe) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <NextTopLoader
+          color="#000000"
+          initialPosition={0.08}
+          crawlSpeed={200}
+          height={3}
+          crawl={true}
+          showSpinner={false}
+          easing="ease"
+          speed={200}
+          shadow="0 0 10px #000000,0 0 5px #000000"
+        />
+        <main className="h-screen w-full overflow-y-auto">
+          {children}
+        </main>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* 2. Add the component here at the top of the return */}
       <NextTopLoader
         color="#000000"
         initialPosition={0.08}
@@ -218,7 +261,6 @@ export function AdminLayout({ children }: AdminLayoutProps) {
           </div>
         </div>
       )}
-      
 
       <div className="hidden lg:fixed lg:top-16 lg:bottom-0 lg:left-0 lg:flex lg:w-64 lg:flex-col lg:z-40">
         <div className="flex flex-col flex-grow bg-white border-r border-gray-200 overflow-hidden">

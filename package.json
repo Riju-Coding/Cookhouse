@@ -9,6 +9,9 @@
     "start": "next start"
   },
   "dependencies": {
+    "@ffmpeg/core": "^0.12.10",
+    "@ffmpeg/ffmpeg": "^0.12.10",
+    "@ffmpeg/util": "^0.12.1",
     "@hookform/resolvers": "^3.10.0",
     "@radix-ui/react-accordion": "latest",
     "@radix-ui/react-alert-dialog": "latest",
@@ -49,7 +52,9 @@
     "firebase": "latest",
     "firebase-admin": "^13.6.0",
     "geist": "latest",
+    "html2canvas": "^1.4.1",
     "input-otp": "latest",
+    "jspdf": "^2.5.1",
     "lucide-react": "^0.454.0",
     "motion": "^12.38.0",
     "next": "14.2.16",
