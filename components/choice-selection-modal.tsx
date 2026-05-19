@@ -693,7 +693,7 @@ export function BuildingMenuGrid({
     if (!choice) return
 
     if (isUniversal && universalAssociations) {
-      const associatedBuildings = universalAssociations.get(choiceId) || [];
+      const associatedBuildings = typeof universalAssociations.get === 'function' ? universalAssociations.get(choiceId) || [] : [];
       if (associatedBuildings.length === 0) return;
 
       setSelections((prev: any) => {
@@ -706,7 +706,7 @@ export function BuildingMenuGrid({
         const currentFirst = prev[firstKey] || [];
         
         const existingIdx = currentFirst.findIndex(
-          (s: any) => s.subMealPlanId === row.subMealPlanId && s.selectedItemId === item.id
+          (s: any) => s.selectedItemId === item.id
         );
         const isTogglingOff = existingIdx >= 0;
 
@@ -716,7 +716,7 @@ export function BuildingMenuGrid({
           const current = nextState[bKey] || [];
 
           if (isTogglingOff) {
-             const bExistingIdx = current.findIndex((s: any) => s.subMealPlanId === row.subMealPlanId && s.selectedItemId === item.id);
+             const bExistingIdx = current.findIndex((s: any) => s.selectedItemId === item.id);
              if (bExistingIdx >= 0) {
                  const next = [...current];
                  next.splice(bExistingIdx, 1);
@@ -738,6 +738,18 @@ export function BuildingMenuGrid({
                    }
                  ]
                }
+             } else if (choice.quantity === 1) {
+               // Auto-replace for single choice limits
+               nextState[bKey] = [
+                 {
+                   mealPlanId: row.mealPlanId,
+                   mealPlanName: row.mealPlanName,
+                   subMealPlanId: row.subMealPlanId,
+                   subMealPlanName: row.subMealPlanName,
+                   selectedItemId: item.id,
+                   selectedItemName: item.name,
+                 }
+               ]
              }
           }
         });
@@ -753,7 +765,7 @@ export function BuildingMenuGrid({
       
       // Check if this item is already selected in THIS cell
       const existingIdx = current.findIndex(
-        (s: any) => s.subMealPlanId === row.subMealPlanId && s.selectedItemId === item.id
+        (s: any) => s.selectedItemId === item.id
       )
       
       if (existingIdx >= 0) {
@@ -765,6 +777,22 @@ export function BuildingMenuGrid({
         // Add it (toggle on)
         // Check if we reached the choice limit
         if (current.length >= choice.quantity) {
+          if (choice.quantity === 1) {
+            // Auto replace for single choice limit
+            return {
+              ...prev,
+              [key]: [
+                {
+                  mealPlanId: row.mealPlanId,
+                  mealPlanName: row.mealPlanName,
+                  subMealPlanId: row.subMealPlanId,
+                  subMealPlanName: row.subMealPlanName,
+                  selectedItemId: item.id,
+                  selectedItemName: item.name,
+                }
+              ]
+            }
+          }
           console.warn(`[v0] Choice limit reached`)
           return prev
         }

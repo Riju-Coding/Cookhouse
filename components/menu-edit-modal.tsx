@@ -1911,22 +1911,31 @@ const MenuGridCell = memo(function MenuGridCell({
 
 
 
+  const isUnassigned = assignedCompanies.length === 0;
+
   return (
     <td
       ref={cellRef}
-      onClick={() => onActivate()}
+      onClick={() => {
+        if (!isUnassigned) onActivate();
+      }}
       onMouseEnter={() => {
         onCellMouseEnter?.()
-        if (onHoverDrag) onHoverDrag(date)
+        if (onHoverDrag && !isUnassigned) onHoverDrag(date)
       }}
       className={`border border-gray-300 p-2 align-top min-w-[200px] transition-all duration-150 relative 
-            ${isActive ? "ring-2 ring-blue-500 bg-white z-[60]" : "bg-white hover:bg-gray-50"} 
+            ${isUnassigned ? "bg-gray-200/80 cursor-not-allowed" : isActive ? "ring-2 ring-blue-500 bg-white z-[60]" : "bg-white hover:bg-gray-50"} 
             ${activeEditorNames.length > 0 ? "ring-2 ring-amber-500 ring-inset relative !z-[55]" : ""}
-            ${isDragHover ? "ring-2 ring-blue-300 bg-blue-50" : ""}
+            ${isDragHover && !isUnassigned ? "ring-2 ring-blue-300 bg-blue-50" : ""}
             ${cellLogs.length > 0 && !isActive ? "bg-red-50" : ""} 
             ${isRedState ? "bg-red-50 !border-red-300 shadow-inner" : ""}
           `}
     >
+      {isUnassigned && (
+        <div className="absolute inset-0 z-10 bg-gray-200/50 backdrop-blur-[1px] pointer-events-none flex items-center justify-center">
+          <span className="text-gray-400 font-medium text-[10px] uppercase tracking-wider bg-white/80 px-2 py-0.5 rounded shadow-sm border border-gray-200">No Assignments</span>
+        </div>
+      )}
       {activeEditorNames.length > 0 && (
         <div className="absolute -top-3 right-2 bg-amber-500 text-white text-[10px] px-1.5 py-0.5 rounded shadow-sm z-50 animate-pulse whitespace-nowrap">
           {activeEditorNames.join(", ")} editing...
