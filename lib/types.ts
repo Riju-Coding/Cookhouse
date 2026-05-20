@@ -73,3 +73,13 @@ export interface MenuUpdation {
   createdBy?: string
   notes?: string
 }
+
+// ═══════════════════════════════════════════════════════════════
+// ✦ COMPLIANCE SYSTEM v2 TYPES
+// ═══════════════════════════════════════════════════════════════
+
+// Re-export compliance types from their service files for convenience
+export type { ComplianceTemplate, ComplianceTemplateType, ComplianceFrequency, VehicleCheckField } from "@/lib/firestore/complianceTemplatesService"
+export type { ComplianceTemplateField, TemplateFieldType, MeasurementUnit } from "@/lib/firestore/complianceTemplateFieldsService"
+export type { Vehicle, VehicleType, VehicleStatus } from "@/lib/firestore/vehiclesService"
+export type { ComplianceRecord, ComplianceRecordItem, ComplianceRecordStatus, VehicleConditionSnapshot, ComplianceAnswer } from "@/lib/firestore/complianceRecordsService"

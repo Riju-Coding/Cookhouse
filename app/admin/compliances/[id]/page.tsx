@@ -1,875 +1,561 @@
 "use client"
 
-import React, { useState, useEffect, useMemo } from "react" //some details 
-import { useParams, useRouter } from "next/navigation"
+import React, { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import { db } from "@/lib/firebase"
 import { collection, getDocs } from "firebase/firestore"
-import { complianceFormsService, type ComplianceForm } from "@/lib/firestore/complianceFormsService"
-import { complianceSubFormsService, type ComplianceSubForm, type QuestionType } from "@/lib/firestore/complianceSubFormsService"
-import { cafeteriasService } from "@/lib/firestore/cafeteriasService"
-import { areasService } from "@/lib/firestore/areasService"
+import { complianceTemplatesService, type ComplianceTemplate, type ComplianceTemplateType, type ComplianceFrequency, type VehicleCheckField } from "@/lib/firestore/complianceTemplatesService"
+import { complianceTemplateFieldsService, type ComplianceTemplateField, type TemplateFieldType } from "@/lib/firestore/complianceTemplateFieldsService"
 import { toast } from "@/hooks/use-toast"
 
-// Icons - ADDED missing icons for save animation and question types
-import { Plus, Trash2, Save, X, RotateCcw, ClipboardCheck, LayoutList, Check, Type, Camera, Info, Copy, Search, CheckCircle2, Badge } from "lucide-react"
+import { 
+  ArrowLeft, ArrowRight, Save, Trash2, Plus, 
+  Thermometer, Truck, UtensilsCrossed, FileCheck, 
+  Settings2, Building2, MapPin, CheckSquare, List
+} from "lucide-react"
 
-// UI Components
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
-import { Switch } from "@/components/ui/switch"
-import { Checkbox } from "@/components/ui/checkbox"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Separator } from "@/components/ui/separator"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog"
-import { ScrollArea } from "@/components/ui/scroll-area"
+import { Card, CardContent } from "@/components/ui/card"
+import { Checkbox } from "@/components/ui/checkbox"
+import { Switch } from "@/components/ui/switch"
 
-const initialFormState: Omit<ComplianceForm, "id" | "createdAt" | "updatedAt"> = {
-  name: "",
-  vendorId: "",
-  companyId: "",
-  buildingId: "",
-  cafetariaId: "",
-  areaId: "",
-  frequency: 'daily',
-  assignedRole: "",
-  status: 'active',
-}
+const TEMPLATE_TYPES: { type: ComplianceTemplateType; label: string; icon: any; desc: string }[] = [
+  { type: 'kitchen_readiness', label: 'Kitchen Readiness', icon: Thermometer, desc: 'Batch-wise temperature tracking at the kitchen.' },
+  { type: 'dispatch', label: 'Dispatch Checklist', icon: Truck, desc: 'Vehicle condition, dispatch qty & temperature.' },
+  { type: 'service_point', label: 'Service Point', icon: UtensilsCrossed, desc: 'Temperature & qty recording at food service.' },
+  { type: 'general_checklist', label: 'General Form', icon: FileCheck, desc: 'Standard custom questionnaire.' }
+]
 
-const initialQuestionState: Omit<ComplianceSubForm, "id" | "formId" | "createdAt"> = {
-  question: "",
-  type: 'yes_no',
-  isRequired: true,
-  isPhotoRequired: false,
-  order: 0, // Will be set dynamically
-}
+const FREQUENCIES: { value: ComplianceFrequency; label: string }[] = [
+  { value: 'per_batch', label: 'Per Batch' },
+  { value: 'per_dispatch', label: 'Per Dispatch' },
+  { value: 'per_service', label: 'Per Service' },
+  { value: 'daily', label: 'Daily' },
+  { value: 'weekly', label: 'Weekly' },
+  { value: 'monthly', label: 'Monthly' },
+]
 
-const QUESTION_TYPES: { value: QuestionType; label: string; icon: React.ElementType }[] = [
-  { value: 'yes_no', label: 'Yes/No', icon: Check },
-  { value: 'text', label: 'Text Input', icon: Type },
-  { value: 'number', label: 'Number Input', icon: Info },
-  { value: 'photo', label: 'Photo Upload', icon: Camera },
-];
-
-export default function CreateEditCompliancePage() {
+export default function TemplateBuilderPage({ params }: { params: { id: string } }) {
   const router = useRouter()
-  const params = useParams<{ id: string }>()
-  const formId = params.id === 'new' ? null : params.id
+  const isNew = params.id === "new"
 
-  const [mainFormData, setMainFormData] = useState<Omit<ComplianceForm, "id" | "createdAt" | "updatedAt">>(initialFormState)
-  const [questions, setQuestions] = useState<ComplianceSubForm[]>([])
-  const [loading, setLoading] = useState(true)
-  const [isSaving, setIsSaving] = useState(false)
-  const [formExists, setFormExists] = useState(false)
-  const [activeFormId, setActiveFormId] = useState<string | null>(formId)
+  const [step, setStep] = useState(1)
+  const [loading, setLoading] = useState(!isNew)
+  const [saving, setSaving] = useState(false)
 
-  // Import Questions State
-  const [allForms, setAllForms] = useState<ComplianceForm[]>([])
-  const [isImportModalOpen, setIsImportModalOpen] = useState(false)
-  const [sourceFormId, setSourceFormId] = useState<string>("")
-  const [sourceQuestions, setSourceQuestions] = useState<ComplianceSubForm[]>([])
-  const [selectedImportIds, setSelectedImportIds] = useState<Set<string>>(new Set())
-  const [searchTerm, setSearchTerm] = useState("")
-  const [isFetchingQuestions, setIsFetchingQuestions] = useState(false)
+  // ── Form State ──────────────────────────────────────────────────
+  const [templateType, setTemplateType] = useState<ComplianceTemplateType>('kitchen_readiness')
+  const [name, setName] = useState("")
+  const [vendorId, setVendorId] = useState("")
+  const [frequency, setFrequency] = useState<ComplianceFrequency>('daily')
+  const [assignedRole, setAssignedRole] = useState("")
+  
+  // Locations
+  const [companyId, setCompanyId] = useState("")
+  const [buildingId, setBuildingId] = useState("")
+  const [cafetariaId, setCafetariaId] = useState("")
+  const [areaId, setAreaId] = useState("")
 
-  // Quick Add State
-  const [isAddCafeteriaModalOpen, setIsAddCafeteriaModalOpen] = useState(false)
-  const [isAddAreaModalOpen, setIsAddAreaModalOpen] = useState(false)
-  const [newCafeteriaName, setNewCafeteriaName] = useState("")
-  const [newAreaName, setNewAreaName] = useState("")
-  const [isQuickAdding, setIsQuickAdding] = useState(false)
+  // Menu Settings (for food templates)
+  const [menuSource, setMenuSource] = useState<'combined' | 'company'>('company')
+  const [serviceId, setServiceId] = useState("")
+  const [subServiceId, setSubServiceId] = useState("")
 
-  // Relational data
+  // Dynamic Fields
+  const [vehicleChecks, setVehicleChecks] = useState<VehicleCheckField[]>([
+    { id: 'hygiene', label: 'Vehicle Hygiene', type: 'yes_no', isRequired: true },
+    { id: 'fuel', label: 'Sufficient Fuel', type: 'yes_no', isRequired: true },
+  ])
+  const [customFields, setCustomFields] = useState<Omit<ComplianceTemplateField, 'id'|'templateId'|'createdAt'>[]>([])
+
+  // Lookups
   const [vendors, setVendors] = useState<any[]>([])
   const [companies, setCompanies] = useState<any[]>([])
   const [buildings, setBuildings] = useState<any[]>([])
   const [cafeterias, setCafeterias] = useState<any[]>([])
   const [areas, setAreas] = useState<any[]>([])
   const [roles, setRoles] = useState<any[]>([])
+  const [services, setServices] = useState<any[]>([])
+  const [subServices, setSubServices] = useState<any[]>([])
 
   useEffect(() => {
-    fetchRelatedData()
-    if (formId) {
-      fetchFormData(formId)
-    } else {
-      setLoading(false)
-      setFormExists(false)
-    }
-  }, [formId])
+    fetchLookups()
+    if (!isNew) fetchExistingTemplate()
+  }, [])
 
-  const fetchRelatedData = async () => {
+  const fetchLookups = async () => {
     try {
-      const [vSnap, cSnap, bSnap, cafSnap, areaSnap, rSnap, formsRes] = await Promise.all([
+      const [v, c, b, caf, a, r, s, ss] = await Promise.all([
         getDocs(collection(db, 'vendors')),
         getDocs(collection(db, 'companies')),
         getDocs(collection(db, 'buildings')),
-        getDocs(collection(db, 'cafetarias')),
+        getDocs(collection(db, 'cafeterias')),
         getDocs(collection(db, 'areas')),
         getDocs(collection(db, 'roles')),
-        complianceFormsService.getAll()
+        getDocs(collection(db, 'services')),
+        getDocs(collection(db, 'subServices'))
       ])
-      setVendors(vSnap.docs.map(d => ({ id: d.id, ...d.data() })))
-      setCompanies(cSnap.docs.map(d => ({ id: d.id, ...d.data() })))
-      setBuildings(bSnap.docs.map(d => ({ id: d.id, ...d.data() })))
-      setCafeterias(cafSnap.docs.map(d => ({ id: d.id, ...d.data() })))
-      setAreas(areaSnap.docs.map(d => ({ id: d.id, ...d.data() })))
-      setRoles(rSnap.docs.map(d => ({ id: d.id, ...d.data() })))
-      setAllForms(formsRes)
-    } catch (error) {
-      console.error("Error fetching related data:", error)
-      toast({ title: "Error", description: "Failed to load lookup data.", variant: "destructive" })
+      setVendors(v.docs.map(d => ({ id: d.id, ...d.data() })))
+      setCompanies(c.docs.map(d => ({ id: d.id, ...d.data() })))
+      setBuildings(b.docs.map(d => ({ id: d.id, ...d.data() })))
+      setCafeterias(caf.docs.map(d => ({ id: d.id, ...d.data() })))
+      setAreas(a.docs.map(d => ({ id: d.id, ...d.data() })))
+      setRoles(r.docs.map(d => ({ id: d.id, ...d.data() })))
+      setServices(s.docs.map(d => ({ id: d.id, ...d.data() })))
+      setSubServices(ss.docs.map(d => ({ id: d.id, ...d.data() })))
+    } catch (e) {
+      console.error(e)
     }
   }
 
-  const fetchFormData = async (id: string) => {
+  const fetchExistingTemplate = async () => {
     try {
-      setLoading(true)
-      const form = await complianceFormsService.getById(id)
-      if (form) {
-        setMainFormData(form)
-        const subforms = await complianceSubFormsService.getByFormId(id)
-        setQuestions(subforms)
-        setFormExists(true)
-        setActiveFormId(id)
-      } else {
-        toast({ title: "Not Found", description: "Compliance form not found.", variant: "destructive" })
-        router.push('/admin/compliances')
+      const t = await complianceTemplatesService.getById(params.id)
+      if (t) {
+        setTemplateType(t.type)
+        setName(t.name)
+        setVendorId(t.vendorId)
+        setFrequency(t.frequency)
+        setAssignedRole(t.assignedRole)
+        setCompanyId(t.companyId || "")
+        setBuildingId(t.buildingId || "")
+        setCafetariaId(t.cafetariaId || "")
+        setAreaId(t.areaId || "")
+        setMenuSource(t.menuSourceType || 'company')
+        setServiceId(t.serviceId || "")
+        setSubServiceId(t.subServiceId || "")
+        if (t.vehicleCheckFields) setVehicleChecks(t.vehicleCheckFields)
+
+        const fields = await complianceTemplateFieldsService.getByTemplateId(t.id)
+        setCustomFields(fields)
       }
-    } catch (error) {
-      console.error("Error fetching form data:", error)
-      toast({ title: "Error", description: "Failed to load form details.", variant: "destructive" })
+    } catch (e) {
+      console.error(e)
+      toast({ title: "Error", description: "Failed to load template", variant: "destructive" })
     } finally {
       setLoading(false)
     }
   }
 
-  // --- DYNAMIC FORM SWITCHING LOGIC ---
-  useEffect(() => {
-    // Only auto-switch if we have the minimum required fields selected
-    if (!mainFormData.companyId || !mainFormData.buildingId || !mainFormData.cafetariaId || !mainFormData.vendorId) {
-      return;
-    }
-
-    const findMatchingForm = () => {
-      return allForms.find(f => 
-        f.companyId === mainFormData.companyId &&
-        f.buildingId === mainFormData.buildingId &&
-        f.cafetariaId === mainFormData.cafetariaId &&
-        f.vendorId === mainFormData.vendorId &&
-        (f.areaId || "") === (mainFormData.areaId || "")
-      );
-    };
-
-    const matchedForm = findMatchingForm();
-
-    if (matchedForm) {
-      // If found an existing form and it's not the one we are currently showing
-      if (matchedForm.id !== activeFormId) {
-        toast({ title: "Existing Form Found", description: `Loading existing form: ${matchedForm.name}` });
-        fetchFormData(matchedForm.id);
-      }
-    } else {
-      // If no form exists for this combination and we were showing an existing form
-      if (activeFormId !== null) {
-        toast({ title: "New Location", description: "No form found for this selection. Starting a new form." });
-        setActiveFormId(null);
-        setFormExists(false);
-        setQuestions([]);
-        // Keep location data but reset form name and other metadata?
-        // Let's just reset questions for now as per "new form to set should come"
-        setMainFormData(prev => ({ 
-          ...prev, 
-          name: `${getName(companies, prev.companyId)} - ${getName(cafeterias, prev.cafetariaId)} Compliance`,
-          status: 'active' 
-        }));
-      }
-    }
-  }, [mainFormData.companyId, mainFormData.buildingId, mainFormData.cafetariaId, mainFormData.areaId, mainFormData.vendorId, allForms, activeFormId]);
-
-  // --- LOCATION FILTERING LOGIC ---
-  const filteredCompanies = useMemo(() => {
-    return companies;
-  }, [companies]);
-
-  const filteredBuildings = useMemo(() => {
-    if (!mainFormData.companyId) return [];
-    return buildings.filter(b => b.companyId === mainFormData.companyId);
-  }, [buildings, mainFormData.companyId]);
-
-  const filteredCafeterias = useMemo(() => {
-    if (!mainFormData.buildingId || !mainFormData.vendorId) return [];
-    return cafeterias.filter(c => c.buildingId === mainFormData.buildingId && c.vendorId === mainFormData.vendorId);
-  }, [cafeterias, mainFormData.buildingId, mainFormData.vendorId]);
-
-  const filteredAreas = useMemo(() => {
-    if (!mainFormData.cafetariaId) return [];
-    return areas.filter(a => a.cafeteriaId === mainFormData.cafetariaId);
-  }, [areas, mainFormData.cafetariaId]);
-
-  // --- CASCADING RESET HANDLERS FOR MAIN FORM ---
-  const handleVendorChange = (vendorId: string) => {
-    setMainFormData(prev => ({
-      ...prev,
-      vendorId,
-      cafetariaId: ""
-    }));
-  };
-
-  const handleCompanyChange = (companyId: string) => {
-    setMainFormData(prev => ({
-      ...prev,
-      companyId,
-      buildingId: "",
-      cafetariaId: "",
-    }));
-  };
-
-  const handleBuildingChange = (buildingId: string) => {
-    setMainFormData(prev => ({
-      ...prev,
-      buildingId,
-      cafetariaId: "",
-      areaId: "",
-    }));
-  };
-
-  const handleCafeteriaChange = (cafetariaId: string) => {
-    setMainFormData(prev => ({
-      ...prev,
-      cafetariaId,
-      areaId: "",
-    }));
-  };
-
-  // --- QUESTION MANAGEMENT LOGIC ---
-  const addQuestion = () => {
-    setQuestions(prev => [
-      ...prev,
-      { 
-        ...initialQuestionState, 
-        id: `temp-${Date.now()}-${prev.length}`,
-        formId: activeFormId || "",
-        order: prev.length + 1 
-      } as ComplianceSubForm
-    ]);
-  };
-
-  const updateQuestion = (index: number, field: keyof ComplianceSubForm, value: any) => {
-    setQuestions(prev => prev.map((q, i) => (i === index ? { ...q, [field]: value } : q)));
-  };
-
-  const removeQuestion = (index: number) => {
-    setQuestions(prev => prev.filter((_, i) => i !== index).map((q, i) => ({ ...q, order: i + 1 })));
-  };
-
-  // --- IMPORT LOGIC ---
-  const handleSourceFormChange = async (val: string) => {
-    setSourceFormId(val);
-    if (!val) {
-      setSourceQuestions([]);
-      setSelectedImportIds(new Set());
-      return;
-    }
-
-    try {
-      setIsFetchingQuestions(true);
-      const subforms = await complianceSubFormsService.getByFormId(val);
-      setSourceQuestions(subforms);
-      // Select all by default when picking a new form
-      setSelectedImportIds(new Set(subforms.map(q => q.id)));
-    } catch (error) {
-      console.error("Error fetching source questions:", error);
-      toast({ title: "Error", description: "Failed to load questions from source form.", variant: "destructive" });
-    } finally {
-      setIsFetchingQuestions(false);
-    }
-  };
-
-  const toggleImportSelection = (id: string) => {
-    setSelectedImportIds(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
-  const handleSelectAllImport = (checked: boolean) => {
-    if (checked) {
-      setSelectedImportIds(new Set(sourceQuestions.map(q => q.id)));
-    } else {
-      setSelectedImportIds(new Set());
-    }
-  };
-
-  const executeImport = () => {
-    const questionsToImport = sourceQuestions.filter(q => selectedImportIds.has(q.id));
-    if (questionsToImport.length === 0) {
-      toast({ title: "No Selection", description: "Please select at least one question to import." });
-      return;
-    }
-
-    const newQuestions = questionsToImport.map((q, index) => ({
-      ...q,
-      id: `temp-import-${Date.now()}-${index}`,
-      formId: activeFormId || "",
-      order: questions.length + index + 1
-    }));
-
-    setQuestions(prev => [...prev, ...newQuestions]);
-    setIsImportModalOpen(false);
-    setSourceFormId("");
-    setSourceQuestions([]);
-    setSelectedImportIds(new Set());
-    toast({ title: "Import Successful", description: `Added ${questionsToImport.length} questions.` });
-  };
-
-  const filteredSourceForms = useMemo(() => {
-    if (!searchTerm) return allForms.filter(f => f.id !== formId);
-    const lower = searchTerm.toLowerCase();
-    return allForms.filter(f => 
-      f.id !== formId && 
-      (f.name.toLowerCase().includes(lower) || 
-       getName(companies, f.companyId).toString().toLowerCase().includes(lower))
-    );
-  }, [allForms, searchTerm, formId, companies]);
-
-  // Helper function for display (since it's defined later in the original component, I'll use it or redefine it)
-  const getName = (arr: any[], id: string) => arr.find(item => item.id === id)?.name || "—";
-
-  // --- QUICK ADD LOGIC ---
-  const handleQuickAddCafeteria = async () => {
-    if (!newCafeteriaName.trim()) return;
-    try {
-      setIsQuickAdding(true);
-      const res = await cafeteriasService.add({
-        name: newCafeteriaName.trim(),
-        companyId: mainFormData.companyId,
-        buildingId: mainFormData.buildingId,
-        vendorId: mainFormData.vendorId,
-        status: 'active'
-      });
-      const newCaf = { 
-        id: res.id, 
-        name: newCafeteriaName.trim(), 
-        companyId: mainFormData.companyId, 
-        buildingId: mainFormData.buildingId, 
-        vendorId: mainFormData.vendorId, 
-        status: 'active' 
-      };
-      setCafeterias(prev => [...prev, newCaf]);
-      setMainFormData(prev => ({ ...prev, cafetariaId: res.id }));
-      setNewCafeteriaName("");
-      setIsAddCafeteriaModalOpen(false);
-      toast({ title: "Success", description: "Cafeteria added successfully." });
-    } catch (error) {
-      console.error("Error adding cafeteria:", error);
-      toast({ title: "Error", description: "Failed to add cafeteria.", variant: "destructive" });
-    } finally {
-      setIsQuickAdding(false);
-    }
-  };
-
-  const handleQuickAddArea = async () => {
-    if (!newAreaName.trim()) return;
-    try {
-      setIsQuickAdding(true);
-      const res = await areasService.add({
-        name: newAreaName.trim(),
-        cafeteriaId: mainFormData.cafetariaId,
-        companyId: mainFormData.companyId,
-        buildingId: mainFormData.buildingId,
-        type: 'cafeteria',
-        status: 'active'
-      });
-      const newArea = { 
-        id: res.id, 
-        name: newAreaName.trim(), 
-        cafeteriaId: mainFormData.cafetariaId, 
-        companyId: mainFormData.companyId, 
-        buildingId: mainFormData.buildingId, 
-        type: 'cafeteria', 
-        status: 'active' 
-      };
-      setAreas(prev => [...prev, newArea]);
-      setMainFormData(prev => ({ ...prev, areaId: res.id }));
-      setNewAreaName("");
-      setIsAddAreaModalOpen(false);
-      toast({ title: "Success", description: "Area added successfully." });
-    } catch (error) {
-      console.error("Error adding area:", error);
-      toast({ title: "Error", description: "Failed to add area.", variant: "destructive" });
-    } finally {
-      setIsQuickAdding(false);
-    }
-  };
-
-  // --- SAVE FORM AND QUESTIONS ---
   const handleSave = async () => {
-    if (!mainFormData.name || !mainFormData.vendorId || !mainFormData.companyId || !mainFormData.buildingId || !mainFormData.cafetariaId || !mainFormData.assignedRole) {
-      toast({ title: "Validation Error", description: "All main form fields are required.", variant: "destructive" });
-      return;
-    }
-    if (questions.some(q => !q.question.trim())) {
-      toast({ title: "Validation Error", description: "All questions must have text.", variant: "destructive" });
-      return;
+    if (!name || !vendorId || !assignedRole) {
+      toast({ title: "Missing Fields", description: "Name, Vendor, and Assigned Role are required.", variant: "destructive" })
+      return
     }
 
+    setSaving(true)
     try {
-      setIsSaving(true);
-      let savedFormId = activeFormId;
+      const payload: any = {
+        name,
+        type: templateType,
+        vendorId,
+        frequency,
+        assignedRole,
+        status: 'active',
+      }
 
-      if (activeFormId) {
-        await complianceFormsService.update(activeFormId, mainFormData);
-        toast({ title: "Success", description: "Compliance form updated." });
+      if (companyId && companyId !== 'none') payload.companyId = companyId
+      if (buildingId && buildingId !== 'none') payload.buildingId = buildingId
+      if (cafetariaId && cafetariaId !== 'none') payload.cafetariaId = cafetariaId
+      if (areaId && areaId !== 'none') payload.areaId = areaId
+      
+      if (['kitchen_readiness', 'dispatch', 'service_point'].includes(templateType)) {
+        payload.menuSourceType = menuSource
+        if (serviceId && serviceId !== 'none') payload.serviceId = serviceId
+        if (subServiceId && subServiceId !== 'none') payload.subServiceId = subServiceId
+      }
+
+      if (templateType === 'dispatch') {
+        payload.vehicleCheckFields = vehicleChecks
+      }
+
+      let templateId = params.id
+      if (isNew) {
+        const docRef = await complianceTemplatesService.add(payload)
+        templateId = docRef.id
       } else {
-        const docRef = await complianceFormsService.add(mainFormData);
-        savedFormId = docRef.id;
-        toast({ title: "Success", description: "Compliance form created." });
+        await complianceTemplatesService.update(templateId, payload)
+        // Clear existing fields
+        await complianceTemplateFieldsService.deleteByTemplateId(templateId)
       }
 
-      const existingQuestionIds = activeFormId ? (await complianceSubFormsService.getByFormId(activeFormId)).map(q => q.id) : [];
-      const newQuestionIds: string[] = [];
-
-      for (let i = 0; i < questions.length; i++) {
-        const question = { ...questions[i], formId: savedFormId!, order: i + 1 };
-        // SAFER CHECK: Only update if ID is not a temporary one AND it exists in the current form's questions
-        if (question.id && !question.id.toString().startsWith('temp') && existingQuestionIds.includes(question.id)) {
-          await complianceSubFormsService.update(question.id, question);
-          newQuestionIds.push(question.id);
-        } else {
-          // It's a new question (either added manually or imported)
-          const { id, ...questionData } = question; // Remove the temp ID before adding
-          const qRef = await complianceSubFormsService.add(questionData as any);
-          newQuestionIds.push(qRef.id);
-        }
+      // Add custom fields if applicable
+      if (templateType === 'general_checklist' && customFields.length > 0) {
+        await Promise.all(customFields.map((f, i) => 
+          complianceTemplateFieldsService.add({
+            templateId,
+            question: f.question,
+            type: f.type,
+            isRequired: f.isRequired,
+            isPhotoRequired: f.isPhotoRequired,
+            order: i,
+            options: f.options,
+          })
+        ))
       }
 
-      const questionsToDelete = existingQuestionIds.filter(id => !newQuestionIds.includes(id));
-      await Promise.all(questionsToDelete.map(id => complianceSubFormsService.delete(id)));
-
-      toast({ title: "Success", description: "Questions synced." });
-      router.push('/admin/compliances');
+      toast({ title: "Success", description: "Template saved successfully." })
+      router.push("/admin/compliances")
     } catch (error) {
-      console.error("Save error:", error);
-      toast({ title: "Error", description: "Failed to save compliance form and questions.", variant: "destructive" });
+      console.error(error)
+      toast({ title: "Error", description: "Failed to save template.", variant: "destructive" })
     } finally {
-      setIsSaving(false);
+      setSaving(false)
     }
-  };
+  }
 
-  if (loading) return <div className="p-8 text-center">Loading form...</div>;
+  const filteredBuildings = buildings.filter(b => b.companyId === companyId)
+  const filteredCafeterias = cafeterias.filter(c => c.buildingId === buildingId)
+  const filteredAreas = areas.filter(a => a.cafeteriaId === cafetariaId)
+  const filteredSubServices = subServices.filter(s => s.serviceId === serviceId)
+
+  if (loading) return <div className="p-12 text-center text-gray-500">Loading template...</div>
 
   return (
-    <div className="space-y-6 p-2">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-          <LayoutList className="h-6 w-6 text-blue-600" /> {activeFormId ? "Edit Compliance Form" : "Create Compliance Form"}
-        </h1>
-        <Button variant="outline" onClick={() => router.push('/admin/compliances')} disabled={isSaving}>
-          <X className="mr-2 h-4 w-4" /> Cancel
+    <div className="max-w-4xl mx-auto space-y-6 p-4">
+      {/* Header */}
+      <div className="flex items-center gap-3 pb-4 border-b">
+        <Button variant="ghost" size="icon" onClick={() => router.back()}>
+          <ArrowLeft className="h-5 w-5" />
         </Button>
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">{isNew ? 'Create Template' : 'Edit Template'}</h1>
+          <p className="text-gray-500 text-sm">Configure data tracking requirements for compliance apps.</p>
+        </div>
       </div>
 
-      <Card className="shadow-lg">
-        <CardHeader>
-          <CardTitle>Main Form Details</CardTitle>
-          <CardDescription>Define the basic information for this compliance form.</CardDescription>
-        </CardHeader>
-        <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="space-y-2">
-            <Label htmlFor="form-name">Form Name *</Label>
-            <Input id="form-name" value={mainFormData.name} onChange={e => setMainFormData({...mainFormData, name: e.target.value})} />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="vendor">Vendor *</Label>
-            <Select value={mainFormData.vendorId} onValueChange={handleVendorChange}>
-              <SelectTrigger><SelectValue placeholder="Select Vendor" /></SelectTrigger>
-              <SelectContent>
-                {vendors.map(v => <SelectItem key={v.id} value={v.id}>{v.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="company">Company *</Label>
-            <Select value={mainFormData.companyId} onValueChange={handleCompanyChange}>
-              <SelectTrigger><SelectValue placeholder="Select Company" /></SelectTrigger>
-              <SelectContent>
-                {filteredCompanies.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="building">Building *</Label>
-            <Select value={mainFormData.buildingId} onValueChange={handleBuildingChange} disabled={!mainFormData.companyId}>
-              <SelectTrigger><SelectValue placeholder="Select Building" /></SelectTrigger>
-              <SelectContent>
-                {filteredBuildings.length === 0 ? <SelectItem value="none" disabled>No buildings for this company</SelectItem> :
-                  filteredBuildings.map(b => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="cafeteria">Cafeteria *</Label>
-            <div className="flex gap-2">
-              <Select value={mainFormData.cafetariaId} onValueChange={handleCafeteriaChange} disabled={!mainFormData.buildingId || !mainFormData.vendorId}>
-                <SelectTrigger className="flex-1"><SelectValue placeholder="Select Cafeteria" /></SelectTrigger>
-                <SelectContent>
-                  {filteredCafeterias.length === 0 ? <SelectItem value="none" disabled>No matching cafeterias</SelectItem> :
-                    filteredCafeterias.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
-              {mainFormData.buildingId && mainFormData.vendorId && (
-                <Button 
-                  type="button" 
-                  variant="outline" 
-                  size="icon" 
-                  onClick={() => setIsAddCafeteriaModalOpen(true)}
-                  title="Add New Cafeteria"
-                  className="shrink-0 border-blue-200 text-blue-600 hover:bg-blue-50"
-                >
-                  <Plus className="h-4 w-4" />
-                </Button>
-              )}
+      {/* Progress Steps */}
+      <div className="flex items-center justify-between mb-8">
+        {[1, 2, 3].map(s => (
+          <div key={s} className="flex flex-col items-center flex-1">
+            <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm z-10 transition-colors
+              ${step === s ? 'bg-blue-600 text-white' : step > s ? 'bg-green-500 text-white' : 'bg-gray-200 text-gray-500'}`}>
+              {s}
             </div>
-            {mainFormData.buildingId && mainFormData.vendorId && filteredCafeterias.length === 0 && (
-              <p className="text-xs text-orange-600 flex items-center gap-1 mt-1">
-                <Info className="h-3 w-3" /> No cafeterias found for this building/vendor. Add one to proceed.
-              </p>
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="area">Area <span className="text-gray-400 font-normal">(optional)</span></Label>
-            <div className="flex gap-2">
-              <Select
-                value={mainFormData.areaId || ""}
-                onValueChange={val => setMainFormData({ ...mainFormData, areaId: val === "__none__" ? "" : val })}
-                disabled={!mainFormData.cafetariaId}
-              >
-                <SelectTrigger className="flex-1"><SelectValue placeholder="Select Area" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__">— No specific area —</SelectItem>
-                  {filteredAreas.length === 0
-                    ? <SelectItem value="no-areas" disabled>No areas for this cafeteria</SelectItem>
-                    : filteredAreas.map(a => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)
-                  }
-                </SelectContent>
-              </Select>
-              {mainFormData.cafetariaId && (
-                <Button 
-                  type="button" 
-                  variant="outline" 
-                  size="icon" 
-                  onClick={() => setIsAddAreaModalOpen(true)}
-                  title="Add New Area"
-                  className="shrink-0 border-purple-200 text-purple-600 hover:bg-purple-50"
-                >
-                  <Plus className="h-4 w-4" />
-                </Button>
-              )}
+            <div className="text-xs font-medium mt-2 text-gray-600">
+              {s === 1 ? 'Template Type' : s === 2 ? 'Configuration' : 'Workflow Setup'}
             </div>
-            {mainFormData.cafetariaId && filteredAreas.length === 0 && (
-               <p className="text-xs text-gray-500 mt-1 italic">Optional: No areas defined for this cafeteria yet.</p>
-            )}
           </div>
+        ))}
+        {/* Lines */}
+        <div className="absolute left-[20%] right-[20%] h-1 bg-gray-200 -z-10 top-[138px]" />
+        <div className={`absolute left-[20%] h-1 bg-blue-600 -z-10 top-[138px] transition-all`} style={{ width: step === 1 ? '0%' : step === 2 ? '30%' : '60%' }} />
+      </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="frequency">Frequency *</Label>
-            <Select value={mainFormData.frequency} onValueChange={val => setMainFormData({...mainFormData, frequency: val as any})}>
-              <SelectTrigger><SelectValue placeholder="Select Frequency" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="daily">Daily</SelectItem>
-                <SelectItem value="weekly">Weekly</SelectItem>
-                <SelectItem value="monthly">Monthly</SelectItem>
-                <SelectItem value="custom">Custom</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="assigned-role">Assigned Role *</Label>
-            <Select value={mainFormData.assignedRole} onValueChange={val => setMainFormData({...mainFormData, assignedRole: val})}>
-              <SelectTrigger><SelectValue placeholder="Select Role" /></SelectTrigger>
-              <SelectContent>
-                {roles.map(r => <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="flex items-center justify-between rounded-lg border p-3 bg-gray-50/50 md:col-span-2">
-            <div className="space-y-0.5">
-                <Label>Form Status</Label>
-                <p className="text-xs text-gray-500">Inactive forms cannot be filled out.</p>
-            </div>
-            <Switch
-              checked={mainFormData.status === 'active'}
-              onCheckedChange={(checked) => setMainFormData({...mainFormData, status: checked ? 'active' : 'inactive'})}
-            />
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card className="shadow-lg">
-        <CardHeader>
-          <CardTitle>Questions</CardTitle>
-          <CardDescription>Define the questions for this compliance form. Drag to reorder (feature not implemented in code).</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {questions.length === 0 && (
-            <div className="text-center text-gray-500 py-8 border border-dashed rounded-lg">
-              No questions added yet. Click "Add Question" to start.
+      <Card className="shadow-sm border-gray-200">
+        <CardContent className="p-6">
+          
+          {/* STEP 1: TYPE SELECTION */}
+          {step === 1 && (
+            <div className="space-y-6 animate-in fade-in slide-in-from-right-4">
+              <div className="text-center mb-6">
+                <h2 className="text-lg font-bold">Select Template Type</h2>
+                <p className="text-gray-500 text-sm">What kind of compliance workflow does this represent?</p>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {TEMPLATE_TYPES.map(t => {
+                  const Icon = t.icon
+                  const active = templateType === t.type
+                  return (
+                    <div 
+                      key={t.type}
+                      onClick={() => setTemplateType(t.type)}
+                      className={`p-4 rounded-xl border-2 cursor-pointer transition-all flex gap-4 items-start
+                        ${active ? 'border-blue-600 bg-blue-50/50' : 'border-gray-200 hover:border-blue-300'}`}
+                    >
+                      <div className={`p-3 rounded-lg ${active ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'}`}>
+                        <Icon className="h-6 w-6" />
+                      </div>
+                      <div>
+                        <h3 className={`font-bold ${active ? 'text-blue-900' : 'text-gray-900'}`}>{t.label}</h3>
+                        <p className="text-xs text-gray-500 mt-1 leading-relaxed">{t.desc}</p>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
             </div>
           )}
-          {questions.map((q, index) => (
-            <div key={q.id} className="relative p-4 border rounded-md shadow-sm bg-gray-50">
-              <span className="absolute -top-3 left-2 px-2 py-0.5 bg-blue-100 text-blue-800 text-xs font-semibold rounded-full">
-                Question {index + 1}
-              </span>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-3">
-                <div className="md:col-span-2 lg:col-span-2 space-y-2">
-                  <Label>Question Text *</Label>
-                  <Textarea value={q.question} onChange={e => updateQuestion(index, 'question', e.target.value)} placeholder="e.g., Is the kitchen area clean and free of debris?" />
-                </div>
-                
+
+          {/* STEP 2: CONFIGURATION */}
+          {step === 2 && (
+            <div className="space-y-6 animate-in fade-in slide-in-from-right-4">
+              <h2 className="text-lg font-bold border-b pb-2 mb-4">Basic Configuration</h2>
+              
+              <div className="grid grid-cols-2 gap-6">
                 <div className="space-y-2">
-                  <Label>Type</Label>
-                  <Select value={q.type} onValueChange={val => updateQuestion(index, 'type', val as QuestionType)}>
-                    <SelectTrigger><SelectValue placeholder="Select Type" /></SelectTrigger>
+                  <Label>Template Name <span className="text-red-500">*</span></Label>
+                  <Input placeholder="e.g. Morning Dispatch Checklist" value={name} onChange={e => setName(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Assigned Vendor <span className="text-red-500">*</span></Label>
+                  <Select value={vendorId} onValueChange={setVendorId}>
+                    <SelectTrigger><SelectValue placeholder="Select Vendor" /></SelectTrigger>
                     <SelectContent>
-                      {QUESTION_TYPES.map(type => (
-                        <SelectItem key={type.value} value={type.value}>
-                          <div className="flex items-center gap-2">
-                            <type.icon className="h-4 w-4" /> {type.label}
-                          </div>
-                        </SelectItem>
-                      ))}
+                      {vendors.map(v => <SelectItem key={v.id} value={v.id}>{v.name}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
-
-                <div className="flex flex-col justify-center space-y-2">
-                  <div className="flex items-center space-x-2">
-                    <Checkbox id={`req-${index}`} checked={q.isRequired} onCheckedChange={checked => updateQuestion(index, 'isRequired', !!checked)} />
-                    <Label htmlFor={`req-${index}`}>Required</Label>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <Checkbox id={`photo-req-${index}`} checked={q.isPhotoRequired} onCheckedChange={checked => updateQuestion(index, 'isPhotoRequired', !!checked)} />
-                    <Label htmlFor={`photo-req-${index}`}>Photo Required</Label>
-                  </div>
+                <div className="space-y-2">
+                  <Label>Assigned Role <span className="text-red-500">*</span></Label>
+                  <Select value={assignedRole} onValueChange={setAssignedRole}>
+                    <SelectTrigger><SelectValue placeholder="Who fills this form?" /></SelectTrigger>
+                    <SelectContent>
+                      {roles.map(r => <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Frequency <span className="text-red-500">*</span></Label>
+                  <Select value={frequency} onValueChange={(val: any) => setFrequency(val)}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {FREQUENCIES.map(f => <SelectItem key={f.value} value={f.value}>{f.label}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
-              <Button variant="ghost" size="sm" className="absolute top-2 right-2 text-red-500 hover:text-red-700" onClick={() => removeQuestion(index)}>
-                <Trash2 className="h-4 w-4" />
-              </Button>
+
+              <h2 className="text-lg font-bold border-b pb-2 mt-8 mb-4">Location Targeting</h2>
+              <div className="grid grid-cols-2 gap-6 bg-gray-50 p-4 rounded-lg border">
+                <div className="space-y-2">
+                  <Label>Company</Label>
+                  <Select value={companyId} onValueChange={val => { setCompanyId(val); setBuildingId(''); setCafetariaId(''); setAreaId(''); }}>
+                    <SelectTrigger><SelectValue placeholder="Any Company" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Any Company</SelectItem>
+                      {companies.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Building</Label>
+                  <Select value={buildingId} onValueChange={val => { setBuildingId(val); setCafetariaId(''); setAreaId(''); }} disabled={!companyId || companyId === 'none'}>
+                    <SelectTrigger><SelectValue placeholder="Any Building" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Any Building</SelectItem>
+                      {filteredBuildings.map(b => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Cafeteria</Label>
+                  <Select value={cafetariaId} onValueChange={val => { setCafetariaId(val); setAreaId(''); }} disabled={!buildingId || buildingId === 'none'}>
+                    <SelectTrigger><SelectValue placeholder="Any Cafeteria" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Any Cafeteria</SelectItem>
+                      {filteredCafeterias.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Area / Floor</Label>
+                  <Select value={areaId} onValueChange={setAreaId} disabled={!cafetariaId || cafetariaId === 'none'}>
+                    <SelectTrigger><SelectValue placeholder="Any Area" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Any Area</SelectItem>
+                      {filteredAreas.map(a => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
             </div>
-          ))}
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={addQuestion} className="flex-1">
-              <Plus className="mr-2 h-4 w-4" /> Add Question
-            </Button>
-            <Button variant="outline" onClick={() => setIsImportModalOpen(true)} className="flex-1 border-blue-200 text-blue-600 hover:bg-blue-50">
-              <Copy className="mr-2 h-4 w-4" /> Import from Existing
-            </Button>
-          </div>
+          )}
+
+          {/* STEP 3: WORKFLOW SETUP */}
+          {step === 3 && (
+            <div className="space-y-8 animate-in fade-in slide-in-from-right-4">
+              
+              {/* Menu Setup (For food-related templates) */}
+              {['kitchen_readiness', 'dispatch', 'service_point'].includes(templateType) && (
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 border-b pb-2">
+                    <UtensilsCrossed className="h-5 w-5 text-blue-600" />
+                    <h2 className="text-lg font-bold">Menu Integration</h2>
+                  </div>
+                  <p className="text-sm text-gray-500">This template will automatically fetch menu items for the day. Configure which menu to fetch from.</p>
+                  
+                  <div className="grid grid-cols-2 gap-6 bg-blue-50/50 p-4 rounded-lg border border-blue-100">
+                    <div className="space-y-2">
+                      <Label>Menu Source Type</Label>
+                      <Select value={menuSource} onValueChange={(v: any) => setMenuSource(v)}>
+                        <SelectTrigger className="bg-white"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="combined">Combined Menu (Global)</SelectItem>
+                          <SelectItem value="company">Company Specific Menu</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Filter by Service (Optional)</Label>
+                      <Select value={serviceId} onValueChange={val => { setServiceId(val); setSubServiceId(''); }}>
+                        <SelectTrigger className="bg-white"><SelectValue placeholder="All Services" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">All Services</SelectItem>
+                          {services.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Filter by Sub-Service (Optional)</Label>
+                      <Select value={subServiceId} onValueChange={setSubServiceId} disabled={!serviceId || serviceId === 'none'}>
+                        <SelectTrigger className="bg-white"><SelectValue placeholder="All Sub-Services" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">All Sub-Services</SelectItem>
+                          {filteredSubServices.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Vehicle Setup (For Dispatch) */}
+              {templateType === 'dispatch' && (
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 border-b pb-2">
+                    <Truck className="h-5 w-5 text-blue-600" />
+                    <h2 className="text-lg font-bold">Vehicle Checklist</h2>
+                  </div>
+                  <p className="text-sm text-gray-500">Configure the checks performed on the delivery vehicle before dispatch.</p>
+                  
+                  <div className="space-y-3">
+                    {vehicleChecks.map((check, index) => (
+                      <div key={index} className="flex items-center gap-4 bg-gray-50 p-3 rounded-lg border">
+                        <Input 
+                          value={check.label} 
+                          onChange={e => {
+                            const newChecks = [...vehicleChecks];
+                            newChecks[index].label = e.target.value;
+                            newChecks[index].id = e.target.value.toLowerCase().replace(/\s+/g, '_');
+                            setVehicleChecks(newChecks);
+                          }} 
+                          placeholder="Check label (e.g. Tire Pressure)" 
+                          className="flex-1 bg-white"
+                        />
+                        <div className="flex items-center gap-2 w-32">
+                          <Switch 
+                            checked={check.isRequired} 
+                            onCheckedChange={val => {
+                              const newChecks = [...vehicleChecks];
+                              newChecks[index].isRequired = val;
+                              setVehicleChecks(newChecks);
+                            }} 
+                          />
+                          <Label className="text-xs">Required</Label>
+                        </div>
+                        <Button variant="ghost" size="icon" className="text-red-500 hover:text-red-700" onClick={() => setVehicleChecks(vehicleChecks.filter((_, i) => i !== index))}>
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ))}
+                    <Button variant="outline" className="w-full border-dashed" onClick={() => setVehicleChecks([...vehicleChecks, { id: `check_${Date.now()}`, label: '', type: 'yes_no', isRequired: true }])}>
+                      <Plus className="mr-2 h-4 w-4" /> Add Vehicle Check
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {/* Custom Questions (For General Checklist) */}
+              {templateType === 'general_checklist' && (
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 border-b pb-2">
+                    <List className="h-5 w-5 text-purple-600" />
+                    <h2 className="text-lg font-bold">Custom Form Questions</h2>
+                  </div>
+                  
+                  <div className="space-y-3">
+                    {customFields.map((field, index) => (
+                      <div key={index} className="flex flex-col gap-3 bg-gray-50 p-4 rounded-lg border border-gray-200">
+                        <div className="flex items-start gap-4">
+                          <div className="bg-purple-100 text-purple-700 w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs shrink-0 mt-1">
+                            {index + 1}
+                          </div>
+                          <Input 
+                            value={field.question} 
+                            onChange={e => {
+                              const nf = [...customFields]; nf[index].question = e.target.value; setCustomFields(nf);
+                            }} 
+                            placeholder="Question text" 
+                            className="flex-1 bg-white"
+                          />
+                          <Select 
+                            value={field.type} 
+                            onValueChange={(val: any) => {
+                              const nf = [...customFields]; nf[index].type = val; setCustomFields(nf);
+                            }}
+                          >
+                            <SelectTrigger className="w-40 bg-white"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="yes_no">Yes / No</SelectItem>
+                              <SelectItem value="text">Text Input</SelectItem>
+                              <SelectItem value="number">Number</SelectItem>
+                              <SelectItem value="photo">Photo Upload</SelectItem>
+                              <SelectItem value="temperature">Temperature</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <Button variant="ghost" size="icon" className="text-red-500 hover:bg-red-50" onClick={() => setCustomFields(customFields.filter((_, i) => i !== index))}>
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                        <div className="flex items-center gap-6 ml-10">
+                          <div className="flex items-center gap-2">
+                            <Checkbox 
+                              checked={field.isRequired} 
+                              onCheckedChange={val => {
+                                const nf = [...customFields]; nf[index].isRequired = !!val; setCustomFields(nf);
+                              }} 
+                            />
+                            <Label className="text-xs text-gray-600 font-medium">Answer Required</Label>
+                          </div>
+                          {field.type !== 'photo' && (
+                            <div className="flex items-center gap-2">
+                              <Checkbox 
+                                checked={field.isPhotoRequired} 
+                                onCheckedChange={val => {
+                                  const nf = [...customFields]; nf[index].isPhotoRequired = !!val; setCustomFields(nf);
+                                }} 
+                              />
+                              <Label className="text-xs text-gray-600 font-medium">Photo Proof Required</Label>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                    <Button variant="outline" className="w-full border-dashed py-6" onClick={() => setCustomFields([...customFields, { question: '', type: 'yes_no', isRequired: true, isPhotoRequired: false, order: customFields.length }])}>
+                      <Plus className="mr-2 h-4 w-4" /> Add Question
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
         </CardContent>
       </Card>
 
-      {/* Import Questions Modal */}
-      <Dialog open={isImportModalOpen} onOpenChange={setIsImportModalOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Copy className="h-5 w-5 text-blue-600" /> Import Questions
-            </DialogTitle>
-            <DialogDescription>
-              Select an existing compliance form to copy questions from.
-            </DialogDescription>
-          </DialogHeader>
+      {/* Footer Navigation */}
+      <div className="flex justify-between pt-4">
+        {step > 1 ? (
+          <Button variant="outline" onClick={() => setStep(step - 1)}>
+            <ArrowLeft className="mr-2 h-4 w-4" /> Back
+          </Button>
+        ) : (
+          <Button variant="outline" onClick={() => router.back()}>Cancel</Button>
+        )}
 
-          <div className="space-y-4 py-4 flex-1 overflow-hidden flex flex-col">
-            <div className="flex gap-4">
-              <div className="relative flex-1">
-                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-500" />
-                <Input 
-                  placeholder="Search forms by name or company..." 
-                  className="pl-9"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                />
-              </div>
-              <div className="w-1/2">
-                <Select value={sourceFormId} onValueChange={handleSourceFormChange}>
-                  <SelectTrigger><SelectValue placeholder="Select Source Form" /></SelectTrigger>
-                  <SelectContent>
-                    {filteredSourceForms.length === 0 ? (
-                      <SelectItem value="none" disabled>No forms found</SelectItem>
-                    ) : (
-                      filteredSourceForms.map(f => (
-                        <SelectItem key={f.id} value={f.id}>
-                          {f.name} ({getName(companies, f.companyId)})
-                        </SelectItem>
-                      ))
-                    )}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            {sourceFormId && (
-              <div className="border rounded-lg flex flex-col flex-1 overflow-hidden bg-gray-50/50">
-                <div className="p-3 border-b bg-white flex items-center justify-between">
-                  <div className="flex items-center space-x-2">
-                    <Checkbox 
-                      id="select-all-import" 
-                      checked={sourceQuestions.length > 0 && selectedImportIds.size === sourceQuestions.length}
-                      onCheckedChange={handleSelectAllImport}
-                    />
-                    <Label htmlFor="select-all-import" className="font-semibold cursor-pointer">
-                      Select All Questions ({sourceQuestions.length})
-                    </Label>
-                  </div>
-                  <Badge variant="outline" className="text-blue-600">
-                    {selectedImportIds.size} Selected
-                  </Badge>
-                </div>
-
-                <ScrollArea className="flex-1">
-                  <div className="p-3 space-y-2">
-                    {isFetchingQuestions ? (
-                      <div className="flex items-center justify-center py-8">
-                        <RotateCcw className="h-6 w-6 animate-spin text-blue-600" />
-                      </div>
-                    ) : sourceQuestions.length === 0 ? (
-                      <div className="text-center py-8 text-gray-500 italic">No questions in this form.</div>
-                    ) : (
-                      sourceQuestions.map((q) => (
-                        <div 
-                          key={q.id} 
-                          className={`flex items-start gap-3 p-3 rounded-md border transition-colors cursor-pointer ${
-                            selectedImportIds.has(q.id) ? 'bg-blue-50 border-blue-200' : 'bg-white border-gray-200 hover:border-blue-100'
-                          }`}
-                          onClick={() => toggleImportSelection(q.id)}
-                        >
-                          <Checkbox 
-                            checked={selectedImportIds.has(q.id)} 
-                            onCheckedChange={() => toggleImportSelection(q.id)}
-                            onClick={(e) => e.stopPropagation()}
-                          />
-                          <div className="flex-1">
-                            <p className="text-sm font-medium leading-tight">{q.question}</p>
-                            <div className="flex mt-2 gap-2">
-                              <Badge variant="secondary" className="text-[10px] py-0 px-1.5 h-4 uppercase">{q.type.replace('_', ' ')}</Badge>
-                              {q.isRequired && <Badge variant="outline" className="text-[10px] py-0 px-1.5 h-4 border-red-200 text-red-600">REQUIRED</Badge>}
-                              {q.isPhotoRequired && <Badge variant="outline" className="text-[10px] py-0 px-1.5 h-4 border-orange-200 text-orange-600">PHOTO</Badge>}
-                            </div>
-                          </div>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </ScrollArea>
-              </div>
-            )}
-          </div>
-
-          <DialogFooter className="border-t pt-4">
-            <Button variant="outline" onClick={() => setIsImportModalOpen(false)}>Cancel</Button>
-            <Button 
-              onClick={executeImport} 
-              disabled={selectedImportIds.size === 0 || isFetchingQuestions}
-              className="bg-blue-600 hover:bg-blue-700"
-            >
-              <CheckCircle2 className="mr-2 h-4 w-4" /> Import {selectedImportIds.size} Questions
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Quick Add Cafeteria Modal */}
-      <Dialog open={isAddCafeteriaModalOpen} onOpenChange={setIsAddCafeteriaModalOpen}>
-        <DialogContent className="sm:max-w-[425px]">
-          <DialogHeader>
-            <DialogTitle>Add New Cafeteria</DialogTitle>
-            <DialogDescription>
-              Create a new cafeteria for {getName(buildings, mainFormData.buildingId)} in {getName(companies, mainFormData.companyId)}.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="grid gap-2">
-              <Label htmlFor="caf-name">Cafeteria Name</Label>
-              <Input 
-                id="caf-name" 
-                placeholder="e.g. Main Canteen, Executive Lounge" 
-                value={newCafeteriaName}
-                onChange={(e) => setNewCafeteriaName(e.target.value)}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsAddCafeteriaModalOpen(false)}>Cancel</Button>
-            <Button onClick={handleQuickAddCafeteria} disabled={isQuickAdding || !newCafeteriaName.trim()}>
-              {isQuickAdding ? <RotateCcw className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
-              {isQuickAdding ? "Adding..." : "Add Cafeteria"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Quick Add Area Modal */}
-      <Dialog open={isAddAreaModalOpen} onOpenChange={setIsAddAreaModalOpen}>
-        <DialogContent className="sm:max-w-[425px]">
-          <DialogHeader>
-            <DialogTitle>Add New Area</DialogTitle>
-            <DialogDescription>
-              Create a new sub-area within {getName(cafeterias, mainFormData.cafetariaId)}.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="grid gap-2">
-              <Label htmlFor="area-name">Area Name</Label>
-              <Input 
-                id="area-name" 
-                placeholder="e.g. Washing Area, Storage, Serving Counter" 
-                value={newAreaName}
-                onChange={(e) => setNewAreaName(e.target.value)}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsAddAreaModalOpen(false)}>Cancel</Button>
-            <Button onClick={handleQuickAddArea} disabled={isQuickAdding || !newAreaName.trim()}>
-              {isQuickAdding ? <RotateCcw className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
-              {isQuickAdding ? "Adding..." : "Add Area"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <div className="flex justify-end gap-2 p-4 border-t">
-        <Button variant="outline" onClick={() => router.push('/admin/compliances')} disabled={isSaving}>
-          <X className="mr-2 h-4 w-4" /> Cancel
-        </Button>
-        <Button onClick={handleSave} disabled={isSaving}>
-          {isSaving ? (
-            <> <RotateCcw className="mr-2 h-4 w-4 animate-spin" /> Saving... </>
-          ) : (
-            <> <Save className="mr-2 h-4 w-4" /> {activeFormId ? "Update Form" : "Create Form"} </>
-          )}
-        </Button>
+        {step < 3 ? (
+          <Button onClick={() => setStep(step + 1)}>
+            Next Step <ArrowRight className="ml-2 h-4 w-4" />
+          </Button>
+        ) : (
+          <Button onClick={handleSave} disabled={saving} className="bg-green-600 hover:bg-green-700">
+            {saving ? "Saving..." : <><Save className="mr-2 h-4 w-4" /> Save Template</>}
+          </Button>
+        )}
       </div>
     </div>
   )

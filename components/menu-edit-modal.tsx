@@ -1916,24 +1916,25 @@ const MenuGridCell = memo(function MenuGridCell({
   return (
     <td
       ref={cellRef}
-      onClick={() => {
-        if (!isUnassigned) onActivate();
-      }}
+      onClick={() => onActivate()}
       onMouseEnter={() => {
         onCellMouseEnter?.()
-        if (onHoverDrag && !isUnassigned) onHoverDrag(date)
+        if (onHoverDrag) onHoverDrag(date)
       }}
       className={`border border-gray-300 p-2 align-top min-w-[200px] transition-all duration-150 relative 
-            ${isUnassigned ? "bg-gray-200/80 cursor-not-allowed" : isActive ? "ring-2 ring-blue-500 bg-white z-[60]" : "bg-white hover:bg-gray-50"} 
+            ${isActive ? "ring-2 ring-blue-500 bg-white z-[60]" : isUnassigned ? "bg-gray-100/80 border-dashed" : "bg-white hover:bg-gray-50"} 
             ${activeEditorNames.length > 0 ? "ring-2 ring-amber-500 ring-inset relative !z-[55]" : ""}
-            ${isDragHover && !isUnassigned ? "ring-2 ring-blue-300 bg-blue-50" : ""}
+            ${isDragHover ? "ring-2 ring-blue-300 bg-blue-50" : ""}
             ${cellLogs.length > 0 && !isActive ? "bg-red-50" : ""} 
             ${isRedState ? "bg-red-50 !border-red-300 shadow-inner" : ""}
           `}
     >
-      {isUnassigned && (
-        <div className="absolute inset-0 z-10 bg-gray-200/50 backdrop-blur-[1px] pointer-events-none flex items-center justify-center">
-          <span className="text-gray-400 font-medium text-[10px] uppercase tracking-wider bg-white/80 px-2 py-0.5 rounded shadow-sm border border-gray-200">No Assignments</span>
+      {isUnassigned && !isActive && (
+        <div className="absolute top-1 right-1 z-10 pointer-events-none opacity-60">
+          <span className="text-gray-500 font-bold text-[9px] uppercase tracking-wider bg-gray-200 px-1.5 py-0.5 rounded border border-gray-300 flex items-center gap-1 shadow-sm">
+            <Building2 className="h-2.5 w-2.5" />
+            0 Bldgs
+          </span>
         </div>
       )}
       {activeEditorNames.length > 0 && (
@@ -4146,16 +4147,32 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
                 const itemsForThisCompany = sourceCell.menuItemIds.filter((itemId: string) => {
                   const itemCustom = customAssignments[itemId];
 
-                  // CRITICAL: If this cell has a choice for this company, ONLY include items
-                  // that have an explicit custom assignment with isFromChoice: true
+                  // CRITICAL: If this cell has a choice for this company, include items that have 
+                  // an explicit custom assignment with isFromChoice: true, OR items that are normally
+                  // assigned to this company (base items) that are NOT part of any choice.
                   if (cellHasChoiceForThisCompany) {
-                    // Choice-governed: Only include if this company has explicit custom assignment with isFromChoice
-                    return itemCustom && Array.isArray(itemCustom) && 
+                    const isExplicitlyChosen = itemCustom && Array.isArray(itemCustom) && 
                            itemCustom.some((a: any) => 
                              a.companyId === company.id && 
                              a.buildingId === building.id &&
                              a.isFromChoice === true
                            );
+                    
+                    const isAChoiceItem = itemCustom && Array.isArray(itemCustom) && itemCustom.some((a: any) => a.isFromChoice);
+
+                    if (isExplicitlyChosen) return true;
+
+                    // If it's a base item (not part of any choice options), fall back to standard meal plan rules
+                    if (!isAChoiceItem) {
+                      const strictAssignments = (itemCustom || []).filter((a: any) => !a.isFromChoice);
+                      if (strictAssignments.length > 0) {
+                        return strictAssignments.some((a: any) => a.companyId === company.id && a.buildingId === building.id);
+                      } else {
+                        return isDefaultPath;
+                      }
+                    }
+                    
+                    return false;
                   }
 
                   // No choice governs this cell, use standard logic
@@ -4473,86 +4490,6 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
     try {
       setSaving(true)
 
-      // ═══ CREATE MODE: Save new combined menu document ═══
-      if (isCreateMode && menuType === "combined") {
-        const sanitizedData = sanitizeMenuData(JSON.parse(JSON.stringify(menuData)))
-        const newMenuDoc = {
-          startDate: createStartDate,
-          endDate: createEndDate,
-          status: isDraft ? "draft" : "active",
-          menuData: sanitizedData,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        }
-
-        let newDocRefId = createdDraftId
-
-        if (newDocRefId) {
-            await updateDoc(doc(db, "combinedMenus", newDocRefId), {
-                status: isDraft ? "draft" : "active",
-                menuData: sanitizedData,
-                updatedAt: new Date(),
-            })
-        } else {
-            const newDocRef = await addDoc(collection(db, "combinedMenus"), newMenuDoc)
-            newDocRefId = newDocRef.id
-            setCreatedDraftId(newDocRefId)
-        }
-
-        if (!isDraft) {
-          // Generate company menus from the new combined menu
-          toast({ title: "Creating company menus...", description: "Generating company-specific menus from combined menu." })
-
-          // Filter out empty cells
-          const filtered: any = {}
-          Object.entries(sanitizedData).forEach(([date, dayMenu]: [string, any]) => {
-            const filteredDay: any = {}
-            Object.entries(dayMenu).forEach(([sId, sData]: [string, any]) => {
-              const filteredS: any = {}
-              Object.entries(sData).forEach(([ssId, ssData]: [string, any]) => {
-                const filteredSS: any = {}
-                Object.entries(ssData).forEach(([mpId, mpData]: [string, any]) => {
-                  const filteredMP: any = {}
-                  Object.entries(mpData).forEach(([smpId, cell]: [string, any]) => {
-                    if (cell.menuItemIds?.length > 0) filteredMP[smpId] = cell
-                  })
-                  if (Object.keys(filteredMP).length > 0) filteredSS[mpId] = filteredMP
-                })
-                if (Object.keys(filteredSS).length > 0) filteredS[ssId] = filteredSS
-              })
-              if (Object.keys(filteredS).length > 0) filteredDay[sId] = filteredS
-            })
-            if (Object.keys(filteredDay).length > 0) filtered[date] = filteredDay
-          })
-
-          const count = await generateCompanyMenus(newDocRefId, filtered)
-          toast({ title: "Complete!", description: `Created combined menu and ${count} company menus.` })
-        } else {
-          toast({ title: "Draft Saved", description: "Combined menu saved as draft." })
-        }
-
-         // Only call onSave and onClose for a final save, not a draft.
-        if (!isDraft) {
-          onSave?.()
-          onClose()
-        }
-        return
-      }
-
-      // ═══ EDIT MODE: Existing save logic ═══
-      if (!menu) return
-      const collectionName = menuType === "combined" ? "combinedMenus" : "companyMenus"
-      const docRef = doc(db, collectionName, menuId)
-      const statusToSave = isDraft ? "draft" : menu.status
-
-      // Read the push-to-other-buildings checkbox state from DOM
-      const pushToOtherBuildingsCheckbox = document.getElementById('pushToOtherBuildings') as HTMLInputElement
-      const pushToOtherBuildings = pushToOtherBuildingsCheckbox?.checked || false
-
-      const shouldSyncCompanyMenus = menuType === "combined" && !isDraft;
-
-      const menuItemsMap = new Map(menuItems.map((item) => [item.id, item.name]))
-
       // The effective data to save — will be overwritten if choices are applied
       let menuDataToSave = menuData
       let menuDataForCompanyGeneration = menuData
@@ -4734,6 +4671,88 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
         }
         console.log("[choice] Updated menuData with choice selections")
       }
+
+
+
+      // ═══ CREATE MODE: Save new combined menu document ═══
+      if (isCreateMode && menuType === "combined") {
+        const sanitizedData = sanitizeMenuData(JSON.parse(JSON.stringify(menuData)))
+        const newMenuDoc = {
+          startDate: createStartDate,
+          endDate: createEndDate,
+          status: isDraft ? "draft" : "active",
+          menuData: sanitizedData,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        }
+
+        let newDocRefId = createdDraftId
+
+        if (newDocRefId) {
+            await updateDoc(doc(db, "combinedMenus", newDocRefId), {
+                status: isDraft ? "draft" : "active",
+                menuData: sanitizedData,
+                updatedAt: new Date(),
+            })
+        } else {
+            const newDocRef = await addDoc(collection(db, "combinedMenus"), newMenuDoc)
+            newDocRefId = newDocRef.id
+            setCreatedDraftId(newDocRefId)
+        }
+
+        if (!isDraft) {
+          // Generate company menus from the new combined menu
+          toast({ title: "Creating company menus...", description: "Generating company-specific menus from combined menu." })
+
+          // Filter out empty cells
+          const filtered: any = {}
+          Object.entries(menuDataForCompanyGeneration).forEach(([date, dayMenu]: [string, any]) => {
+            const filteredDay: any = {}
+            Object.entries(dayMenu).forEach(([sId, sData]: [string, any]) => {
+              const filteredS: any = {}
+              Object.entries(sData).forEach(([ssId, ssData]: [string, any]) => {
+                const filteredSS: any = {}
+                Object.entries(ssData).forEach(([mpId, mpData]: [string, any]) => {
+                  const filteredMP: any = {}
+                  Object.entries(mpData).forEach(([smpId, cell]: [string, any]) => {
+                    if (cell.menuItemIds?.length > 0) filteredMP[smpId] = cell
+                  })
+                  if (Object.keys(filteredMP).length > 0) filteredSS[mpId] = filteredMP
+                })
+                if (Object.keys(filteredSS).length > 0) filteredS[ssId] = filteredSS
+              })
+              if (Object.keys(filteredS).length > 0) filteredDay[sId] = filteredS
+            })
+            if (Object.keys(filteredDay).length > 0) filtered[date] = filteredDay
+          })
+
+          const count = await generateCompanyMenus(newDocRefId, filtered)
+          toast({ title: "Complete!", description: `Created combined menu and ${count} company menus.` })
+        } else {
+          toast({ title: "Draft Saved", description: "Combined menu saved as draft." })
+        }
+
+         // Only call onSave and onClose for a final save, not a draft.
+        if (!isDraft) {
+          onSave?.()
+          onClose()
+        }
+        return
+      }
+
+      // ═══ EDIT MODE: Existing save logic ═══
+      if (!menu) return
+      const collectionName = menuType === "combined" ? "combinedMenus" : "companyMenus"
+      const docRef = doc(db, collectionName, menuId)
+      const statusToSave = isDraft ? "draft" : menu.status
+
+      // Read the push-to-other-buildings checkbox state from DOM
+      const pushToOtherBuildingsCheckbox = document.getElementById('pushToOtherBuildings') as HTMLInputElement
+      const pushToOtherBuildings = pushToOtherBuildingsCheckbox?.checked || false
+
+      const shouldSyncCompanyMenus = menuType === "combined" && !isDraft;
+
+      const menuItemsMap = new Map(menuItems.map((item) => [item.id, item.name]))
 
       // Redesign Logic: Detect changes against the Original (OG) baseline
       const changedCells = detectMenuChanges(originalMenuData, menuDataToSave, menuItemsMap)
