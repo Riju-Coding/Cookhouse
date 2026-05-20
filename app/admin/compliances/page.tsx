@@ -25,6 +25,7 @@ import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { ComplianceRecordModal } from "@/components/compliance-record-modal"
 
 // ─── Template Type Config ───────────────────────────────────────
 const TEMPLATE_TYPE_CONFIG: Record<ComplianceTemplateType, {
@@ -95,6 +96,10 @@ export default function ComplianceDashboardPage() {
   const [search, setSearch] = useState("")
   const [filterType, setFilterType] = useState<string>("all")
   const [filterVendor, setFilterVendor] = useState<string>("all")
+
+  // Record Modal
+  const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null)
+  const [recordModalOpen, setRecordModalOpen] = useState(false)
 
   useEffect(() => { fetchAll() }, [])
 
@@ -451,7 +456,15 @@ export default function ComplianceDashboardPage() {
                           </Badge>
                         </TableCell>
                         <TableCell className="text-right">
-                          <Button variant="ghost" size="sm" className="h-7 text-xs text-blue-600">
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            className="h-7 text-xs text-blue-600 hover:bg-blue-50"
+                            onClick={() => {
+                              setSelectedRecordId(record.id)
+                              setRecordModalOpen(true)
+                            }}
+                          >
                             <Eye className="h-3 w-3 mr-1" /> View
                           </Button>
                         </TableCell>
@@ -524,6 +537,16 @@ export default function ComplianceDashboardPage() {
           </div>
         </div>
       )}
+      
+      <ComplianceRecordModal 
+        isOpen={recordModalOpen} 
+        onClose={() => {
+          setRecordModalOpen(false)
+          setTimeout(() => setSelectedRecordId(null), 300)
+        }} 
+        recordId={selectedRecordId} 
+        onStatusChange={() => fetchAll()}
+      />
     </div>
   )
 }
