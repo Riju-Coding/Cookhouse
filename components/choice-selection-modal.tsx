@@ -624,6 +624,38 @@ export function BuildingMenuGrid({
   }, [building, dateRange, mealPlanAssignments, mealPlans, subMealPlans, isUniversal])
 
   /* ── helpers ── */
+  const isInDefaultStructure = (
+    dateStr: string,
+    serviceId: string,
+    subServiceId: string,
+    mealPlanId: string,
+    subMealPlanId: string
+  ) => {
+    if (isUniversal) return true
+    const day = dateRange.find((d: any) => d.date === dateStr)?.day
+    if (!day) return false
+    const dayKey = day.toLowerCase()
+    const assignment = mealPlanAssignments?.find(
+      (a: any) =>
+        a.companyId === building.companyId &&
+        a.buildingId === building.buildingId
+    )
+    if (!assignment?.weekStructure) return false
+    const services = assignment.weekStructure[dayKey] || []
+    return services.some((s: any) =>
+      s.serviceId === serviceId &&
+      s.subServices?.some((ss: any) =>
+        ss.subServiceId === subServiceId &&
+        ss.mealPlans?.some((mp: any) =>
+          mp.mealPlanId === mealPlanId &&
+          mp.subMealPlans?.some((smp: any) =>
+            smp.subMealPlanId === subMealPlanId
+          )
+        )
+      )
+    )
+  }
+
   const getCellItems = (
     date: string,
     serviceId: string,
@@ -636,10 +668,69 @@ export function BuildingMenuGrid({
         subMealPlanId
       ]
     if (!cell?.menuItemIds) return []
-    return cell.menuItemIds
+
+    // If universal, we don't apply company-specific filtering in getCellItems
+    if (isUniversal) {
+      return cell.menuItemIds
+        .map((id: string) => menuItemMap.get(id))
+        .filter(Boolean)
+    }
+
+    const companyId = building.companyId
+    const buildingId = building.buildingId
+
+    const customAssignments = cell.customAssignments || {}
+    const isDefaultPath = isInDefaultStructure(date, serviceId, subServiceId, mealPlanId, subMealPlanId)
+
+    // Check if this cell has choice metadata for this company/building
+    const choiceMeta = cell.choiceMetadata || {}
+    const cbChoiceKey = `${companyId}-${buildingId}`
+    const cellHasChoiceForThisCompany = !!choiceMeta[cbChoiceKey]
+
+    const filteredItemIds = cell.menuItemIds.filter((itemId: string) => {
+      const itemCustom = customAssignments[itemId]
+
+      // ═══ PRIORITY 1: Manual (non-choice) custom assignments ═══
+      // These come from the ItemCompanyAssignmentModal and ALWAYS take priority
+      const manualAssignments = (itemCustom || []).filter((a: any) => !a.isFromChoice)
+      if (manualAssignments.length > 0) {
+        return manualAssignments.some((a: any) =>
+          a.companyId === companyId && a.buildingId === buildingId
+        )
+      }
+
+      // ═══ PRIORITY 2: Choice-based assignments ═══
+      if (cellHasChoiceForThisCompany) {
+        const isExplicitlyChosen = itemCustom && Array.isArray(itemCustom) && 
+               itemCustom.some((a: any) => 
+                 a.companyId === companyId && 
+                 a.buildingId === buildingId &&
+                 a.isFromChoice === true
+               )
+        if (isExplicitlyChosen) return true
+
+        // Check if this item belongs to ANY choice (it's a choice item for another company)
+        const isAChoiceItem = itemCustom && Array.isArray(itemCustom) &&
+          itemCustom.some((a: any) => a.isFromChoice)
+
+        // ═══ PRIORITY 3: Base (non-choice) item — use default structure ═══
+        if (!isAChoiceItem) {
+          return isDefaultPath
+        }
+
+        // Item is a choice item for another company — exclude from this company
+        return false
+      }
+
+      // ═══ No choice governs this cell — fallback to default structure ═══
+      return isDefaultPath
+    })
+
+    return filteredItemIds
       .map((id: string) => menuItemMap.get(id))
       .filter(Boolean)
   }
+
 
   /* ═══════════════════════════════════════════════════
      ✦ NEW — Pool ALL items across ALL sub-meals in a choice

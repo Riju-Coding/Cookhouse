@@ -4144,12 +4144,20 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
                 const cellHasChoiceForThisCompany = !!choiceMeta[cbChoiceKey];
 
                 // Filter items for this company
+                // FIXED: Priority order: Manual custom > Choice assignment > Default structure
                 const itemsForThisCompany = sourceCell.menuItemIds.filter((itemId: string) => {
                   const itemCustom = customAssignments[itemId];
 
-                  // CRITICAL: If this cell has a choice for this company, include items that have 
-                  // an explicit custom assignment with isFromChoice: true, OR items that are normally
-                  // assigned to this company (base items) that are NOT part of any choice.
+                  // ═══ PRIORITY 1: Manual (non-choice) custom assignments ═══
+                  // These come from the ItemCompanyAssignmentModal and ALWAYS take priority
+                  const manualAssignments = (itemCustom || []).filter((a: any) => !a.isFromChoice);
+                  if (manualAssignments.length > 0) {
+                    return manualAssignments.some((a: any) =>
+                      a.companyId === company.id && a.buildingId === building.id
+                    );
+                  }
+
+                  // ═══ PRIORITY 2: Choice-based assignments ═══
                   if (cellHasChoiceForThisCompany) {
                     const isExplicitlyChosen = itemCustom && Array.isArray(itemCustom) && 
                            itemCustom.some((a: any) => 
@@ -4157,36 +4165,23 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
                              a.buildingId === building.id &&
                              a.isFromChoice === true
                            );
-                    
-                    const isAChoiceItem = itemCustom && Array.isArray(itemCustom) && itemCustom.some((a: any) => a.isFromChoice);
-
                     if (isExplicitlyChosen) return true;
 
-                    // If it's a base item (not part of any choice options), fall back to standard meal plan rules
+                    // Check if this item belongs to ANY choice (it's a choice item for another company)
+                    const isAChoiceItem = itemCustom && Array.isArray(itemCustom) &&
+                      itemCustom.some((a: any) => a.isFromChoice);
+
+                    // ═══ PRIORITY 3: Base (non-choice) item — use default structure ═══
                     if (!isAChoiceItem) {
-                      const strictAssignments = (itemCustom || []).filter((a: any) => !a.isFromChoice);
-                      if (strictAssignments.length > 0) {
-                        return strictAssignments.some((a: any) => a.companyId === company.id && a.buildingId === building.id);
-                      } else {
-                        return isDefaultPath;
-                      }
+                      return isDefaultPath;
                     }
-                    
+
+                    // Item is a choice item for another company — exclude from this company
                     return false;
                   }
 
-                  // No choice governs this cell, use standard logic
-                  
-                  // Filter out 'isFromChoice' assignments to see if it's TRULY an exclusive item
-                  const strictAssignments = (itemCustom || []).filter((a: any) => !a.isFromChoice);
-
-                  if (strictAssignments.length > 0) {
-                    // 1. Explicit Custom Assignment: Check if company matches
-                    return strictAssignments.some((a: any) => a.companyId === company.id && a.buildingId === building.id);
-                  } else {
-                    // 2. No Custom Assignment: Include only if in Default Structure
-                    return isDefaultPath;
-                  }
+                  // ═══ No choice governs this cell — fallback to default structure ═══
+                  return isDefaultPath;
                 });
 
                 if (itemsForThisCompany.length > 0) {
@@ -4539,6 +4534,7 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
             const dateStr = matchingDate.date
 
             // ═══ FOR COMBINED MENUS: Apply choice items to choice structure ═══
+            // FIXED: Preserve base (non-choice) items alongside choice items
             if (menuType === 'combined') {
               for (const mp of choiceDef.mealPlans) {
                 for (const smp of mp.subMealPlans) {
@@ -4550,20 +4546,60 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
                   let cell = updatedMenuData[dateStr]?.[serviceId]?.[subServiceId]?.[mp.mealPlanId]?.[smp.subMealPlanId]
                   
                   if (!cell) {
-                    console.log("[v0-WARN] No cell found for combined menu key:", cellKey)
-                    continue
+                    // Auto-create the cell if it doesn't exist so choice items aren't silently lost
+                    if (!updatedMenuData[dateStr]) updatedMenuData[dateStr] = {}
+                    if (!updatedMenuData[dateStr][serviceId]) updatedMenuData[dateStr][serviceId] = {}
+                    if (!updatedMenuData[dateStr][serviceId][subServiceId]) updatedMenuData[dateStr][serviceId][subServiceId] = {}
+                    if (!updatedMenuData[dateStr][serviceId][subServiceId][mp.mealPlanId]) updatedMenuData[dateStr][serviceId][subServiceId][mp.mealPlanId] = {}
+                    updatedMenuData[dateStr][serviceId][subServiceId][mp.mealPlanId][smp.subMealPlanId] = { menuItemIds: [] }
+                    cell = updatedMenuData[dateStr][serviceId][subServiceId][mp.mealPlanId][smp.subMealPlanId]
+                    console.log("[v0-FIX] Auto-created cell for combined menu key:", cellKey)
                   }
                   
-                  if (selectedForSmp.length > 0) {
-                    cell.menuItemIds = selectedForSmp.map((it: any) => it.selectedItemId)
-                    if (!cell.itemChoiceMarks) cell.itemChoiceMarks = {}
-                    selectedForSmp.forEach((it: any) => {
-                      cell.itemChoiceMarks[it.selectedItemId] = sel.choiceId
+                  // Preserve existing base items that are NOT governed by any choice
+                  if (!cell.itemChoiceMarks) cell.itemChoiceMarks = {}
+                  const existingBaseItems = (cell.menuItemIds || []).filter((id: string) => {
+                    return !cell.itemChoiceMarks[id]
+                  })
+
+                  // Clear old choice marks for THIS specific choiceId (re-selection scenario)
+                  Object.keys(cell.itemChoiceMarks).forEach((key: string) => {
+                    if (cell.itemChoiceMarks[key] === sel.choiceId) delete cell.itemChoiceMarks[key]
+                  })
+
+                  const choiceItemIds = selectedForSmp.map((it: any) => it.selectedItemId)
+
+                  // Merge: base items + newly chosen items (deduplicated)
+                  const mergedIds = [...new Set([...existingBaseItems, ...choiceItemIds])]
+                  cell.menuItemIds = mergedIds
+
+                  // Mark new choice items
+                  selectedForSmp.forEach((it: any) => {
+                    cell.itemChoiceMarks[it.selectedItemId] = sel.choiceId
+                  })
+
+                  // Set per-company customAssignments with isFromChoice markers
+                  if (!cell.customAssignments) cell.customAssignments = {}
+                  choiceItemIds.forEach((itemId: string) => {
+                    if (!cell.customAssignments[itemId]) cell.customAssignments[itemId] = []
+                    // Remove stale isFromChoice entries for this company/building before re-adding
+                    cell.customAssignments[itemId] = cell.customAssignments[itemId].filter(
+                      (a: any) => !(a.companyId === cbData.companyId && a.buildingId === cbData.buildingId && a.isFromChoice)
+                    )
+                    cell.customAssignments[itemId].push({
+                      companyId: cbData.companyId,
+                      buildingId: cbData.buildingId,
+                      isFromChoice: true,
                     })
-                  } else {
-                    cell.menuItemIds = []
-                    cell.itemChoiceMarks = {}
+                  })
+
+                  // Store choice metadata so buildCompanyMenu can reference it
+                  if (!cell.choiceMetadata) cell.choiceMetadata = {}
+                  cell.choiceMetadata[`${cbData.companyId}-${cbData.buildingId}`] = {
+                    choiceId: sel.choiceId,
+                    selectedItems: choiceItemIds,
                   }
+
                   cell.isFromChoice = true
                 }
               }
