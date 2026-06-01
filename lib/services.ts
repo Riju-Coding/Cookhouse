@@ -1,6 +1,6 @@
 import { getDocs, collection, query, where } from "firebase/firestore"
 import { db } from "@/lib/firebase"
-import type { Service, MealPlan, SubMealPlan, MenuItem, MenuUpdation } from "@/lib/types"
+import type { Service, MealPlan, SubMealPlan, MenuItem, MenuUpdation, MenuPlanningRule } from "@/lib/types"
 
 export interface Company {
   id: string
@@ -296,4 +296,79 @@ export const updationService = {
     if (updations.length === 0) return 0
     return Math.max(...updations.map((u) => u.updationNumber || 0))
   },
+}
+
+import { doc, getDoc, setDoc, updateDoc, serverTimestamp } from "firebase/firestore"
+
+export const menuPlanningRulesService = {
+  // Get the base rule (no companyId) for a service/subService
+  async getBaseRule(serviceId: string, subServiceId: string): Promise<MenuPlanningRule | null> {
+    const docId = `rule_${serviceId}_${subServiceId}_base`
+    const docRef = doc(db, "menuPlanningRules", docId)
+    const snap = await getDoc(docRef)
+    if (snap.exists()) return { id: snap.id, ...snap.data() } as MenuPlanningRule
+    return null
+  },
+
+  // Get the company override rule for a service/subService
+  async getCompanyRule(serviceId: string, subServiceId: string, companyId: string): Promise<MenuPlanningRule | null> {
+    const docId = `rule_${serviceId}_${subServiceId}_${companyId}`
+    const docRef = doc(db, "menuPlanningRules", docId)
+    const snap = await getDoc(docRef)
+    if (snap.exists()) return { id: snap.id, ...snap.data() } as MenuPlanningRule
+    return null
+  },
+
+  // Save or update a rule (creates new if doesn't exist)
+  async saveRule(rule: Omit<MenuPlanningRule, "id">): Promise<void> {
+    const docId = rule.companyId
+      ? `rule_${rule.serviceId}_${rule.subServiceId}_${rule.companyId}`
+      : `rule_${rule.serviceId}_${rule.subServiceId}_base`
+      
+    const docRef = doc(db, "menuPlanningRules", docId)
+    const snap = await getDoc(docRef)
+    
+    const cleanedRule = { ...rule }
+    if (cleanedRule.companyId === undefined) {
+      delete cleanedRule.companyId
+    }
+    
+    if (snap.exists()) {
+      await updateDoc(docRef, { ...cleanedRule, updatedAt: serverTimestamp() })
+    } else {
+      await setDoc(docRef, { ...cleanedRule, createdAt: serverTimestamp(), updatedAt: serverTimestamp() })
+    }
+  },
+
+  // Helper function to get merged rules (Company rules override Base rules where they exist)
+  async getMergedRule(serviceId: string, subServiceId: string, companyId?: string | null): Promise<MenuPlanningRule | null> {
+    const baseRule = await this.getBaseRule(serviceId, subServiceId)
+    if (!companyId) return baseRule
+
+    const companyRule = await this.getCompanyRule(serviceId, subServiceId, companyId)
+    if (!companyRule) return baseRule
+    if (!baseRule) return companyRule
+
+    // Merge day rules, company rules take precedence day-by-day
+    const mergedDayRules = { ...baseRule.dayRules }
+    for (const [dayKey, cDay] of Object.entries(companyRule.dayRules || {})) {
+      if (!mergedDayRules[dayKey]) {
+        mergedDayRules[dayKey] = cDay
+      } else {
+        // Merge cell rules and global day rule
+        const bDay = mergedDayRules[dayKey]
+        mergedDayRules[dayKey] = {
+          globalDayRule: cDay.globalDayRule !== undefined ? cDay.globalDayRule : bDay.globalDayRule,
+          cellRules: { ...bDay.cellRules, ...cDay.cellRules }
+        }
+      }
+    }
+
+    return {
+      serviceId,
+      subServiceId,
+      companyId,
+      dayRules: mergedDayRules
+    }
+  }
 }

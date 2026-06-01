@@ -126,6 +126,12 @@ export function ChoiceSelectionModal({
   const [activeTabIndex, setActiveTabIndex] = useState(0)
   // Track selection count per choice to enforce quantity limits
   const [choiceSelectionCounts, setChoiceSelectionCounts] = useState<Record<string, number>>({})
+  const [hasGlobalPhantoms, setHasGlobalPhantoms] = useState(false)
+
+  // Reset global phantoms on tab change
+  React.useEffect(() => {
+    setHasGlobalPhantoms(false)
+  }, [activeTabIndex])
 
   const hasAnySelection = useMemo(
     () => Object.values(selections).some((items) => items.length > 0),
@@ -333,6 +339,21 @@ export function ChoiceSelectionModal({
           </div>
         </div>
 
+        {/* ─── Global Phantom Alert ─── */}
+        {hasGlobalPhantoms && (
+          <div className="shrink-0 bg-red-50 border-b border-red-200 px-6 py-3 flex items-start gap-3">
+            <AlertCircle className="h-5 w-5 text-red-600 shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <h4 className="text-sm font-bold text-red-800">Invalid Ghost Selections Detected</h4>
+              <p className="text-xs text-red-700 mt-0.5 leading-relaxed">
+                Some items selected for choices in this building were moved to different categories in Menu Edit and are no longer valid options. 
+                These "Ghost Selections" are currently blocking your choice slots. <br/>
+                <strong>Action Required:</strong> Scroll down and uncheck the red ghost selections to free up your limits.
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* ─── Active Grid ─── */}
         <div className="flex-1 overflow-hidden bg-gray-100">
           {activeBuilding && (
@@ -347,6 +368,8 @@ export function ChoiceSelectionModal({
               mealPlanAssignments={mealPlanAssignments}
               selections={selections}
               setSelections={setSelections}
+              hasGlobalPhantoms={hasGlobalPhantoms}
+              setHasGlobalPhantoms={setHasGlobalPhantoms}
             />
           )}
         </div>
@@ -441,6 +464,8 @@ export function BuildingMenuGrid({
   setSelections,
   isUniversal = false,
   universalAssociations = null,
+  hasGlobalPhantoms,
+  setHasGlobalPhantoms,
 }: any) {
   const menuItemMap = useMemo(
     () => new Map(allMenuItems.map((item: any) => [item.id, item])),
@@ -1540,7 +1565,6 @@ export function BuildingMenuGrid({
                                       const choiceIndex = dayChoicesAll.findIndex((c: any) => c.choiceId === choice.choiceId)
                                       const cLabel = `C${choiceIndex >= 0 ? choiceIndex + 1 : '?'}`
                                       
-                                      // Extract SMP names to help user identify which choice pair this is
                                       const smpNames = choice.mealPlans
                                         .flatMap((mp: any) => mp.subMealPlans.map((s: any) => {
                                           const freshSmp = subMealPlans.find((smp: any) => smp.id === s.subMealPlanId)
@@ -1557,6 +1581,20 @@ export function BuildingMenuGrid({
                                         </div>
                                       )
                                       const cc = choiceColorMap.get(choice.choiceId)
+
+                                      // ═══ PHANTOM DETECTION ═══
+                                      const displayItemIds = new Set(displayItems.map((item: any) => item.id))
+                                      const phantomSelections = selectedItemsForChoice.filter(
+                                        (s: any) => !displayItemIds.has(s.selectedItemId)
+                                      )
+                                      const hasPhantoms = phantomSelections.length > 0
+                                      // Recompute effective limit: only count real (visible) selections
+                                      const realSelectedCount = selectedItemsForChoice.length - phantomSelections.length
+                                      const effectiveAtLimit = (choice.quantity > 0) && (realSelectedCount >= choice.quantity)
+
+                                      if (hasPhantoms && !hasGlobalPhantoms) {
+                                        setTimeout(() => setHasGlobalPhantoms(true), 0)
+                                      }
 
                                       return (
                                         <div key={choice.choiceId} className={`rounded shadow-sm overflow-hidden p-1.5 ${cc ? `border-l-4` : 'border border-gray-200'}`} style={cc ? { backgroundColor: cc.lightBg, borderLeftColor: cc.primary } : {}}>
@@ -1585,7 +1623,38 @@ export function BuildingMenuGrid({
                                               </HoverCard>
                                             )}
                                           </div>
-      
+
+                                          {/* 👻 PHANTOM ITEMS — items in selection but not in display. Show them so user can remove. */}
+                                          {hasPhantoms && (
+                                            <div className="flex flex-col gap-1 mb-2 mt-2">
+                                              {phantomSelections.map((phantom: any) => (
+                                                <div key={`phantom-${phantom.selectedItemId}`} className="flex items-center gap-2 px-2 py-1.5 rounded text-[11px] border-2 border-dashed border-red-300 bg-red-50">
+                                                  <input
+                                                    type="checkbox"
+                                                    className="mt-0.5 rounded border-red-400 w-3 h-3 cursor-pointer shrink-0 accent-red-500"
+                                                    checked={true}
+                                                    onChange={() => {
+                                                      // Find the row this phantom belongs to for toggling
+                                                      const phantomRow = merged.rows.find((r: any) => r.subMealPlanId === phantom.subMealPlanId) || merged.rows[0]
+                                                      toggleSelection(choice.choiceId, phantomRow, { id: phantom.selectedItemId, name: phantom.selectedItemName })
+                                                    }}
+                                                  />
+                                                  <div className="flex flex-col leading-tight w-full">
+                                                    <span className="font-bold text-red-700 line-through">
+                                                      {phantom.selectedItemName}
+                                                    </span>
+                                                    <span className="text-[9px] text-red-500 font-medium">
+                                                      👻 Ghost selection — not in this cell's items. Uncheck to free the slot.
+                                                    </span>
+                                                    <span className="text-[8px] text-red-400 font-mono">
+                                                      SMP: {phantom.subMealPlanName} | ID: {phantom.selectedItemId?.slice(0, 12)}…
+                                                    </span>
+                                                  </div>
+                                                </div>
+                                              ))}
+                                            </div>
+                                          )}
+
                                           {/* Items list with checkboxes */}
                                           <div className="flex flex-col gap-1.5 mt-2">
                                             {[...displayItems].sort((a: any, b: any) => {
@@ -1606,7 +1675,8 @@ export function BuildingMenuGrid({
                                               }
       
                                               const isSelectedHere = selectedItemsForChoice.some((s:any) => s.selectedItemId === item.id)
-                                              const isDisabled = !isSelectedHere && isChoiceAtLimit
+                                              // Use effectiveAtLimit (excluding phantoms) instead of raw isChoiceAtLimit
+                                              const isDisabled = !isSelectedHere && effectiveAtLimit
       
                                               return (
                                                 <div key={item.id} className="flex items-start gap-1">

@@ -31,6 +31,7 @@ import {
 } from 'lucide-react'
 import { toast } from "@/hooks/use-toast"
 import type { Service, MealPlan, SubMealPlan, MenuItem, SubService } from "@/lib/types"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import {
   servicesService,
   subServicesService,
@@ -2851,6 +2852,12 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
   const [showConfirmationModal, setShowConfirmationModal] = useState(false)
   const [pendingSaveAction, setPendingSaveAction] = useState<{ isDraft: boolean } | null>(null)
 
+  // AI MENU SUGGESTION (Preview + Apply)
+  const [showAiSuggestModal, setShowAiSuggestModal] = useState(false)
+  const [aiSuggestLoading, setAiSuggestLoading] = useState(false)
+  const [aiSuggestError, setAiSuggestError] = useState<string | null>(null)
+  const [aiSuggestPreview, setAiSuggestPreview] = useState<any | null>(null)
+
   // CHOICE SELECTION MODAL STATE
   const [showChoiceModal, setShowChoiceModal] = useState(false)
   const [companiesWithChoices, setCompaniesWithChoices] = useState<CompanyChoice[]>([])
@@ -5481,6 +5488,102 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
     }
   }
 
+  const fetchAiMenuSuggestion = useCallback(async () => {
+    const startDate = menu?.startDate || createStartDate
+    const endDate = menu?.endDate || createEndDate
+    if (!startDate || !endDate) {
+      toast({ title: "Missing dates", description: "Select a start/end date first.", variant: "destructive" })
+      return
+    }
+    if (!selectedService?.id || !selectedSubService?.id) {
+      toast({ title: "Missing selection", description: "Select a service and sub-service first.", variant: "destructive" })
+      return
+    }
+
+    setAiSuggestError(null)
+    setAiSuggestLoading(true)
+    setShowAiSuggestModal(true)
+    try {
+      const res = await fetch("/api/ai/menu-suggest", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          startDate,
+          endDate,
+          serviceId: selectedService.id,
+          subServiceId: selectedSubService.id,
+          fillMode: "missing_only",
+          // Pass current draft so AI fills only blank cells (matches how you build menus in UI)
+          currentMenuData: menuData,
+        }),
+      })
+      const data = await res.json().catch(() => null)
+      if (!res.ok || !data?.ok) throw new Error(data?.error || "AI suggestion failed")
+      setAiSuggestPreview(data)
+    } catch (e: any) {
+      setAiSuggestPreview(null)
+      setAiSuggestError(e?.message || "AI suggestion failed")
+    } finally {
+      setAiSuggestLoading(false)
+    }
+  }, [menu?.startDate, menu?.endDate, createStartDate, createEndDate, selectedService?.id, selectedSubService?.id, menuData])
+
+  const applyAiMenuToDraft = useCallback(() => {
+    const suggestedMenuData = aiSuggestPreview?.menuData
+    if (!suggestedMenuData || typeof suggestedMenuData !== "object") return
+
+    setMenuData((prev: any) => {
+      const updated = JSON.parse(JSON.stringify(prev || {}))
+
+      for (const date of Object.keys(suggestedMenuData)) {
+        const day = suggestedMenuData[date]
+        if (!day || typeof day !== "object") continue
+
+        if (!updated[date]) updated[date] = {}
+
+        for (const serviceId of Object.keys(day)) {
+          const ssObj = day[serviceId]
+          if (!ssObj || typeof ssObj !== "object") continue
+          if (!updated[date][serviceId]) updated[date][serviceId] = {}
+
+          for (const subServiceId of Object.keys(ssObj)) {
+            const mpObj = ssObj[subServiceId]
+            if (!mpObj || typeof mpObj !== "object") continue
+            if (!updated[date][serviceId][subServiceId]) updated[date][serviceId][subServiceId] = {}
+
+            for (const mealPlanId of Object.keys(mpObj)) {
+              const smpObj = mpObj[mealPlanId]
+              if (!smpObj || typeof smpObj !== "object") continue
+              if (!updated[date][serviceId][subServiceId][mealPlanId]) updated[date][serviceId][subServiceId][mealPlanId] = {}
+
+              for (const subMealPlanId of Object.keys(smpObj)) {
+                const cell = smpObj[subMealPlanId]
+                const ids = Array.isArray(cell?.menuItemIds) ? cell.menuItemIds : []
+                if (ids.length === 0) continue
+
+                const existing = updated[date][serviceId][subServiceId][mealPlanId][subMealPlanId]
+                updated[date][serviceId][subServiceId][mealPlanId][subMealPlanId] = {
+                  ...(existing || {}),
+                  menuItemIds: ids.slice(0, 3),
+                  aiSuggestedMarks: ids.slice(0, 3).reduce((acc: any, id: string) => {
+                    acc[id] = true
+                    return acc
+                  }, {}),
+                  aiSuggestedAt: Date.now(),
+                }
+              }
+            }
+          }
+        }
+      }
+
+      return updated
+    })
+
+    toast({ title: "AI Applied", description: "Suggestions added to your draft. Review and then save." })
+    setShowAiSuggestModal(false)
+  }, [aiSuggestPreview])
+
   const mealPlanStructure = useMemo(() => {
     return mealPlans.map((mp) => ({
       mealPlan: mp,
@@ -6356,6 +6459,17 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
           )}
 
           <div className="flex gap-2">
+            {menuType === "combined" && (
+              <Button
+                variant="outline"
+                onClick={fetchAiMenuSuggestion}
+                disabled={saving || loading}
+                className="border-blue-300 text-blue-700 hover:bg-blue-50"
+              >
+                {aiSuggestLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Zap className="h-4 w-4 mr-2" />}
+                AI Suggest
+              </Button>
+            )}
             <Button variant="outline" onClick={() => handleSave(true)} disabled={saving || loading} className="border-purple-300 text-purple-700 hover:bg-purple-50">
               {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
               Save as Draft
@@ -6383,6 +6497,89 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
             </Button>
           </div>
         </div>
+
+        <Dialog open={showAiSuggestModal} onOpenChange={setShowAiSuggestModal}>
+          <DialogContent className="max-w-4xl max-h-[85vh] overflow-hidden">
+            <DialogHeader>
+              <DialogTitle>AI Menu Suggestions (Preview)</DialogTitle>
+            </DialogHeader>
+
+            <div className="text-sm text-muted-foreground">
+              Review first. Click “Apply to Draft” to insert suggestions into the current editing session.
+            </div>
+
+            <div className="mt-3 rounded-md border p-3 bg-muted/20 max-h-[55vh] overflow-auto">
+              {aiSuggestLoading && (
+                <div className="flex items-center gap-2 text-sm">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Generating suggestions...
+                </div>
+              )}
+
+              {!aiSuggestLoading && aiSuggestError && (
+                <div className="text-sm text-red-600">{aiSuggestError}</div>
+              )}
+
+              {!aiSuggestLoading && !aiSuggestError && aiSuggestPreview?.enrichedMenu && (
+                <div className="space-y-4">
+                  {Object.entries(aiSuggestPreview.enrichedMenu).map(([date, servicesForDate]: any) => (
+                    <div key={date} className="rounded-md border bg-white p-3">
+                      <div className="font-semibold text-sm mb-2">{date}</div>
+                      <div className="space-y-3">
+                        {(servicesForDate || []).map((svc: any) => (
+                          <div key={svc.serviceId}>
+                            <div className="font-medium text-sm">{svc.serviceName}</div>
+                            <div className="ml-4 space-y-2">
+                              {(svc.subServices || []).map((ss: any) => (
+                                <div key={ss.subServiceId}>
+                                  <div className="text-sm font-medium text-gray-700">{ss.subServiceName}</div>
+                                  <div className="ml-4 space-y-2">
+                                    {(ss.mealPlans || []).map((mp: any) => (
+                                      <div key={mp.mealPlanId}>
+                                        <div className="text-sm text-gray-700">{mp.mealPlanName}</div>
+                                        <div className="ml-4 space-y-2">
+                                          {(mp.subMealPlans || []).map((smp: any) => (
+                                            <div key={smp.subMealPlanId} className="text-sm">
+                                              <div className="text-gray-600">{smp.subMealPlanName}</div>
+                                              <div className="ml-4 text-gray-800">
+                                                {(smp.items || []).length === 0 ? (
+                                                  <span className="text-gray-400">No suggestion</span>
+                                                ) : (
+                                                  <ul className="list-disc pl-5">
+                                                    {(smp.items || []).map((it: any) => (
+                                                      <li key={it.menuItemId}>{it.menuItemName}</li>
+                                                    ))}
+                                                  </ul>
+                                                )}
+                                              </div>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="mt-4 flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setShowAiSuggestModal(false)} disabled={aiSuggestLoading}>
+                Close
+              </Button>
+              <Button onClick={applyAiMenuToDraft} disabled={aiSuggestLoading || !aiSuggestPreview?.menuData}>
+                Apply to Draft
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
 
         {/* Logs FAB */}
         <div className="absolute bottom-20 right-6 z-[80]">

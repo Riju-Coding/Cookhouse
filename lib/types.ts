@@ -1,9 +1,20 @@
+export interface AiTags {
+  color?: string
+  cuisine?: string
+  primaryIngredient?: string
+  flavorProfile?: string
+  submealCategory?: string
+  heavyLight?: "Heavy" | "Light" | "Medium"
+  updatedAt?: any
+}
+
 export interface MenuItem {
   id: string
   name: string
   category?: string
   order?: number
   status?: string
+  aiTags?: AiTags
 }
 
 export interface Service {
@@ -72,6 +83,32 @@ export interface MenuUpdation {
   createdAt: Date
   createdBy?: string
   notes?: string
+}
+
+export interface MenuPlanningRule {
+  id?: string
+  serviceId: string
+  subServiceId: string
+  companyId?: string // If missing, it's the base global rule. If set, it's a company override.
+  grandRules?: string[] // e.g., ["No repeated main ingredients in a day", "Always serve one vegetarian option"]
+  dayRules: {
+    // e.g., "monday", "tuesday"
+    [dayKey: string]: {
+      globalDayRule?: string // e.g. "no repeated ingredients"
+      cellRules: {
+        // e.g., "mealPlanId|subMealPlanId"
+        [cellKey: string]: {
+          allowedColors?: string[]
+          allowedCuisines?: string[]
+          allowedIngredients?: string[]
+          allowedFlavorProfiles?: string[]
+          heavyLight?: string
+        }
+      }
+    }
+  }
+  updatedAt?: any
+  createdAt?: any
 }
 
 // ═══════════════════════════════════════════════════════════════

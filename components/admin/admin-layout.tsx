@@ -26,6 +26,8 @@ import {
   ChevronRight,
   Calendar,
   MonitorUp,
+  BrainCircuit,
+  MapPin,
 } from "lucide-react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
@@ -62,11 +64,14 @@ const navigation = [
   { name: "Company Wise Menu", href: "/admin/company-menus", icon: Building, category: "menu-management" },
   { name: "Presentation", href: "/admin/presentation", icon: MonitorUp, category: "menu-management" },
   { name: "Corporate Deck (PDF)", href: "/admin/corporate-deck", icon: FileText, category: "menu-management" },
+  { name: "Menu Planning Rules", href: "/admin/menu-planning-rules", icon: Settings, category: "menu-management" },
+  { name: "AI Training Module", href: "/admin/ai-training", icon: BrainCircuit, category: "system-admin" },
   { name: "Corporate Calendar", href: "/admin/corporate-calendar", icon: Calendar, category: "organization" },
   { name: "Structure Assignment", href: "/admin/structure-assignment", icon: Calendar, category: "organization" },
   { name: "Structure Management", href: "/admin/structure-management", icon: Settings, category: "organization" },
   { name: "Meal Plan Structure", href: "/admin/meal-plan-structure", icon: FileText, category: "organization" },
   { name: "Vendors Management", href: "/admin/vendors", icon: FileText, category: "vendors" },
+  { name: "Attendance Management", href: "/admin/attendance", icon: MapPin, category: "attendance" },
   { name: "Access Management", href: "/admin/access-management", icon: Settings, category: "system-admin" },
   { name: "Roles", href: "/admin/roles", icon: Users, category: "system-admin" },
   { name: "Permissions", href: "/admin/permissions", icon: Settings, category: "system-admin" },
@@ -82,6 +87,7 @@ const categories = [
   { key: "organization", label: "Organization", icon: Building2 },
   { key: "menu-management", label: "Menu Management", icon: Building2 },
   { key: "vendors", label: "Vendors Management", icon: Building2 },
+  { key: "attendance", label: "Attendance", icon: MapPin },
   { key: "system-admin", label: "System Administration", icon: Settings },
 ]
 
