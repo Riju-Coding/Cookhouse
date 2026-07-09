@@ -5,6 +5,7 @@ import {
   addDoc, 
   doc, 
   updateDoc, 
+  setDoc,
   deleteDoc, 
   query,
   where,
@@ -51,14 +52,15 @@ export const complianceTemplateFieldsService = {
   getByTemplateId: async (templateId: string): Promise<ComplianceTemplateField[]> => {
     const q = query(
       templateFieldsCollection, 
-      where("templateId", "==", templateId),
-      orderBy("order")
+      where("templateId", "==", templateId)
     )
     const snapshot = await getDocs(q)
-    return snapshot.docs.map(doc => ({
+    const fields = snapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data()
     } as ComplianceTemplateField))
+    
+    return fields.sort((a, b) => (a.order || 0) - (b.order || 0))
   },
 
   add: async (data: Omit<ComplianceTemplateField, 'id' | 'createdAt'>) => {
@@ -71,7 +73,7 @@ export const complianceTemplateFieldsService = {
 
   update: async (id: string, data: Partial<Omit<ComplianceTemplateField, 'id'>>) => {
     const docRef = doc(db, COLLECTION_NAME, id)
-    return await updateDoc(docRef, data)
+    return await setDoc(docRef, data, { merge: true })
   },
 
   delete: async (id: string) => {

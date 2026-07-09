@@ -16,8 +16,10 @@ import {
   Plus, Pencil, Trash2, Ban, CheckCircle, ClipboardList, ListChecks,
   Thermometer, Truck, UtensilsCrossed, FileCheck, Search, Filter,
   Calendar, Building2, Eye, ChevronRight, BarChart3, AlertTriangle,
-  Clock, CheckCircle2
+  Clock, CheckCircle2, Download, Loader2
 } from "lucide-react"
+import ExcelJS from "exceljs"
+import { saveAs } from "file-saver"
 
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -100,16 +102,18 @@ export default function ComplianceDashboardPage() {
   // Record Modal
   const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null)
   const [recordModalOpen, setRecordModalOpen] = useState(false)
+  const [isExporting, setIsExporting] = useState(false)
 
   useEffect(() => { fetchAll() }, [])
 
   const fetchAll = async () => {
     try {
       setLoading(true)
-      const [templatesRes, formsRes, recentRecords, vSnap, cSnap, bSnap, rSnap] = await Promise.all([
+      const [templatesRes, formsRes, recentRecords, pendingRecords, vSnap, cSnap, bSnap, rSnap] = await Promise.all([
         complianceTemplatesService.getAll().catch(() => []),
         complianceFormsService.getAll().catch(() => []),
         complianceRecordsService.getRecent(50).catch(() => []),
+        complianceRecordsService.getPending().catch(() => []),
         getDocs(collection(db, 'vendors')),
         getDocs(collection(db, 'companies')),
         getDocs(collection(db, 'buildings')),
@@ -117,7 +121,18 @@ export default function ComplianceDashboardPage() {
       ])
       setTemplates(templatesRes)
       setLegacyForms(formsRes)
-      setRecords(recentRecords)
+      
+      // Merge recent and pending records, keeping unique by id
+      const allRecordsMap = new Map()
+      pendingRecords.forEach(r => allRecordsMap.set(r.id, r))
+      recentRecords.forEach(r => allRecordsMap.set(r.id, r))
+      const mergedRecords = Array.from(allRecordsMap.values()).sort((a, b) => {
+        const timeA = a.date ? new Date(a.date).getTime() : (a.createdAt?.toMillis ? a.createdAt.toMillis() : 0);
+        const timeB = b.date ? new Date(b.date).getTime() : (b.createdAt?.toMillis ? b.createdAt.toMillis() : 0);
+        return timeB - timeA;
+      })
+      
+      setRecords(mergedRecords)
       setVendors(vSnap.docs.map(d => ({ id: d.id, ...d.data() })))
       setCompanies(cSnap.docs.map(d => ({ id: d.id, ...d.data() })))
       setBuildings(bSnap.docs.map(d => ({ id: d.id, ...d.data() })))
@@ -176,7 +191,6 @@ export default function ComplianceDashboardPage() {
     }
   }
 
-  // ─── Legacy form handlers (same as before) ────────────────────
   const handleDeleteLegacy = async (id: string) => {
     if (!confirm("Delete this legacy form?")) return
     try {
@@ -185,6 +199,160 @@ export default function ComplianceDashboardPage() {
       fetchAll()
     } catch (error) {
       toast({ title: "Error", description: "Failed to delete.", variant: "destructive" })
+    }
+  }
+
+  const handleExportExcel = async () => {
+    setIsExporting(true);
+    toast({ title: "Exporting...", description: "Please wait while we prepare the file and fetch images.", duration: 5000 });
+    try {
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet("Compliance_Records");
+
+      // Columns
+      worksheet.columns = [
+        { header: 'Form Name (Template)', key: 'formName', width: 25 },
+        { header: 'Type', key: 'type', width: 15 },
+        { header: 'Date', key: 'date', width: 15 },
+        { header: 'Vendor', key: 'vendor', width: 20 },
+        { header: 'Company', key: 'company', width: 20 },
+        { header: 'Submitted By', key: 'submittedBy', width: 20 },
+        { header: 'Status', key: 'status', width: 15 },
+        { header: 'Item/Question', key: 'item', width: 30 },
+        { header: 'Value/Observation', key: 'value', width: 25 },
+        { header: 'Notes', key: 'notes', width: 30 },
+        { header: 'Photo', key: 'photo', width: 30 }
+      ];
+
+      // Make header row bold
+      worksheet.getRow(1).font = { bold: true };
+      
+      const fetchImageBase64 = async (url: string) => {
+        try {
+          // Use our Next.js backend proxy to completely bypass browser CORS restrictions
+          const proxyUrl = `/api/proxy-image?url=${encodeURIComponent(url)}`;
+          const res = await fetch(proxyUrl);
+          
+          if (!res.ok) throw new Error("Failed to fetch image via proxy");
+          
+          const blob = await res.blob();
+          return await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result as string);
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+          });
+        } catch (e) {
+          console.error("Image fetch error:", e);
+          return null;
+        }
+      };
+
+      for (const record of records) {
+        const typeCfg = TEMPLATE_TYPE_CONFIG[record.templateType] || TEMPLATE_TYPE_CONFIG.general_checklist;
+        const dateStr = record.date ? new Date(record.date).toLocaleDateString() : (record.createdAt?.toMillis ? new Date(record.createdAt.toMillis()).toLocaleDateString() : '—');
+        
+        // Main Record Row
+        worksheet.addRow({
+          formName: record.templateName || record.formName || '—',
+          type: typeCfg.label,
+          date: dateStr,
+          vendor: record.vendorName || getName(vendors, record.vendorId),
+          company: record.companyName || getName(companies, record.companyId || ''),
+          submittedBy: record.submittedByName || '—',
+          status: record.status,
+          item: "",
+          value: "",
+          notes: "",
+          photo: ""
+        });
+
+        // Child Rows for Items
+        if (record.items && record.items.length > 0) {
+          for (let index = 0; index < record.items.length; index++) {
+            const item = record.items[index];
+            let val = "";
+            if (item.temperature) val += `${item.temperature}${item.temperatureUnit || '°C'} `;
+            if (item.quantity) val += `| Qty: ${item.quantity} ${item.quantityUnit || ''}`;
+            
+            const row = worksheet.addRow({
+              item: `   ↳ ${item.menuItemName || 'Item ' + (index + 1)}`,
+              value: val.trim(),
+              notes: item.notes || ""
+            });
+
+            if (item.photoUrl) {
+              const base64 = await fetchImageBase64(item.photoUrl);
+              if (base64) {
+                const rawBase64 = base64.includes(',') ? base64.split(',')[1] : base64;
+                const extension = item.photoUrl.toLowerCase().includes('.jpg') || item.photoUrl.toLowerCase().includes('.jpeg') ? 'jpeg' : 'png';
+                try {
+                  const imageId = workbook.addImage({ base64: rawBase64, extension });
+                  row.height = 100; 
+                  worksheet.addImage(imageId, {
+                    tl: { col: 10, row: row.number - 1 },
+                    ext: { width: 100, height: 100 },
+                    editAs: 'oneCell'
+                  });
+                } catch (imgErr) {
+                  console.error("Failed to add image to workbook", imgErr);
+                  row.getCell('photo').value = item.photoUrl;
+                }
+              } else {
+                row.getCell('photo').value = item.photoUrl; // fallback to text link
+              }
+            }
+          }
+        }
+        
+        // Child Rows for Answers
+        if (record.answers && record.answers.length > 0) {
+          for (let index = 0; index < record.answers.length; index++) {
+            const ans = record.answers[index] as any;
+            const displayValue = String(ans.answer ?? ans.value ?? "—");
+            
+            const row = worksheet.addRow({
+              item: `   ↳ ${ans.question || `Question (ID: ${ans.fieldId})`}`,
+              value: displayValue,
+              notes: ""
+            });
+
+            if (ans.photoUrl) {
+              const base64 = await fetchImageBase64(ans.photoUrl);
+              if (base64) {
+                // exceljs prefers raw base64 without data URI prefix
+                const rawBase64 = base64.includes(',') ? base64.split(',')[1] : base64;
+                const extension = ans.photoUrl.toLowerCase().includes('.jpg') || ans.photoUrl.toLowerCase().includes('.jpeg') ? 'jpeg' : 'png';
+                
+                try {
+                  const imageId = workbook.addImage({ base64: rawBase64, extension });
+                  row.height = 100; // make row tall enough for image
+                  worksheet.addImage(imageId, {
+                    tl: { col: 10, row: row.number - 1 },
+                    ext: { width: 100, height: 100 },
+                    editAs: 'oneCell'
+                  });
+                } catch (imgErr) {
+                  console.error("Failed to add image to workbook", imgErr);
+                  row.getCell('photo').value = ans.photoUrl;
+                }
+              } else {
+                row.getCell('photo').value = ans.photoUrl; // fallback to text link
+              }
+            }
+          }
+        }
+      }
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      saveAs(blob, `Compliance_Export_${new Date().toISOString().split('T')[0]}.xlsx`);
+      toast({ title: "Success", description: "Export completed successfully!" });
+    } catch (e) {
+      console.error(e);
+      toast({ title: "Error", description: "An error occurred while exporting", variant: "destructive" });
+    } finally {
+      setIsExporting(false);
     }
   }
 
@@ -411,8 +579,15 @@ export default function ComplianceDashboardPage() {
               <p className="text-gray-400 text-sm mt-1">Records will appear here once supervisors submit them from the mobile app.</p>
             </div>
           ) : (
-            <div className="rounded-md border bg-white shadow-sm overflow-hidden">
-              <Table>
+            <>
+              <div className="flex justify-end mb-4">
+                <Button variant="outline" disabled={isExporting} onClick={handleExportExcel} className="gap-2 text-green-700 hover:text-green-800 hover:bg-green-50 border-green-200">
+                  {isExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />} 
+                  {isExporting ? "Exporting..." : "Export to Excel"}
+                </Button>
+              </div>
+              <div className="rounded-md border bg-white shadow-sm overflow-hidden">
+                <Table>
                 <TableHeader className="bg-gray-50">
                   <TableRow>
                     <TableHead>Date</TableHead>
@@ -433,9 +608,9 @@ export default function ComplianceDashboardPage() {
                     return (
                       <TableRow key={record.id}>
                         <TableCell className="font-medium text-sm">
-                          {record.date ? new Date(record.date).toLocaleDateString() : '—'}
+                          {record.date ? new Date(record.date).toLocaleDateString() : (record.createdAt?.toMillis ? new Date(record.createdAt.toMillis()).toLocaleDateString() : '—')}
                         </TableCell>
-                        <TableCell className="text-sm">{record.templateName || '—'}</TableCell>
+                        <TableCell className="text-sm">{record.templateName || record.formName || '—'}</TableCell>
                         <TableCell>
                           <Badge className={`text-[10px] gap-1 ${typeCfg.bgColor} ${typeCfg.color} border ${typeCfg.borderColor}`}>
                             <TypeIcon className="h-3 w-3" />
@@ -474,6 +649,7 @@ export default function ComplianceDashboardPage() {
                 </TableBody>
               </Table>
             </div>
+            </>
           )}
         </div>
       )}

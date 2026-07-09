@@ -5,6 +5,7 @@ import {
   addDoc, 
   doc, 
   updateDoc, 
+  setDoc,
   deleteDoc, 
   serverTimestamp,
   query,
@@ -122,7 +123,7 @@ export const complianceTemplatesService = {
       ...data,
       updatedAt: serverTimestamp(),
     }
-    return await updateDoc(docRef, payload)
+    return await setDoc(docRef, payload, { merge: true })
   },
 
   delete: async (id: string) => {

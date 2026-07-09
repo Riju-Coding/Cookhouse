@@ -11,8 +11,10 @@ import { toast } from "@/hooks/use-toast"
 import { 
   ArrowLeft, ArrowRight, Save, Trash2, Plus, 
   Thermometer, Truck, UtensilsCrossed, FileCheck, 
-  Settings2, Building2, MapPin, CheckSquare, List
+  Settings2, Building2, MapPin, CheckSquare, List, Copy
 } from "lucide-react"
+
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -81,6 +83,13 @@ export default function TemplateBuilderPage({ params }: { params: { id: string }
   const [services, setServices] = useState<any[]>([])
   const [subServices, setSubServices] = useState<any[]>([])
 
+  // Copy form state
+  const [isCopyModalOpen, setIsCopyModalOpen] = useState(false)
+  const [copyTemplates, setCopyTemplates] = useState<ComplianceTemplate[]>([])
+  const [selectedCopyTemplateId, setSelectedCopyTemplateId] = useState<string>("")
+  const [copyTemplateFields, setCopyTemplateFields] = useState<ComplianceTemplateField[]>([])
+  const [selectedFieldIdsToCopy, setSelectedFieldIdsToCopy] = useState<string[]>([])
+
   useEffect(() => {
     fetchLookups()
     if (!isNew) fetchExistingTemplate()
@@ -140,6 +149,48 @@ export default function TemplateBuilderPage({ params }: { params: { id: string }
     }
   }
 
+  const handleOpenCopyModal = async () => {
+    setIsCopyModalOpen(true)
+    if (copyTemplates.length === 0) {
+      try {
+        const templates = await complianceTemplatesService.getByType('general_checklist')
+        setCopyTemplates(templates.filter(t => t.id !== params.id))
+      } catch (e) {
+        toast({ title: "Error", description: "Failed to load templates", variant: "destructive" })
+      }
+    }
+  }
+
+  const handleSelectCopyTemplate = async (id: string) => {
+    setSelectedCopyTemplateId(id)
+    setCopyTemplateFields([])
+    setSelectedFieldIdsToCopy([])
+    if (id && id !== "none") {
+      try {
+        const fields = await complianceTemplateFieldsService.getByTemplateId(id)
+        setCopyTemplateFields(fields)
+        setSelectedFieldIdsToCopy(fields.map(f => f.id))
+      } catch (e) {
+        toast({ title: "Error", description: "Failed to load template fields", variant: "destructive" })
+      }
+    }
+  }
+
+  const handleCopyFields = () => {
+    const fieldsToAdd = copyTemplateFields.filter(f => selectedFieldIdsToCopy.includes(f.id))
+    const newFields = fieldsToAdd.map((f, i) => ({
+      question: f.question,
+      type: f.type,
+      isRequired: f.isRequired,
+      isPhotoRequired: f.isPhotoRequired,
+      options: f.options,
+      order: customFields.length + i,
+    }))
+    setCustomFields([...customFields, ...newFields])
+    setIsCopyModalOpen(false)
+    toast({ title: "Fields Copied", description: `Copied ${newFields.length} fields.` })
+  }
+
   const handleSave = async () => {
     if (!name || !vendorId || !assignedRole) {
       toast({ title: "Missing Fields", description: "Name, Vendor, and Assigned Role are required.", variant: "destructive" })
@@ -184,17 +235,20 @@ export default function TemplateBuilderPage({ params }: { params: { id: string }
 
       // Add custom fields if applicable
       if (templateType === 'general_checklist' && customFields.length > 0) {
-        await Promise.all(customFields.map((f, i) => 
-          complianceTemplateFieldsService.add({
+        await Promise.all(customFields.map((f, i) => {
+          const fieldPayload: any = {
             templateId,
             question: f.question,
             type: f.type,
             isRequired: f.isRequired,
             isPhotoRequired: f.isPhotoRequired,
             order: i,
-            options: f.options,
-          })
-        ))
+          }
+          if (f.options !== undefined) {
+            fieldPayload.options = f.options
+          }
+          return complianceTemplateFieldsService.add(fieldPayload)
+        }))
       }
 
       toast({ title: "Success", description: "Template saved successfully." })
@@ -525,9 +579,14 @@ export default function TemplateBuilderPage({ params }: { params: { id: string }
                         </div>
                       </div>
                     ))}
-                    <Button variant="outline" className="w-full border-dashed py-6" onClick={() => setCustomFields([...customFields, { question: '', type: 'yes_no', isRequired: true, isPhotoRequired: false, order: customFields.length }])}>
-                      <Plus className="mr-2 h-4 w-4" /> Add Question
-                    </Button>
+                    <div className="flex gap-4">
+                      <Button variant="outline" className="flex-1 border-dashed py-6" onClick={() => setCustomFields([...customFields, { question: '', type: 'yes_no', isRequired: true, isPhotoRequired: false, order: customFields.length }])}>
+                        <Plus className="mr-2 h-4 w-4" /> Add Question
+                      </Button>
+                      <Button variant="outline" className="flex-1 border-dashed py-6 bg-purple-50 text-purple-700 hover:bg-purple-100 hover:text-purple-800" onClick={handleOpenCopyModal}>
+                        <Copy className="mr-2 h-4 w-4" /> Copy from existing form
+                      </Button>
+                    </div>
                   </div>
                 </div>
               )}
@@ -557,6 +616,85 @@ export default function TemplateBuilderPage({ params }: { params: { id: string }
           </Button>
         )}
       </div>
+
+      <Dialog open={isCopyModalOpen} onOpenChange={setIsCopyModalOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Copy fields from existing form</DialogTitle>
+            <DialogDescription>Select an existing general form template and pick the questions you want to copy.</DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-6 py-4">
+            <div className="space-y-2">
+              <Label>Select Template</Label>
+              <Select value={selectedCopyTemplateId} onValueChange={handleSelectCopyTemplate}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Choose a template..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Choose a template...</SelectItem>
+                  {copyTemplates.map(t => {
+                    const comp = companies.find(c => c.id === t.companyId)?.name
+                    const bldg = buildings.find(b => b.id === t.buildingId)?.name
+                    let labelStr = t.name
+                    if (comp) labelStr += ` (${comp}`
+                    if (bldg) labelStr += ` - ${bldg}`
+                    if (comp) labelStr += `)`
+                    return (
+                      <SelectItem key={t.id} value={t.id}>{labelStr}</SelectItem>
+                    )
+                  })}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {selectedCopyTemplateId && selectedCopyTemplateId !== "none" && copyTemplateFields.length > 0 && (
+              <div className="space-y-3 border rounded-lg p-4 bg-gray-50 max-h-96 overflow-y-auto">
+                <div className="flex items-center justify-between border-b pb-2 mb-2">
+                  <span className="font-medium text-sm">Questions found ({copyTemplateFields.length})</span>
+                  <div className="flex items-center gap-2">
+                    <Checkbox 
+                      checked={selectedFieldIdsToCopy.length === copyTemplateFields.length}
+                      onCheckedChange={(val) => {
+                        if (val) setSelectedFieldIdsToCopy(copyTemplateFields.map(f => f.id))
+                        else setSelectedFieldIdsToCopy([])
+                      }}
+                    />
+                    <Label className="text-sm cursor-pointer">Select All</Label>
+                  </div>
+                </div>
+                {copyTemplateFields.map((field) => (
+                  <div key={field.id} className="flex items-start gap-3 bg-white p-3 rounded border">
+                    <Checkbox 
+                      className="mt-1"
+                      checked={selectedFieldIdsToCopy.includes(field.id)}
+                      onCheckedChange={(val) => {
+                        if (val) setSelectedFieldIdsToCopy([...selectedFieldIdsToCopy, field.id])
+                        else setSelectedFieldIdsToCopy(selectedFieldIdsToCopy.filter(id => id !== field.id))
+                      }}
+                    />
+                    <div>
+                      <p className="text-sm font-medium">{field.question}</p>
+                      <p className="text-xs text-gray-500">Type: {field.type.replace('_', ' ')} • {field.isRequired ? 'Required' : 'Optional'}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            
+            {selectedCopyTemplateId && selectedCopyTemplateId !== "none" && copyTemplateFields.length === 0 && (
+              <p className="text-sm text-gray-500 italic text-center py-4">No custom fields found in this template.</p>
+            )}
+          </div>
+          
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsCopyModalOpen(false)}>Cancel</Button>
+            <Button onClick={handleCopyFields} disabled={selectedFieldIdsToCopy.length === 0}>
+              Copy Selected ({selectedFieldIdsToCopy.length})
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

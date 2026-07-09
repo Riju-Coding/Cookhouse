@@ -2861,6 +2861,7 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
   // CHOICE SELECTION MODAL STATE
   const [showChoiceModal, setShowChoiceModal] = useState(false)
   const [companiesWithChoices, setCompaniesWithChoices] = useState<CompanyChoice[]>([])
+  const [choiceTabSearch, setChoiceTabSearch] = useState("")
   const [choiceSelections, setChoiceSelections] = useState<Record<string, any[]>>({})
   // Pre-filled selections when reopening the choice modal with previously saved choices
   const [initialChoiceSelections, setInitialChoiceSelections] = useState<Record<string, any[]>>({})
@@ -4381,6 +4382,13 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
           }
         }
       }
+
+      // Sort alphabetically by companyName, then buildingName
+      companiesWithChoicesData.sort((a, b) => {
+        const comp = (a.companyName || "").localeCompare(b.companyName || "")
+        if (comp !== 0) return comp
+        return (a.buildingName || "").localeCompare(b.buildingName || "")
+      })
 
       return companiesWithChoicesData
     } catch (error) {
@@ -6235,12 +6243,33 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
             </>
           )}
 
-            {activeBottomTab === 'choices' && (
+            {activeBottomTab === 'choices' && (() => {
+              const filteredCompaniesWithChoices = companiesWithChoices.filter(c => 
+                (c.companyName || "").toLowerCase().includes(choiceTabSearch.toLowerCase()) || 
+                (c.buildingName || "").toLowerCase().includes(choiceTabSearch.toLowerCase())
+              );
+              return (
               <div className="flex-1 flex flex-col h-full overflow-hidden bg-white">
                 {companiesWithChoices.length > 0 ? (
                   <div className="flex flex-col h-full">
                     {/* Building Tabs for Choices */}
                     <div className="shrink-0 bg-white border-b border-gray-200 shadow-sm">
+                      {/* Search Bar */}
+                      <div className="px-4 pt-3 pb-1">
+                        <div className="relative w-full">
+                          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                          <input
+                            type="text"
+                            placeholder="Search companies..."
+                            value={choiceTabSearch}
+                            onChange={(e) => {
+                              setChoiceTabSearch(e.target.value)
+                              setChoiceTabIndex(0)
+                            }}
+                            className="w-full pl-9 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all outline-none"
+                          />
+                        </div>
+                      </div>
                       <div className="flex items-center px-4 gap-1">
                         <button
                           onClick={() => setChoiceTabIndex((i) => Math.max(0, i - 1))}
@@ -6252,7 +6281,7 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
 
                         <div className="flex-1 overflow-x-auto scrollbar-hide">
                           <div className="flex gap-1 py-2">
-                            {companiesWithChoices.map((building, idx) => {
+                            {filteredCompaniesWithChoices.map((building, idx) => {
                               const isActive = idx === choiceTabIndex
                               return (
                                 <div
@@ -6281,8 +6310,8 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
                         </div>
 
                         <button
-                          onClick={() => setChoiceTabIndex((i) => Math.min(companiesWithChoices.length - 1, i + 1))}
-                          disabled={choiceTabIndex === companiesWithChoices.length - 1}
+                          onClick={() => setChoiceTabIndex((i) => Math.min(filteredCompaniesWithChoices.length - 1, i + 1))}
+                          disabled={choiceTabIndex >= filteredCompaniesWithChoices.length - 1}
                           className="shrink-0 p-1.5 rounded-md text-gray-400 hover:text-gray-700 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                         >
                           <ChevronRight className="h-4 w-4" />
@@ -6292,10 +6321,14 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
 
                     {/* Active Grid */}
                     <div className="flex-1 overflow-auto bg-gray-100 relative">
-                      {companiesWithChoices[choiceTabIndex] && (
+                      {filteredCompaniesWithChoices.length === 0 && choiceTabSearch ? (
+                        <div className="flex-1 flex flex-col items-center justify-center text-gray-500 h-full">
+                          <p className="text-sm">No companies match your search.</p>
+                        </div>
+                      ) : filteredCompaniesWithChoices[choiceTabIndex] && (
                         <BuildingMenuGrid
-                          key={`${companiesWithChoices[choiceTabIndex].companyId}-${companiesWithChoices[choiceTabIndex].buildingId}`}
-                          building={companiesWithChoices[choiceTabIndex]}
+                          key={`${filteredCompaniesWithChoices[choiceTabIndex].companyId}-${filteredCompaniesWithChoices[choiceTabIndex].buildingId}`}
+                          building={filteredCompaniesWithChoices[choiceTabIndex]}
                           dateRange={dateRange}
                           allMenuItems={menuItems}
                           menuData={menuData}
@@ -6316,7 +6349,8 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
                   </div>
                 )}
               </div>
-            )}
+              );
+            })()}
 
             {activeBottomTab === 'universal' && (
               <div className="flex-1 flex flex-col h-full overflow-hidden bg-white">

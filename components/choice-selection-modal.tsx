@@ -28,6 +28,7 @@ import {
   ArrowRightLeft,
   Link2,
   Globe2,
+  Search,
 } from "lucide-react"
 import { Spinner } from "@/components/ui/spinner"
 import { calculateFrequencyViolations } from "@/lib/frequency-validator"
@@ -127,11 +128,34 @@ export function ChoiceSelectionModal({
   // Track selection count per choice to enforce quantity limits
   const [choiceSelectionCounts, setChoiceSelectionCounts] = useState<Record<string, number>>({})
   const [hasGlobalPhantoms, setHasGlobalPhantoms] = useState(false)
+  const [searchQuery, setSearchQuery] = useState("")
+
+  // Filter and sort companies
+  const filteredAndSortedCompanies = useMemo(() => {
+    let result = [...companies].sort((a, b) => 
+      (a.companyName || "").localeCompare(b.companyName || "")
+    )
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase()
+      result = result.filter(c => 
+        (c.companyName || "").toLowerCase().includes(q) || 
+        (c.buildingName || "").toLowerCase().includes(q)
+      )
+    }
+    return result
+  }, [companies, searchQuery])
 
   // Reset global phantoms on tab change
   React.useEffect(() => {
     setHasGlobalPhantoms(false)
   }, [activeTabIndex])
+
+  // Ensure activeTabIndex is within bounds when filtering changes
+  React.useEffect(() => {
+    if (activeTabIndex >= filteredAndSortedCompanies.length && filteredAndSortedCompanies.length > 0) {
+      setActiveTabIndex(0)
+    }
+  }, [filteredAndSortedCompanies.length, activeTabIndex])
 
   const hasAnySelection = useMemo(
     () => Object.values(selections).some((items) => items.length > 0),
@@ -172,7 +196,7 @@ export function ChoiceSelectionModal({
     return dayMap
   }
 
-  const activeBuilding = companies[activeTabIndex] || companies[0]
+  const activeBuilding = filteredAndSortedCompanies[activeTabIndex] || filteredAndSortedCompanies[0]
 
   // When modal opens/reopens, if there are initial selections, deep clone them
   React.useEffect(() => {
@@ -210,6 +234,20 @@ export function ChoiceSelectionModal({
           <FrequencyViolationsAlert violations={frequencyStatus.violations} />
         )}
 
+        {/* ─── Search Bar ─── */}
+        <div className="shrink-0 bg-gray-50 border-b border-gray-200 px-4 py-2 flex items-center justify-between">
+          <div className="relative w-full max-w-sm">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Search companies or buildings..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-9 pr-3 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+            />
+          </div>
+        </div>
+
         {/* ─── Building Tabs ─── */}
         <div className="shrink-0 bg-white border-b border-gray-200 shadow-sm">
           <div className="flex items-center px-4 gap-1">
@@ -223,9 +261,12 @@ export function ChoiceSelectionModal({
 
             <div className="flex-1 overflow-x-auto scrollbar-hide">
               <div className="flex gap-1 py-2">
-                {companies.map((building, idx) => {
-                  const isActive = idx === activeTabIndex
-                  const choiceProgress = getBuildingChoiceProgress(building)
+                {filteredAndSortedCompanies.length === 0 ? (
+                  <div className="text-sm text-gray-500 italic px-2">No companies found</div>
+                ) : (
+                  filteredAndSortedCompanies.map((building, idx) => {
+                    const isActive = idx === activeTabIndex
+                    const choiceProgress = getBuildingChoiceProgress(building)
                   const totalAllChoices = building.choices.length
                   const completedAllChoices = Array.from(choiceProgress.values()).reduce((s, d) => s + d.completed, 0)
                   const hasAnyChoices = totalAllChoices > 0
@@ -321,17 +362,18 @@ export function ChoiceSelectionModal({
                       )}
                     </div>
                   )
-                })}
+                  })
+                )}
               </div>
             </div>
 
             <button
               onClick={() =>
                 setActiveTabIndex((i) =>
-                  Math.min(companies.length - 1, i + 1)
+                  Math.min(filteredAndSortedCompanies.length - 1, i + 1)
                 )
               }
-              disabled={activeTabIndex === companies.length - 1}
+              disabled={activeTabIndex === filteredAndSortedCompanies.length - 1 || filteredAndSortedCompanies.length === 0}
               className="shrink-0 p-1.5 rounded-md text-gray-400 hover:text-gray-700 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
             >
               <ChevronRight className="h-4 w-4" />
@@ -377,7 +419,9 @@ export function ChoiceSelectionModal({
         {/* ─── Footer ─── */}
         <DialogFooter className="px-6 py-4 border-t border-gray-200 bg-white shrink-0 flex items-center justify-between sm:justify-between">
           <div className="text-xs text-gray-400">
-            Building {activeTabIndex + 1} of {companies.length}
+            <span className="font-medium text-gray-900">
+              Building {activeTabIndex + 1} of {filteredAndSortedCompanies.length}
+            </span>
           </div>
           <div className="flex items-center gap-3">
             <Button variant="outline" onClick={onClose} disabled={loading}>
@@ -629,23 +673,7 @@ export function BuildingMenuGrid({
       g.rows.sort((a, b) => a.order - b.order)
     }
 
-    // ✦ FIXED — Filter groups based on actual choice assignments for this specific service/sub-service
-    return Array.from(groupMap.values()).filter((group) => {
-      // Only show service groups that have choices specifically assigned to this service/sub-service
-      return building.choices.some((c: any) =>
-        (c.serviceId === group.serviceId || !c.serviceId) && // Match service or legacy choices
-        (c.subServiceId === group.subServiceId || !c.subServiceId) && // Match sub-service or legacy choices
-        c.mealPlans.some((mp: any) =>
-          mp.subMealPlans.some((smp: any) =>
-            group.rows.some(
-              (row: any) =>
-                mp.mealPlanId === row.mealPlanId &&
-                smp.subMealPlanId === row.subMealPlanId
-            )
-          )
-        )
-      )
-    })
+    return Array.from(groupMap.values())
   }, [building, dateRange, mealPlanAssignments, mealPlans, subMealPlans, isUniversal])
 
   /* ── helpers ── */

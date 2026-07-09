@@ -19,6 +19,7 @@ import {
   Building,
   Info
 } from "lucide-react"
+import GoogleMapPicker from "@/components/google-map-picker"
 
 // UI Components
 import { Button } from "@/components/ui/button"
@@ -70,7 +71,11 @@ const initialVendorState = {
     accountNumber: "",
     ifscCode: "",
     bankName: ""
-  }
+  },
+  hqLatitude: null as number | null,
+  hqLongitude: null as number | null,
+  hqRadius: 100,
+  hqAddress: "",
 }
 
 export default function VendorManagementPage() {
@@ -118,7 +123,11 @@ export default function VendorManagementPage() {
       ...vendor,
       serviceAreas: vendor.serviceAreas?.join(", ") || "",
       cuisineTypes: vendor.cuisineTypes?.join(", ") || "",
-      bankDetails: vendor.bankDetails || initialVendorState.bankDetails
+      bankDetails: vendor.bankDetails || initialVendorState.bankDetails,
+      hqLatitude: vendor.hqLatitude || null,
+      hqLongitude: vendor.hqLongitude || null,
+      hqRadius: vendor.hqRadius || 100,
+      hqAddress: vendor.hqAddress || "",
     } as any)
     setIsModalOpen(true)
   }
@@ -296,10 +305,11 @@ export default function VendorManagementPage() {
           </DialogHeader>
 
           <Tabs defaultValue="general" className="w-full">
-            <TabsList className="grid w-full grid-cols-3">
+            <TabsList className="grid w-full grid-cols-4">
               <TabsTrigger value="general">Contact Info</TabsTrigger>
               <TabsTrigger value="business">Business</TabsTrigger>
               <TabsTrigger value="bank">Banking</TabsTrigger>
+              <TabsTrigger value="hq">HQ Location</TabsTrigger>
             </TabsList>
 
             <TabsContent value="general" className="space-y-4 py-4">
@@ -370,6 +380,23 @@ export default function VendorManagementPage() {
                   <Label>Account Number</Label>
                   <Input value={formData.bankDetails.accountNumber} onChange={e => setFormData({...formData, bankDetails: {...formData.bankDetails, accountNumber: e.target.value}})} />
                 </div>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="hq" className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label>Vendor HQ Location</Label>
+                <p className="text-xs text-gray-500 mb-2">Employees can check in/out from this location.</p>
+                <GoogleMapPicker 
+                  initialLat={formData.hqLatitude ?? undefined}
+                  initialLng={formData.hqLongitude ?? undefined}
+                  initialRadius={formData.hqRadius}
+                  initialAddress={formData.hqAddress}
+                  radius={formData.hqRadius}
+                  onLocationChange={(loc) => setFormData(prev => ({...prev, hqLatitude: loc.lat, hqLongitude: loc.lng, hqAddress: loc.address}))}
+                  onRadiusChange={(r) => setFormData(prev => ({...prev, hqRadius: r}))}
+                  height="300px"
+                />
               </div>
             </TabsContent>
           </Tabs>

@@ -19,7 +19,7 @@ import {
   MapPin, Users, Clock, TrendingUp, AlertTriangle,
   Building2, Search, Filter, Download, RefreshCw,
   CheckCircle, LogIn, LogOut, Smartphone, Shield, Plus,
-  UtensilsCrossed, Navigation, Edit2
+  UtensilsCrossed, Navigation, Edit2, Settings, Monitor, Bell, Activity
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -34,6 +34,9 @@ import Link from "next/link"
 import dynamic from "next/dynamic"
 import type { Cafeteria } from "@/lib/firestore/cafeteriasService"
 import type { MapPickerLocation } from "@/components/google-map-picker"
+import { ShiftsAndBreaksTab } from "@/components/attendance/shifts-breaks-tab"
+import { PoliciesTab } from "@/components/attendance/policies-tab"
+import { LiveMonitorTab } from "@/components/attendance/live-monitor-tab"
 
 // ── Dynamic imports for Google Maps (avoid SSR) ──────────────────────────────
 const GoogleMapPicker = dynamic(() => import("@/components/google-map-picker"), {
@@ -97,8 +100,12 @@ interface Building {
 
 const TABS = [
   { id: "overview", label: "Overview", icon: TrendingUp },
+  { id: "live", label: "Live Monitor", icon: Monitor },
   { id: "records", label: "Attendance Records", icon: Clock },
   { id: "locations", label: "Locations", icon: MapPin },
+  { id: "policies", label: "Policies", icon: Shield },
+  { id: "shifts", label: "Shifts & Breaks", icon: Settings },
+  { id: "alerts", label: "Alerts", icon: Bell },
 ] as const
 type TabId = typeof TABS[number]["id"]
 
@@ -1115,6 +1122,30 @@ export default function AttendanceAdminPage() {
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* ══ LIVE MONITOR TAB ══ */}
+      {activeTab === "live" && (
+        <LiveMonitorTab records={filteredRecords} />
+      )}
+
+      {/* ══ POLICIES TAB ══ */}
+      {activeTab === "policies" && (
+        <PoliciesTab companies={companies} fetchAll={fetchAll} />
+      )}
+
+      {/* ══ SHIFTS & BREAKS TAB ══ */}
+      {activeTab === "shifts" && (
+        <ShiftsAndBreaksTab cafeterias={enrichedCafeterias} fetchAll={fetchAll} />
+      )}
+
+      {/* ══ ALERTS TAB ══ */}
+      {activeTab === "alerts" && (
+        <div className="bg-white rounded-lg p-8 text-center border">
+            <Bell className="h-12 w-12 text-blue-300 mx-auto mb-4" />
+            <h2 className="text-xl font-bold text-gray-800">Alerts & Notifications</h2>
+            <p className="text-gray-500 max-w-md mx-auto mt-2">Monitor over-break limits, unauthorized exits, and battery low alerts.</p>
         </div>
       )}
 

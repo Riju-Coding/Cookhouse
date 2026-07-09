@@ -90,36 +90,40 @@ export default function CompanyLoginPage() {
     setLoading(true)
 
     try {
-      // Check if this email is a contact email in companies collection
-      const companiesQuery = query(
-        collection(db, "companies"),
-        where("email", "==", regEmail)
-      )
-      const companiesSnap = await getDocs(companiesQuery)
-
-      if (companiesSnap.empty) {
-        setError(
-          "This email is not registered as a company contact. " +
-          "Your company admin must add your email as the company contact email first."
-        )
-        setLoading(false)
-        return
-      }
-
-      // Check if already registered
+      // Check if already created by admin in users collection
       const usersQuery = query(
         collection(db, "users"),
-        where("email", "==", regEmail)
+        where("email", "==", regEmail),
+        where("userType", "==", "company_user")
       )
       const usersSnap = await getDocs(usersQuery)
-      if (!usersSnap.empty) {
-        setError("An account with this email already exists. Please login instead.")
+
+      if (usersSnap.empty) {
+        setError("This email is not registered as a company user. Your admin must add your email in User Management first.")
         setLoading(false)
         return
       }
 
-      const companyDoc = companiesSnap.docs[0]
-      setVerifiedCompany({ id: companyDoc.id, ...companyDoc.data() })
+      const userDoc = usersSnap.docs[0];
+      const userData = userDoc.data();
+
+      // Check if they already have a firebaseUid (meaning they already registered auth)
+      if (userData.firebaseUid) {
+        setError("An account with this email is already fully registered. Please login instead.")
+        setLoading(false)
+        return
+      }
+
+      // Fetch the company name for the success UI
+      let companyName = "Your Company";
+      if (userData.companyIds && userData.companyIds.length > 0) {
+        const companyDoc = await getDocs(query(collection(db, "companies"), where("__name__", "==", userData.companyIds[0])));
+        if (!companyDoc.empty) {
+          companyName = companyDoc.docs[0].data().name;
+        }
+      }
+
+      setVerifiedCompany({ id: userDoc.id, name: companyName, ...userData })
       setRegStep("credentials")
     } catch (error) {
       setError("Verification failed. Please try again.")
@@ -149,22 +153,11 @@ export default function CompanyLoginPage() {
       // Create Firebase Auth account
       const credential = await createUserWithEmailAndPassword(auth, regEmail, regPassword)
 
-      // Create user document in Firestore
-      await addDoc(collection(db, "users"), {
-        name: regName || verifiedCompany?.contactPerson || verifiedCompany?.name,
-        email: regEmail,
-        phone: verifiedCompany?.phone || "",
-        userType: "company_user",
-        roleId: "",
-        roleKey: "COMPANY_USER",
-        vendorId: "",
-        companyIds: [verifiedCompany?.id],
-        buildingIds: [],
-        cafeteriaIds: [],
-        managerId: "",
-        status: "active",
+      // Update existing user document in Firestore with firebaseUid
+      const { doc, updateDoc } = await import("firebase/firestore")
+      await updateDoc(doc(db, "users", verifiedCompany.id), {
         firebaseUid: credential.user.uid,
-        createdAt: serverTimestamp(),
+        name: regName || verifiedCompany.name,
         updatedAt: serverTimestamp(),
       })
 

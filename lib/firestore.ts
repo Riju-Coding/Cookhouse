@@ -201,6 +201,15 @@ export interface Building extends BaseEntity {
   floor?: string
   capacity?: number
   status: string
+  attendanceSettings?: {
+    checkFrequencyMinutes: number
+    alertThresholdMinutes: number
+  }
+  breaks?: {
+    name: string
+    startTime: string
+    endTime: string
+  }[]
 }
 
 export const typesService = new FirestoreService<Type>("types")
@@ -370,6 +379,14 @@ export interface Vendor extends BaseEntity {
     bankName: string
   }
   createdBy?: string
+  
+  // HQ Geo-fence fields for attendance
+  hqLatitude?: number
+  hqLongitude?: number
+  hqRadius?: number // meters
+  hqAddress?: string
+  hqGeoSetAt?: Timestamp
+  hqGeoSetBy?: string
 }
 
 export interface VendorContract extends BaseEntity {
@@ -429,6 +446,10 @@ export interface Employee extends BaseEntity {
     startDate: string
     endDate: string
   }[]
+  shiftSettings?: {
+    startTime: string
+    endTime: string
+  }
   firebaseUid?: string
 }
 
@@ -440,3 +461,125 @@ export const vendorContractsService = new FirestoreService<VendorContract>("vend
 export const vendorsService = new FirestoreService<Vendor>("vendors")
 
 export const categoriesService = new FirestoreService<Category>("categories")
+
+// --- State-Based Attendance Engine Types ---
+
+export type EmployeeState =
+  | "SHIFT_NOT_STARTED"
+  | "WORKING_AT_SITE"
+  | "WORKING_AT_VENDOR_HQ"
+  | "TRAVELLING"
+  | "ON_BREAK"
+  | "OUTSIDE_ASSIGNED"
+  | "SHIFT_COMPLETED"
+
+export type LocationType = "CLIENT_SITE" | "VENDOR_HQ"
+
+export type TimelineEventType =
+  | "SHIFT_STARTED"
+  | "SITE_ENTERED"
+  | "SITE_EXITED"
+  | "VENDOR_HQ_ENTERED"
+  | "VENDOR_HQ_EXITED"
+  | "TRAVEL_STARTED"
+  | "TRAVEL_ENDED"
+  | "BREAK_STARTED"
+  | "BREAK_ENDED"
+  | "SHIFT_ENDED"
+
+export interface TimelineEvent {
+  type: TimelineEventType
+  timestamp: Timestamp
+  siteId?: string
+  siteName?: string
+  locationType?: LocationType
+  latitude: number
+  longitude: number
+  accuracy: number
+  note?: string
+}
+
+export interface RouteCheckpoint {
+  latitude: number
+  longitude: number
+  accuracy: number
+  timestamp: Timestamp
+  speed?: number
+  batteryLevel?: number
+}
+
+export interface SiteVisitSummary {
+  siteId: string
+  siteName: string
+  locationType: LocationType
+  enteredAt: Timestamp
+  exitedAt?: Timestamp
+  duration: number // minutes
+}
+
+export interface ShiftSummary {
+  totalShiftDuration: number // minutes
+  productiveTime: number // minutes
+  totalTravelTime: number // minutes
+  totalBreakTime: number // minutes
+  sitesVisited: SiteVisitSummary[]
+  vendorHQTime: number // minutes
+  firstCheckIn: Timestamp
+  lastCheckOut: Timestamp
+  siteCount: number
+  lateArrival: boolean
+  lateArrivalMinutes: number
+  earlyExit: boolean
+  earlyExitMinutes: number
+  overtime: number // minutes
+  routeComplianceScore: number // 0-100
+}
+
+export interface AttendanceSession extends BaseEntity {
+  userId: string
+  employeeName: string
+  companyId: string
+  vendorId?: string
+  date: string // "YYYY-MM-DD"
+  
+  shiftStartedAt: Timestamp
+  shiftEndedAt?: Timestamp
+  shiftStartMethod: "AUTO_GEOFENCE" | "MANUAL" | "ADMIN"
+  autoShiftStartSiteId?: string
+  
+  currentState: EmployeeState
+  currentSiteId?: string
+  currentSiteName?: string
+  currentLocationType?: LocationType
+  stateChangedAt: Timestamp
+  
+  timeline: TimelineEvent[]
+  routeCheckpoints: RouteCheckpoint[]
+  summary?: ShiftSummary
+  
+  lastLatitude?: number
+  lastLongitude?: number
+  lastLocationAt?: Timestamp
+  
+  status: "active" | "completed" | "error"
+}
+
+export interface AttendancePolicy extends BaseEntity {
+  companyId: string
+  autoShiftStart: boolean
+  autoShiftStartWindowMins: number
+  autoShiftEnd: boolean
+  vendorHQEnabled: boolean
+  multiSiteEnabled: boolean
+  routeVerificationEnabled: boolean
+  travelCheckpointIntervalMins: number
+  travelGracePeriodMins: number
+  breakGracePeriodMins: number
+  geofenceRadiusDefault: number
+  gpsAccuracyThreshold: number
+  batterySaverMode: boolean
+  locationSamplingStrategy: "BALANCED" | "HIGH_ACCURACY" | "LOW_POWER"
+}
+
+export const attendanceSessionsService = new FirestoreService<AttendanceSession>("attendance_sessions")
+export const attendancePoliciesService = new FirestoreService<AttendancePolicy>("attendance_policies")

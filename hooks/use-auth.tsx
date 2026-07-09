@@ -4,6 +4,9 @@ import { useState, useEffect, createContext, useContext, useCallback, useRef, ty
 import { type User as FirebaseUser, signInWithEmailAndPassword, signOut as firebaseSignOut, onAuthStateChanged } from "firebase/auth"
 import { collection, query, where, getDocs, onSnapshot, type Unsubscribe } from "firebase/firestore"
 import { auth, db } from "@/lib/firebase"
+import { resolveUserProfile } from "@/lib/firestore/usersService"
+import { loginSessionService } from "@/lib/firestore/loginSessionService"
+import { useDesktopAgent } from "./useDesktopAgent"
 
 // ─── TYPES ──────────────────────────────────────────────────────────────────────
 
@@ -21,6 +24,22 @@ export interface UserProfile {
   companyIds: string[]
   buildingIds: string[]
   cafeteriaIds: string[]
+  officeLocation?: {
+    address: string;
+    latitude: number;
+    longitude: number;
+    radius: number;
+  }
+  assignedShifts: { 
+    cafeteriaId: string; 
+    shiftId: string;
+    workDays: string[];
+    workType: 'Remote' | 'On-site' | 'Hybrid';
+  }[]
+  assignedBreaks?: {
+    name: string;
+    durationMinutes: number;
+  }[]
   managerId: string
   status: "active" | "inactive"
 }
@@ -41,6 +60,8 @@ interface AuthContextType {
   signOut: () => Promise<void>
   hasRouteAccess: (path: string) => boolean
   isSuperAdmin: boolean
+  loginSessionId: string | null
+  loginSessionError: string | null
 }
 
 // ─── CONTEXT ────────────────────────────────────────────────────────────────────
@@ -56,8 +77,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<FirebaseUser | null>(null)
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null)
   const [allowedRoutes, setAllowedRoutes] = useState<Set<string>>(new Set())
+  const [loginSessionId, setLoginSessionId] = useState<string | null>(null)
+  const [loginSessionError, setLoginSessionError] = useState<string | null>(null)
+  
+  // Initialize Desktop Agent Deep Tracking (No-op if running in browser)
+  const { isDesktop, currentApp } = useDesktopAgent(loginSessionId);
+
   const [authLoading, setAuthLoading] = useState(true)     // Firebase Auth resolving
   const [accessLoading, setAccessLoading] = useState(true)  // Access paths resolving
+  const loginSessionIdRef = useRef<string | null>(null)
 
   // Combined loading — both must be resolved before anything renders
   const loading = authLoading || accessLoading
@@ -92,6 +120,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         companyIds: data.companyIds || [],
         buildingIds: data.buildingIds || [],
         cafeteriaIds: data.cafeteriaIds || [],
+        officeLocation: data.officeLocation || undefined,
+        assignedShifts: data.assignedShifts || [],
         managerId: data.managerId || "",
         status: data.status || "active",
       } as UserProfile
@@ -113,6 +143,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const profileIsSuperAdmin = profile.userType === "super_admin" || profile.email === SUPER_ADMIN_EMAIL
     if (profileIsSuperAdmin) {
       setAllowedRoutes(new Set(["__ALL__"]))
+      setAccessLoading(false)
+      return
+    }
+
+    // Developer Role — bypass entity checks, grant specific routes
+    if (profile.roleKey === "DEVELOPER") {
+      setAllowedRoutes(new Set([
+        "/admin",
+        "/admin/task-manager",
+        "/admin/ticketing"
+      ]))
+      setAccessLoading(false)
+      return
+    }
+
+    // Employee Type — bypass entity checks, grant employee routes
+    if (profile.userType === "employee") {
+      setAllowedRoutes(new Set([
+        "/admin",
+        "/admin/task-manager",
+      ]))
       setAccessLoading(false)
       return
     }
@@ -193,6 +244,43 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (profile) {
           // Setup listener — this will set accessLoading=false when ready
           setupAccessListener(profile)
+          
+          // Start a new login session if not already started
+          if (!loginSessionIdRef.current) {
+            setLoginSessionError(null)
+            
+            // Check local storage for an active session ID for today
+            const storedSessionStr = localStorage.getItem('cookhouse_session');
+            let storedSessionId = null;
+            if (storedSessionStr) {
+              try {
+                const stored = JSON.parse(storedSessionStr);
+                // Only reuse if it's from today and same user
+                const today = new Date().toDateString();
+                if (stored.userId === profile.id && stored.date === today) {
+                  storedSessionId = stored.id;
+                }
+              } catch (e) {}
+            }
+
+            if (storedSessionId) {
+              setLoginSessionId(storedSessionId);
+              loginSessionIdRef.current = storedSessionId;
+            } else {
+              loginSessionService.startSession(profile.id, profile.name, profile.roleKey || profile.userType).then(id => {
+                setLoginSessionId(id)
+                loginSessionIdRef.current = id
+                localStorage.setItem('cookhouse_session', JSON.stringify({
+                  id,
+                  userId: profile.id,
+                  date: new Date().toDateString()
+                }));
+              }).catch(err => {
+                console.error("Login session failed:", err)
+                setLoginSessionError(err.message || "Failed to start session")
+              })
+            }
+          }
         } else {
           // No profile in users collection
           setAllowedRoutes(new Set())
@@ -203,6 +291,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (accessUnsubRef.current) {
           accessUnsubRef.current()
           accessUnsubRef.current = null
+        }
+        if (loginSessionIdRef.current) {
+          loginSessionService.endSession(loginSessionIdRef.current).catch(console.error)
+          setLoginSessionId(null)
+          loginSessionIdRef.current = null
+          localStorage.removeItem('cookhouse_session');
         }
         setUserProfile(null)
         setAllowedRoutes(new Set())
@@ -297,6 +391,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         accessUnsubRef.current()
         accessUnsubRef.current = null
       }
+      if (loginSessionIdRef.current) {
+        await loginSessionService.endSession(loginSessionIdRef.current).catch(console.error)
+        setLoginSessionId(null)
+        loginSessionIdRef.current = null
+      }
       await firebaseSignOut(auth)
       setUserProfile(null)
       setAllowedRoutes(new Set())
@@ -317,6 +416,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         signOut,
         hasRouteAccess,
         isSuperAdmin,
+        loginSessionId,
+        loginSessionError,
       }}
     >
       {children}

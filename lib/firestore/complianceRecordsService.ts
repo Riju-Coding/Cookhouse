@@ -185,6 +185,26 @@ export const complianceRecordsService = {
     } as ComplianceRecord))
   },
 
+  getPending: async (): Promise<ComplianceRecord[]> => {
+    // Fetch all records that are submitted or flagged. 
+    // We fetch them without orderBy to avoid needing a complex index, then sort locally.
+    const q1 = query(recordsCollection, where("status", "==", "submitted"));
+    const q2 = query(recordsCollection, where("status", "==", "flagged"));
+    
+    const [snap1, snap2] = await Promise.all([getDocs(q1), getDocs(q2)]);
+    
+    const records = [...snap1.docs, ...snap2.docs].map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    } as ComplianceRecord));
+    
+    return records.sort((a, b) => {
+      const timeA = a.date ? new Date(a.date).getTime() : 0;
+      const timeB = b.date ? new Date(b.date).getTime() : 0;
+      return timeB - timeA;
+    });
+  },
+
   // Admin can update status (approve/flag/reject)
   updateStatus: async (
     id: string, 

@@ -15,6 +15,7 @@ import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Switch } from "@/components/ui/switch"
 import { Checkbox } from "@/components/ui/checkbox"
+import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -27,6 +28,7 @@ const initialAssignmentState: Omit<Assignment, "id" | "createdAt" | "updatedAt">
   kamId: "",
   supervisorIds: [],
   staffIds: [],
+  expectedManpower: 0,
   status: 'active',
 }
 
@@ -190,6 +192,7 @@ export default function AssignmentManagementPage() {
       kamId: assignment.kamId,
       supervisorIds: assignment.supervisorIds || [],
       staffIds: assignment.staffIds || [],
+      expectedManpower: assignment.expectedManpower || 0,
       status: assignment.status || 'active'
     })
     setIsModalOpen(true)
@@ -298,6 +301,11 @@ export default function AssignmentManagementPage() {
                     <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
                       {assn.staffIds?.length || 0} Staff
                     </Badge>
+                    {assn.expectedManpower ? (
+                      <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
+                        Target: {assn.expectedManpower}
+                      </Badge>
+                    ) : null}
                   </div>
                 </TableCell>
                 <TableCell>
@@ -382,6 +390,18 @@ export default function AssignmentManagementPage() {
                 {formData.buildingId && filteredCafeterias.length === 0 && (
                   <p className="text-xs text-red-500">No cafeterias in this building are assigned to the selected vendor.</p>
                 )}
+              </div>
+
+              <div className="space-y-2">
+                <Label>5. Daily Expected Manpower</Label>
+                <Input 
+                  type="number" 
+                  min="0" 
+                  value={formData.expectedManpower || ''} 
+                  onChange={(e) => setFormData({...formData, expectedManpower: parseInt(e.target.value) || 0})}
+                  placeholder="e.g. 15"
+                />
+                <p className="text-xs text-gray-500">Target number of vendor staff required on-site daily.</p>
               </div>
             </div>
 

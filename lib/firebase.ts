@@ -4,6 +4,7 @@
   import { getFirestore } from "firebase/firestore"
   import { getDatabase } from "firebase/database"
   import { getAnalytics } from "firebase/analytics"
+  import { getStorage } from "firebase/storage"
 
   // Your web app's Firebase configuration — loaded from .env.local
   const firebaseConfig = {
@@ -28,6 +29,9 @@
   
   // Initialize Realtime Database and get a reference to the service
   export const rtdb = getDatabase(app)
+
+  // Initialize Storage
+  export const storage = getStorage(app)
 
   // Initialize Analytics (only in browser)
   export const analytics = typeof window !== "undefined" ? getAnalytics(app) : null

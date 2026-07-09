@@ -18,6 +18,7 @@ const MAPS_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY ?? ""
 const MAP_ID = "attendance-map-picker" // required for AdvancedMarker
 const DEFAULT_CENTER = { lat: 19.076, lng: 72.8777 } // Mumbai default
 const DEFAULT_ZOOM = 14
+const LIBRARIES: ("places" | "geocoding")[] = ["places", "geocoding"]
 
 // ─── Radius Circle Overlay ──────────────────────────────────────────────────
 function RadiusCircle({
@@ -76,62 +77,122 @@ function MapSearchBox({
   onPlaceSelect: (lat: number, lng: number, address: string) => void
 }) {
   const [searchQuery, setSearchQuery] = useState("")
-  const [searching, setSearching] = useState(false)
+  const [resolvingLink, setResolvingLink] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const placesLib = useMapsLibrary("places")
   const geocodingLib = useMapsLibrary("geocoding")
+  const [autocomplete, setAutocomplete] = useState<google.maps.places.Autocomplete | null>(null)
 
-  const handleSearch = async () => {
-    if (!searchQuery.trim() || !geocodingLib) return
-    setSearching(true)
-    try {
-      const geocoder = new geocodingLib.Geocoder()
-      const result = await geocoder.geocode({ address: searchQuery })
-      if (result.results.length > 0) {
-        const loc = result.results[0].geometry.location
-        const addr = result.results[0].formatted_address
-        onPlaceSelect(loc.lat(), loc.lng(), addr)
+  useEffect(() => {
+    if (!placesLib || !inputRef.current) return;
+    
+    // Initialize Autocomplete
+    const ac = new placesLib.Autocomplete(inputRef.current, {
+      fields: ["geometry", "formatted_address", "name"]
+    });
+    setAutocomplete(ac);
+  }, [placesLib, inputRef]);
+
+  useEffect(() => {
+    if (!autocomplete) return;
+
+    const listener = autocomplete.addListener("place_changed", () => {
+      const place = autocomplete.getPlace();
+      if (place.geometry && place.geometry.location) {
+        const lat = place.geometry.location.lat();
+        const lng = place.geometry.location.lng();
+        const addr = place.formatted_address || place.name || "";
+        onPlaceSelect(lat, lng, addr);
+        setSearchQuery(addr);
       } else {
-        toast({
-          title: "Not found",
-          description: "No results for that search",
-          variant: "destructive",
-        })
+        // They typed something and pressed enter without selecting from dropdown
+        // Let's see if it's a URL
+        handleInputAsUrl(searchQuery);
       }
-    } catch (err: any) {
-      toast({
-        title: "Geocoding failed",
-        description: err.message,
-        variant: "destructive",
-      })
+    });
+
+    return () => {
+      if (listener) {
+        google.maps.event.removeListener(listener);
+      }
+    };
+  }, [autocomplete, onPlaceSelect, searchQuery]);
+
+  const handleInputAsUrl = async (val: string) => {
+    const text = val.trim();
+    if (!text.startsWith("http://") && !text.startsWith("https://")) return;
+    
+    setResolvingLink(true);
+    toast({ title: "Resolving Link", description: "Extracting coordinates from Google Maps..." });
+
+    try {
+      const res = await fetch(`/api/resolve-maps-url?url=${encodeURIComponent(text)}`);
+      const data = await res.json();
+      
+      if (data.success && data.lat && data.lng) {
+        // Successfully extracted coordinates! Now we reverse geocode it to get the address
+        let finalAddr = text;
+        if (geocodingLib) {
+          const geocoder = new geocodingLib.Geocoder();
+          try {
+            const geoRes = await geocoder.geocode({ location: { lat: data.lat, lng: data.lng } });
+            if (geoRes.results.length > 0) {
+              finalAddr = geoRes.results[0].formatted_address;
+            }
+          } catch (e) {
+             console.error("Reverse geocoding failed", e);
+          }
+        }
+        
+        onPlaceSelect(data.lat, data.lng, finalAddr);
+        setSearchQuery(finalAddr);
+        toast({ title: "Success", description: "Coordinates extracted from link!" });
+      } else {
+        toast({ title: "Failed", description: "Could not find coordinates in that link.", variant: "destructive" });
+      }
+    } catch (err) {
+      toast({ title: "Error", description: "Failed to resolve link.", variant: "destructive" });
     } finally {
-      setSearching(false)
+      setResolvingLink(false);
+    }
+  }
+
+  // Intercept pastes
+  const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
+    const pastedText = e.clipboardData.getData("text");
+    if (pastedText.startsWith("http://") || pastedText.startsWith("https://")) {
+      e.preventDefault();
+      setSearchQuery(pastedText);
+      handleInputAsUrl(pastedText);
     }
   }
 
   return (
     <div className="flex gap-2">
       <div className="relative flex-1">
-        <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-400" />
+        {resolvingLink ? (
+          <Loader2 className="absolute left-2.5 top-2.5 h-4 w-4 text-blue-500 animate-spin" />
+        ) : (
+          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-400" />
+        )}
         <Input
-          placeholder="Search address or place..."
+          ref={inputRef}
+          placeholder="Search address, place, or paste Maps link..."
           className="pl-9 text-sm"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+          onPaste={handlePaste}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') handleInputAsUrl(searchQuery);
+          }}
         />
+        {/* Force high z-index for Google Maps Places Autocomplete dropdown */}
+        <style dangerouslySetInnerHTML={{ __html: `
+          .pac-container {
+            z-index: 99999 !important;
+          }
+        `}} />
       </div>
-      <Button
-        size="sm"
-        variant="outline"
-        onClick={handleSearch}
-        disabled={searching}
-        className="shrink-0"
-      >
-        {searching ? (
-          <Loader2 className="h-4 w-4 animate-spin" />
-        ) : (
-          <Search className="h-4 w-4" />
-        )}
-      </Button>
     </div>
   )
 }
@@ -258,9 +319,11 @@ export default function GoogleMapPicker({
   const mapZoom = markerPos ? 16 : DEFAULT_ZOOM
 
   return (
-    <div className="space-y-3">
-      {/* Search + Get My Location */}
-      <div className="flex gap-2 items-end">
+    <>
+      <APIProvider apiKey={MAPS_KEY} libraries={LIBRARIES}>
+        <div className="space-y-3">
+        {/* Search + Get My Location */}
+        <div className="flex gap-2 items-end">
         <div className="flex-1">
           <MapSearchBox onPlaceSelect={handlePlaceSelect} />
         </div>
@@ -280,8 +343,7 @@ export default function GoogleMapPicker({
         </Button>
       </div>
 
-      {/* Map */}
-      <APIProvider apiKey={MAPS_KEY}>
+        {/* Map */}
         <div
           className="rounded-lg overflow-hidden border shadow-sm"
           style={{ height }}
@@ -327,9 +389,8 @@ export default function GoogleMapPicker({
             )}
           </Map>
         </div>
-      </APIProvider>
 
-      {!markerPos && (
+        {!markerPos && (
         <p className="text-xs text-amber-600 text-center py-1">
           👆 Click on the map, search an address, or use &quot;Get My Location&quot; to set the attendance point
         </p>
@@ -391,6 +452,8 @@ export default function GoogleMapPicker({
           ))}
         </div>
       </div>
-    </div>
+      </div>
+      </APIProvider>
+    </>
   )
 }

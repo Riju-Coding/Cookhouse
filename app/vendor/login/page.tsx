@@ -89,36 +89,40 @@ export default function VendorLoginPage() {
     setLoading(true)
 
     try {
-      // Check if this email is a contact email in vendors collection
-      const vendorsQuery = query(
-        collection(db, "vendors"),
-        where("email", "==", regEmail)
-      )
-      const vendorsSnap = await getDocs(vendorsQuery)
-
-      if (vendorsSnap.empty) {
-        setError(
-          "This email is not registered as a vendor contact. " +
-          "The Cookhouse team must first register your vendor with this email."
-        )
-        setLoading(false)
-        return
-      }
-
-      // Check if already registered
+      // Check if already created by admin in users collection
       const usersQuery = query(
         collection(db, "users"),
-        where("email", "==", regEmail)
+        where("email", "==", regEmail),
+        where("userType", "==", "vendor_staff")
       )
       const usersSnap = await getDocs(usersQuery)
-      if (!usersSnap.empty) {
-        setError("An account with this email already exists. Please login instead.")
+
+      if (usersSnap.empty) {
+        setError("This email is not registered as a vendor user. Your admin must add your email in User Management first.")
         setLoading(false)
         return
       }
 
-      const vendorDoc = vendorsSnap.docs[0]
-      setVerifiedVendor({ id: vendorDoc.id, ...vendorDoc.data() })
+      const userDoc = usersSnap.docs[0];
+      const userData = userDoc.data();
+
+      // Check if they already have a firebaseUid (meaning they already registered auth)
+      if (userData.firebaseUid) {
+        setError("An account with this email is already fully registered. Please login instead.")
+        setLoading(false)
+        return
+      }
+
+      // Fetch the vendor name for the success UI
+      let vendorName = "Your Vendor";
+      if (userData.vendorId) {
+        const vendorDoc = await getDocs(query(collection(db, "vendors"), where("__name__", "==", userData.vendorId)));
+        if (!vendorDoc.empty) {
+          vendorName = vendorDoc.docs[0].data().name;
+        }
+      }
+
+      setVerifiedVendor({ id: userDoc.id, name: vendorName, ...userData })
       setRegStep("credentials")
     } catch (error) {
       setError("Verification failed. Please try again.")
@@ -145,23 +149,14 @@ export default function VendorLoginPage() {
     setLoading(true)
 
     try {
+      // Create Firebase Auth account
       const credential = await createUserWithEmailAndPassword(auth, regEmail, regPassword)
 
-      await addDoc(collection(db, "users"), {
-        name: regName || verifiedVendor?.contactPerson || verifiedVendor?.name,
-        email: regEmail,
-        phone: verifiedVendor?.phone || "",
-        userType: "vendor_staff",
-        roleId: "",
-        roleKey: "VENDOR_ADMIN",
-        vendorId: verifiedVendor?.id,
-        companyIds: [],
-        buildingIds: [],
-        cafeteriaIds: [],
-        managerId: "",
-        status: "active",
+      // Update existing user document in Firestore with firebaseUid
+      const { doc, updateDoc } = await import("firebase/firestore")
+      await updateDoc(doc(db, "users", verifiedVendor.id), {
         firebaseUid: credential.user.uid,
-        createdAt: serverTimestamp(),
+        name: regName || verifiedVendor.name,
         updatedAt: serverTimestamp(),
       })
 

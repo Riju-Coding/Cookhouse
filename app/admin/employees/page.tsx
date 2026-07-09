@@ -52,7 +52,11 @@ const initialEmployeeState: Omit<Employee, "id"> = {
     allergies: [],
     spiceLevel: "medium"
   },
-  activeSubscriptions: []
+  activeSubscriptions: [],
+  shiftSettings: {
+    startTime: "09:00",
+    endTime: "17:00"
+  }
 }
 
 export default function EmployeesPage() {
@@ -343,6 +347,28 @@ export default function EmployeesPage() {
                             <SelectItem value="company_admin">Company Admin</SelectItem>
                         </SelectContent>
                     </Select>
+                </div>
+                
+                <div className="col-span-2 space-y-2 mt-2">
+                    <Label className="text-gray-500 font-bold uppercase text-xs">Shift Timings</Label>
+                    <div className="flex gap-4">
+                        <div className="space-y-2 flex-1">
+                            <Label>Start Time</Label>
+                            <Input 
+                                type="time" 
+                                value={formData.shiftSettings?.startTime || ""} 
+                                onChange={e => setFormData({...formData, shiftSettings: { ...formData.shiftSettings, startTime: e.target.value } as any})} 
+                            />
+                        </div>
+                        <div className="space-y-2 flex-1">
+                            <Label>End Time</Label>
+                            <Input 
+                                type="time" 
+                                value={formData.shiftSettings?.endTime || ""} 
+                                onChange={e => setFormData({...formData, shiftSettings: { ...formData.shiftSettings, endTime: e.target.value } as any})} 
+                            />
+                        </div>
+                    </div>
                 </div>
               </div>
             </TabsContent>

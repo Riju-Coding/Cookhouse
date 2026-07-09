@@ -18,6 +18,7 @@ export interface Cafeteria {
   buildingId: string;
   vendorId: string;
   status: 'active' | 'inactive';
+  expectedManpower?: number;
   // Geo-fence fields for attendance
   latitude?: number;
   longitude?: number;
@@ -25,8 +26,16 @@ export interface Cafeteria {
   address?: string;          // reverse-geocoded or manually entered
   geoSetAt?: any;            // timestamp when location was set
   geoSetBy?: string;         // userId of who set it (admin or KAM)
-  shiftStart?: string;       // e.g. "09:00"
-  shiftEnd?: string;         // e.g. "18:00"
+  shifts?: {
+    id: string;
+    name: string;
+    startTime: string; // e.g. "09:00"
+    endTime: string;   // e.g. "18:00"
+    breaks: {
+      name: string;
+      maxMinutes: number;
+    }[];
+  }[];
   createdAt?: any;
   updatedAt?: any;
 }

@@ -26,6 +26,29 @@ export interface User {
   companyIds: string[];
   buildingIds: string[];  // NEW
   cafeteriaIds: string[]; // NEW
+  officeLocation?: {
+    address: string;
+    latitude: number;
+    longitude: number;
+    radius: number;
+  };
+  assignedShifts?: {
+    cafeteriaId: string;
+    shiftId: string;
+    workDays: string[];
+    workType: 'Remote' | 'On-site' | 'Hybrid';
+  }[];
+  assignedBreaks?: {
+    name: string;
+    durationMinutes: number;
+  }[];
+  complianceDocuments?: {
+    type: 'Police Verification' | 'Medical Certificate' | 'Other';
+    url: string;
+    issueDate?: any; // Firestore Timestamp
+    expiryDate?: any; // Firestore Timestamp
+    status: 'valid' | 'expired' | 'pending';
+  }[];
   managerId: string;
   status: 'active' | 'inactive';
   createdAt?: any;

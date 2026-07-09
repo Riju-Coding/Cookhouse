@@ -77,7 +77,7 @@ export function ComplianceRecordModal({ isOpen, onClose, recordId, onStatusChang
               <div className="flex items-start justify-between">
                 <div>
                   <div className="flex items-center gap-3 mb-2">
-                    <DialogTitle className="text-xl">{record.templateName || "Compliance Record"}</DialogTitle>
+                    <DialogTitle className="text-xl">{record.templateName || record.formName || "Compliance Record"}</DialogTitle>
                     <Badge variant={
                       record.status === 'approved' ? 'default' : 
                       record.status === 'flagged' ? 'destructive' : 
@@ -88,9 +88,9 @@ export function ComplianceRecordModal({ isOpen, onClose, recordId, onStatusChang
                     </Badge>
                   </div>
                   <div className="text-sm text-gray-500 flex items-center gap-4">
-                    <span className="flex items-center gap-1"><FileText className="h-3.5 w-3.5" /> {record.templateType.replace('_', ' ')}</span>
+                    <span className="flex items-center gap-1"><FileText className="h-3.5 w-3.5" /> {(record.templateType || 'legacy').replace('_', ' ')}</span>
                     <span className="flex items-center gap-1"><MapPin className="h-3.5 w-3.5" /> {record.companyName || '—'} {record.buildingName ? `- ${record.buildingName}` : ''}</span>
-                    <span className="flex items-center gap-1"><User className="h-3.5 w-3.5" /> {record.submittedByName}</span>
+                    <span className="flex items-center gap-1"><User className="h-3.5 w-3.5" /> {record.submittedByName || 'Unknown User'}</span>
                   </div>
                 </div>
               </div>
@@ -101,7 +101,7 @@ export function ComplianceRecordModal({ isOpen, onClose, recordId, onStatusChang
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div className="bg-white border rounded-lg p-3 shadow-sm">
                   <p className="text-xs text-gray-500 font-medium">Date</p>
-                  <p className="font-semibold">{record.date ? new Date(record.date).toLocaleDateString() : '—'}</p>
+                  <p className="font-semibold">{record.date ? new Date(record.date).toLocaleDateString() : (record.createdAt?.toMillis ? new Date(record.createdAt.toMillis()).toLocaleDateString() : '—')}</p>
                 </div>
                 {record.batchNumber && (
                   <div className="bg-white border rounded-lg p-3 shadow-sm">
@@ -188,8 +188,13 @@ export function ComplianceRecordModal({ isOpen, onClose, recordId, onStatusChang
                   <div className="p-4 bg-white space-y-4">
                     {record.answers.map((ans, idx) => (
                       <div key={idx} className="border-b pb-3 last:border-b-0 last:pb-0">
-                        <p className="text-sm text-gray-500 mb-1">Field ID: {ans.fieldId}</p>
-                        <p className="font-medium">{String(ans.value)}</p>
+                        <p className="text-sm text-gray-500 mb-1">{ans.question || `Field ID: ${ans.fieldId}`}</p>
+                        <p className="font-medium capitalize">{String(ans.answer || ans.value || '—')}</p>
+                        {ans.photoUrl && (
+                          <div className="mt-2">
+                            <img src={ans.photoUrl} alt="Answer attachment" className="h-24 w-24 object-cover rounded-md border" />
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>

@@ -20,8 +20,8 @@ interface Column {
 
 interface FormField {
   name: string
-  label: string
-  type: "text" | "select" | "textarea" | "switch" | "searchable-select" 
+  label:  string
+  type: "text" | "select" | "textarea" | "switch" | "searchable-select" | "custom"
   required?: boolean
   options?: { value: string; label: string }[]
   onSearch?: (query: string) => void
@@ -30,6 +30,7 @@ interface FormField {
   showIf?: (formData: Record<string, any>) => boolean
   getSelectedLabel?: (value: any) => any // allows returning string or an array of objects for chips
   isMulti?: boolean 
+  renderCustom?: (value: any, onChange: (val: any) => void, formData: Record<string, any>) => React.ReactNode
 }
 
 interface CrudTableProps {
@@ -363,6 +364,13 @@ export function CrudTable({
               required={field.required}
               className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-base ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
             />
+          </div>
+        )
+        
+      case "custom":
+        return (
+          <div key={field.name} className="grid gap-2">
+            {field.renderCustom ? field.renderCustom(value, (val) => handleInputChange(field.name, val), formData) : null}
           </div>
         )
         

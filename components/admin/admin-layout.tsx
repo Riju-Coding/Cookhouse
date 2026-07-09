@@ -28,10 +28,15 @@ import {
   MonitorUp,
   BrainCircuit,
   MapPin,
+  Ticket,
+  Code,
+  Activity,
 } from "lucide-react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
+import { ActivityTracker } from "@/components/attendance/ActivityTracker"
+import { SessionTimeTracker } from "@/components/attendance/SessionTimeTracker"
 
 interface AdminLayoutProps {
   children: React.ReactNode
@@ -58,6 +63,10 @@ const navigation = [
   { name: "Sub Services", href: "/admin/sub-services", icon: Grid3X3, category: "services" },
   { name: "Companies", href: "/admin/companies", icon: Building2, category: "organization" },
   { name: "Buildings", href: "/admin/buildings", icon: Building, category: "organization" },
+  { name: "KAM Notebook", href: "/admin/kam-notebook", icon: FileText, category: "organization" },
+  { name: "Tickets & Rewards", href: "/admin/ticketing", icon: Ticket, category: "organization" },
+  { name: "Public QR Links", href: "/admin/qr-links", icon: Ticket, category: "organization" },
+  { name: "Developer Board", href: "/admin/developer-board", icon: Code, category: "organization" },
   { name: "Combined Menu Creation", href: "/admin/combined-menu", icon: Building2, category: "menu-management" },
   { name: "Combined Menu Management", href: "/admin/combined-menu-management", icon: Building2, category: "menu-management" },
   { name: "Menu Tracker", href: "/admin/updations", icon: Building2, category: "menu-management" },
@@ -72,6 +81,8 @@ const navigation = [
   { name: "Meal Plan Structure", href: "/admin/meal-plan-structure", icon: FileText, category: "organization" },
   { name: "Vendors Management", href: "/admin/vendors", icon: FileText, category: "vendors" },
   { name: "Attendance Management", href: "/admin/attendance", icon: MapPin, category: "attendance" },
+  { name: "Admin Activity", href: "/admin/attendance-dashboard", icon: Activity, category: "attendance" },
+  { name: "Task Manager", href: "/admin/task-manager", icon: Code, category: "tasks" },
   { name: "Access Management", href: "/admin/access-management", icon: Settings, category: "system-admin" },
   { name: "Roles", href: "/admin/roles", icon: Users, category: "system-admin" },
   { name: "Permissions", href: "/admin/permissions", icon: Settings, category: "system-admin" },
@@ -88,6 +99,7 @@ const categories = [
   { key: "menu-management", label: "Menu Management", icon: Building2 },
   { key: "vendors", label: "Vendors Management", icon: Building2 },
   { key: "attendance", label: "Attendance", icon: MapPin },
+  { key: "tasks", label: "Tasks", icon: Code },
   { key: "system-admin", label: "System Administration", icon: Settings },
 ]
 
@@ -244,6 +256,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
         speed={200}
         shadow="0 0 10px #000000,0 0 5px #000000"
       />
+      <ActivityTracker />
 
       {sidebarOpen && (
         <div className="fixed inset-0 z-50 lg:hidden">
@@ -323,6 +336,9 @@ export function AdminLayout({ children }: AdminLayoutProps) {
                 })}
               </div>
             )}
+          </div>
+          <div className="flex items-center gap-4 ml-auto">
+            <SessionTimeTracker />
           </div>
         </div>
       </div>

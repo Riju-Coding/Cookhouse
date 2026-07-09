@@ -20,6 +20,7 @@ export interface Assignment {
   kamId: string;
   supervisorIds: string[];
   staffIds: string[];
+  expectedManpower?: number; // How many staff the vendor is expected to provide
   status: 'active' | 'inactive';
   createdAt?: any;
   updatedAt?: any;

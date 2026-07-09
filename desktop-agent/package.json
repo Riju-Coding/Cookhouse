@@ -1,0 +1,21 @@
+{
+    "name":  "desktop-agent",
+    "version":  "1.0.0",
+    "main":  "index.js",
+    "scripts":  {
+                    "test":  "echo \"Error: no test specified\" \u0026\u0026 exit 1",
+                    "start":  "electron ."
+                },
+    "keywords":  [
+
+                 ],
+    "author":  "",
+    "license":  "ISC",
+    "type":  "commonjs",
+    "description":  "",
+    "dependencies":  {
+                         "active-win":  "^8.2.1",
+                         "electron":  "^43.0.0",
+                         "uiohook-napi":  "^1.5.5"
+                     }
+}

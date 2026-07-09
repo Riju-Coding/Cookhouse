@@ -43,6 +43,98 @@ export default function BuildingsPage() {
         { value: "inactive", label: "Inactive" },
       ],
     },
+    {
+      name: "attendanceSettings",
+      label: "Attendance Settings",
+      type: "custom" as const,
+      renderCustom: (value: any, onChange: (val: any) => void) => {
+        const checkFreq = value?.checkFrequencyMinutes ?? 15
+        const alertThresh = value?.alertThresholdMinutes ?? 45
+        return (
+          <div className="flex gap-4 p-4 border rounded bg-gray-50/50">
+            <div className="flex-1 space-y-2">
+              <label className="text-sm font-medium">Check Frequency (mins)</label>
+              <input
+                type="number"
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                value={checkFreq}
+                onChange={(e) => onChange({ ...value, checkFrequencyMinutes: Number(e.target.value) })}
+              />
+            </div>
+            <div className="flex-1 space-y-2">
+              <label className="text-sm font-medium">Alert Threshold (mins)</label>
+              <input
+                type="number"
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                value={alertThresh}
+                onChange={(e) => onChange({ ...value, alertThresholdMinutes: Number(e.target.value) })}
+              />
+            </div>
+          </div>
+        )
+      }
+    },
+    {
+      name: "breaks",
+      label: "Breaks",
+      type: "custom" as const,
+      renderCustom: (value: any[], onChange: (val: any[]) => void) => {
+        const breaksList = Array.isArray(value) ? value : []
+        return (
+          <div className="space-y-2 p-4 border rounded bg-gray-50/50">
+            {breaksList.map((b, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <input
+                  type="text"
+                  placeholder="Break Name"
+                  className="flex h-8 w-1/3 rounded-md border border-input bg-background px-2 py-1 text-sm"
+                  value={b.name}
+                  onChange={(e) => {
+                    const newB = [...breaksList]
+                    newB[i].name = e.target.value
+                    onChange(newB)
+                  }}
+                />
+                <input
+                  type="time"
+                  className="flex h-8 w-1/4 rounded-md border border-input bg-background px-2 py-1 text-sm"
+                  value={b.startTime}
+                  onChange={(e) => {
+                    const newB = [...breaksList]
+                    newB[i].startTime = e.target.value
+                    onChange(newB)
+                  }}
+                />
+                <input
+                  type="time"
+                  className="flex h-8 w-1/4 rounded-md border border-input bg-background px-2 py-1 text-sm"
+                  value={b.endTime}
+                  onChange={(e) => {
+                    const newB = [...breaksList]
+                    newB[i].endTime = e.target.value
+                    onChange(newB)
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => onChange(breaksList.filter((_, idx) => idx !== i))}
+                  className="text-red-500 hover:text-red-700 font-bold"
+                >
+                  X
+                </button>
+              </div>
+            ))}
+            <button
+              type="button"
+              className="text-sm text-blue-600 hover:underline mt-2"
+              onClick={() => onChange([...breaksList, { name: "", startTime: "13:00", endTime: "14:00" }])}
+            >
+              + Add Break
+            </button>
+          </div>
+        )
+      }
+    }
   ]
 
   useEffect(() => {
