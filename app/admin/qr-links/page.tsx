@@ -197,24 +197,61 @@ export default function QRLinksPage() {
     }
   }
 
-  const downloadQR = (linkId: string, name: string) => {
-    const svg = document.getElementById(`qr-${linkId}`)
+  const downloadQR = (link: QRLink) => {
+    const svg = document.getElementById(`qr-${link.id}`)
     if (!svg) return
     const svgData = new XMLSerializer().serializeToString(svg)
+    // Scale up the SVG for high-res download
+    const scaledSvgData = svgData
+      .replace(/width="160"/, 'width="800"')
+      .replace(/height="160"/, 'height="800"');
+      
     const canvas = document.createElement("canvas")
     const ctx = canvas.getContext("2d")
     const img = new Image()
+    
     img.onload = () => {
-      canvas.width = img.width
-      canvas.height = img.height
-      ctx?.drawImage(img, 0, 0)
+      const qrSize = 800; 
+      const padding = 60;
+      const headerHeight = 250; 
+      
+      canvas.width = qrSize + (padding * 2); 
+      canvas.height = qrSize + headerHeight + (padding * 2);
+      
+      if (!ctx) return;
+      
+      // Draw White Background
+      ctx.fillStyle = "white";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      
+      ctx.textAlign = "center";
+      const centerX = canvas.width / 2;
+      
+      // Call to action
+      ctx.fillStyle = "#0f172a"; 
+      ctx.font = "bold 48px sans-serif";
+      ctx.fillText("Drop your feedback or complaints", centerX, padding + 50);
+      
+      // Company & Building
+      ctx.fillStyle = "#64748b"; 
+      ctx.font = "28px sans-serif";
+      ctx.fillText(`${link.companyName}  •  ${link.buildingName}`, centerX, padding + 120);
+      
+      // Cafe Name
+      ctx.fillStyle = "#2563eb"; 
+      ctx.font = "bold 40px sans-serif";
+      ctx.fillText(link.cafeName, centerX, padding + 180);
+      
+      // Draw QR Code Image
+      ctx.drawImage(img, padding, headerHeight + padding, qrSize, qrSize);
+      
       const pngFile = canvas.toDataURL("image/png")
       const downloadLink = document.createElement("a")
-      downloadLink.download = `QR-Complaint-${name.replace(/[^a-z0-9]/gi, '_')}.png`
+      downloadLink.download = `QR-${link.cafeName.replace(/[^a-z0-9]/gi, '_')}.png`
       downloadLink.href = `${pngFile}`
       downloadLink.click()
     }
-    img.src = "data:image/svg+xml;base64," + btoa(svgData)
+    img.src = "data:image/svg+xml;base64," + btoa(scaledSvgData)
   }
 
   const filteredBuildings = buildings.filter(b => b.companyId === selectedCompanyId)
@@ -451,7 +488,7 @@ export default function QRLinksPage() {
                       <LinkIcon className="w-3.5 h-3.5" />
                     </Button>
                   </div>
-                  <Button className="w-full gap-2" variant="secondary" onClick={() => downloadQR(link.id, link.cafeName)}>
+                  <Button className="w-full gap-2" variant="secondary" onClick={() => downloadQR(link)}>
                     <Download className="w-4 h-4" /> Download QR
                   </Button>
                 </div>

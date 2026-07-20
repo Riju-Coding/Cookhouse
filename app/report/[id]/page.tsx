@@ -594,7 +594,7 @@ ${description}
                     return (
                       <div
                         key={item.id}
-                        className={`bg-white rounded-[1.5rem] overflow-hidden shadow-sm border transition-all duration-300 ${
+                        className={`bg-white rounded-[1.5rem] shadow-sm border transition-all duration-300 ${
                           selected ? "border-violet-200 shadow-[0_4px_20px_rgba(139,92,246,0.12)]" : "border-slate-100"
                         }`}
                       >
@@ -615,7 +615,7 @@ ${description}
 
                         {/* Rating pills — horizontal scroll on mobile */}
                         <div className="px-4 pb-4">
-                          <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
+                          <div className="flex gap-2 overflow-x-auto py-2 -my-2 px-1 -mx-1 scrollbar-hide">
                             {ratings.map(rating => {
                               const isSelected = selected === rating.label
                               return (
