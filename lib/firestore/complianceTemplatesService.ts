@@ -84,27 +84,27 @@ export const complianceTemplatesService = {
   getByType: async (type: ComplianceTemplateType): Promise<ComplianceTemplate[]> => {
     const q = query(
       complianceTemplatesCollection, 
-      where("type", "==", type),
-      orderBy("name")
+      where("type", "==", type)
     )
     const snapshot = await getDocs(q)
-    return snapshot.docs.map(doc => ({
+    const results = snapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data()
     } as ComplianceTemplate))
+    return results.sort((a, b) => (a.name || "").localeCompare(b.name || ""))
   },
 
   getByVendor: async (vendorId: string): Promise<ComplianceTemplate[]> => {
     const q = query(
       complianceTemplatesCollection, 
-      where("vendorId", "==", vendorId),
-      orderBy("name")
+      where("vendorId", "==", vendorId)
     )
     const snapshot = await getDocs(q)
-    return snapshot.docs.map(doc => ({
+    const results = snapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data()
     } as ComplianceTemplate))
+    return results.sort((a, b) => (a.name || "").localeCompare(b.name || ""))
   },
 
   add: async (data: Omit<ComplianceTemplate, 'id' | 'createdAt' | 'updatedAt'>) => {

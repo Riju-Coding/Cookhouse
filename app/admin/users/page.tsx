@@ -4,12 +4,15 @@ import React, { useState, useEffect, useMemo } from "react"
 import { db } from "@/lib/firebase"
 import { collection, getDocs } from "firebase/firestore"
 import { usersService, type User } from "@/lib/firestore/usersService"
+import { cafeteriasService } from "@/lib/firestore/cafeteriasService"
 import { globalShiftsService, type GlobalShift } from "@/lib/firestore/globalShiftsService"
+import { complianceTemplatesService, type ComplianceTemplate } from "@/lib/firestore/complianceTemplatesService"
 import { toast } from "@/hooks/use-toast"
 import dynamic from "next/dynamic"
+import { ComplianceBuilder } from "@/components/compliances/ComplianceBuilder"
 
 // Icons
-import { UserPlus, Users, Pencil, Trash2, Search, Filter, Mail, Phone, MapPin, Building, Lock, CheckCircle, Clock, Plus, Ban, FileText, Store } from "lucide-react"
+import { UserPlus, Users, Pencil, Trash2, Search, Filter, Mail, Phone, MapPin, Building, Lock, CheckCircle, Clock, Plus, Ban, FileText, Store, FileCheck } from "lucide-react"
 
 // UI Components
 import { Button } from "@/components/ui/button"
@@ -23,6 +26,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { OrganizationHierarchyView } from "@/components/users/OrganizationHierarchyView"
+import { KAMHierarchyView } from "@/components/users/KAMHierarchyView"
 
 // ── Dynamic imports for Google Maps (avoid SSR) ──────────────────────────────
 const GoogleMapPicker = dynamic(() => import("@/components/google-map-picker"), {
@@ -55,6 +59,7 @@ export default function UserManagementPage() {
   const [buildings, setBuildings] = useState<any[]>([])
   const [cafeterias, setCafeterias] = useState<any[]>([])
   const [globalShifts, setGlobalShifts] = useState<GlobalShift[]>([])
+  const [complianceTemplates, setComplianceTemplates] = useState<ComplianceTemplate[]>([])
   const [filterTab, setFilterTab] = useState("all")
   
   const [loading, setLoading] = useState(true)
@@ -63,6 +68,13 @@ export default function UserManagementPage() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
 
+  // Compliance Modal State
+  const [isComplianceModalOpen, setIsComplianceModalOpen] = useState(false)
+  const [complianceModalTemplateId, setComplianceModalTemplateId] = useState<string>("new")
+  const [complianceModalCafeId, setComplianceModalCafeId] = useState<string>("")
+  const [complianceModalBuildingId, setComplianceModalBuildingId] = useState<string>("")
+  const [complianceModalCompanyId, setComplianceModalCompanyId] = useState<string>("")
+
   useEffect(() => {
     fetchInitialData()
   }, [])
@@ -70,14 +82,15 @@ export default function UserManagementPage() {
   const fetchInitialData = async () => {
     try {
       setLoading(true)
-      const [usersRes, rolesSnap, vendorsSnap, companiesSnap, buildingsSnap, cafeteriasSnap, globalShiftsRes] = await Promise.all([
+      const [usersRes, rolesSnap, vendorsSnap, companiesSnap, buildingsSnap, cafeteriasSnap, globalShiftsRes, templatesRes] = await Promise.all([
         usersService.getAll(),
         getDocs(collection(db, 'roles')),
         getDocs(collection(db, 'vendors')),
         getDocs(collection(db, 'companies')),
         getDocs(collection(db, 'buildings')),
         getDocs(collection(db, 'cafetarias')), // Ensure this matches your DB collection name
-        globalShiftsService.getAll()
+        globalShiftsService.getAll(),
+        complianceTemplatesService.getAll()
       ])
 
       setData(usersRes)
@@ -87,6 +100,7 @@ export default function UserManagementPage() {
       setBuildings(buildingsSnap.docs.map(d => ({ id: d.id, ...d.data() })))
       setCafeterias(cafeteriasSnap.docs.map(d => ({ id: d.id, ...d.data() })))
       setGlobalShifts(globalShiftsRes)
+      setComplianceTemplates(templatesRes)
     } catch (error) {
       console.error(error)
       toast({ title: "Error", description: "Failed to load data", variant: "destructive" })
@@ -160,6 +174,139 @@ export default function UserManagementPage() {
         assignedShifts: (prev.assignedShifts || []).filter(s => s.cafeteriaId !== cafeteriaId)
       }
     })
+  }
+
+  const handleQuickCreateCafe = async (companyId: string, buildingId: string) => {
+    const cafeName = prompt("Enter the name for the new Cafeteria (e.g. Main Cafe):")
+    if (!cafeName?.trim()) return
+
+    try {
+      setIsSaving(true)
+      const newCafeDocRef = await cafeteriasService.add({
+        name: cafeName.trim(),
+        companyId,
+        buildingId,
+        vendorId: "",
+        status: "active"
+      })
+
+      const actualNewCafeId = newCafeDocRef.id;
+
+      // Add to local state so it renders immediately
+      const newCafe = {
+        id: actualNewCafeId,
+        name: cafeName.trim(),
+        companyId,
+        buildingId,
+        vendorId: "",
+        status: "active"
+      }
+      setCafeterias(prev => [...prev, newCafe])
+
+      // Automatically select it for the user
+      setFormData(prev => ({
+        ...prev,
+        cafeteriaIds: [...(prev.cafeteriaIds || []), actualNewCafeId]
+      }))
+
+      toast({ title: "Success", description: "Cafeteria created and selected automatically!" })
+    } catch (e) {
+      console.error(e)
+      toast({ title: "Error", description: "Failed to create cafeteria", variant: "destructive" })
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const handleQuickCreateShift = async (cafeId: string) => {
+    const shiftName = prompt("Enter Shift Name (e.g. Standard 9-5):")
+    if (!shiftName?.trim()) return
+    const startTime = prompt("Enter Start Time (HH:MM):", "09:00")
+    if (!startTime) return
+    const endTime = prompt("Enter End Time (HH:MM):", "18:00")
+    if (!endTime) return
+
+    try {
+      setIsSaving(true)
+      const cafe = cafeterias.find(c => c.id === cafeId)
+      if (!cafe) return
+
+      // Safeguard for live browser state that might still have an object instead of a string
+      const safeCafeId = typeof cafeId === 'string' ? cafeId : (cafeId as any).id || cafeId;
+
+      const newShift = {
+        id: `shift_${Date.now()}`,
+        name: shiftName.trim(),
+        startTime,
+        endTime,
+        breaks: []
+      }
+
+      const updatedShifts = [...(cafe.shifts || []), newShift]
+      
+      await cafeteriasService.update(safeCafeId, { shifts: updatedShifts })
+
+      // Update local state
+      setCafeterias(prev => prev.map(c => 
+        c.id === cafeId ? { ...c, shifts: updatedShifts } : c
+      ))
+
+      // Auto assign the shift to the user
+      setFormData(prev => ({
+        ...prev,
+        assignedShifts: [...(prev.assignedShifts || []), {
+          cafeteriaId: cafeId,
+          shiftId: newShift.id,
+          workDays: ["Mon", "Tue", "Wed", "Thu", "Fri"],
+          workType: "On-site"
+        }]
+      }))
+
+      toast({ title: "Success", description: "Shift created and assigned automatically!" })
+    } catch (e) {
+      console.error(e)
+      toast({ title: "Error", description: "Failed to create shift", variant: "destructive" })
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const handleQuickEditShift = async (cafeId: string, shift: any) => {
+    const shiftName = prompt("Edit Shift Name:", shift.name)
+    if (!shiftName?.trim()) return
+    const startTime = prompt("Edit Start Time (HH:MM):", shift.startTime)
+    if (!startTime) return
+    const endTime = prompt("Edit End Time (HH:MM):", shift.endTime)
+    if (!endTime) return
+
+    try {
+      setIsSaving(true)
+      const cafe = cafeterias.find(c => c.id === cafeId)
+      if (!cafe) return
+
+      // Safeguard for live browser state that might still have an object instead of a string
+      const safeCafeId = typeof cafeId === 'string' ? cafeId : (cafeId as any).id || cafeId;
+
+      const updatedShifts = (cafe.shifts || []).map(s => 
+        s.id === shift.id 
+          ? { ...s, name: shiftName.trim(), startTime, endTime } 
+          : s
+      )
+      
+      await cafeteriasService.update(safeCafeId, { shifts: updatedShifts })
+
+      // Update local state
+      setCafeterias(prev => prev.map(c => 
+        c.id === cafeId ? { ...c, shifts: updatedShifts } : c
+      ))
+
+      toast({ title: "Success", description: "Shift updated successfully!" })
+    } catch (e) {
+      console.error(e)
+      toast({ title: "Error", description: "Failed to update shift", variant: "destructive" })
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   const handleCreateGlobalShift = async () => {
@@ -255,11 +402,18 @@ export default function UserManagementPage() {
     try {
       setIsSaving(true)
       
-      const payloadToSave = {
+      const payloadToSave: any = {
         ...formData,
         vendorId: formData.vendorId === "none" ? "" : formData.vendorId,
         managerId: formData.managerId === "none" ? "" : formData.managerId,
       }
+
+      // Firestore throws errors if any field is explicitly 'undefined'.
+      Object.keys(payloadToSave).forEach(key => {
+        if (payloadToSave[key] === undefined) {
+          delete payloadToSave[key];
+        }
+      });
 
       if (editingId) {
         await usersService.update(editingId, payloadToSave)
@@ -272,6 +426,7 @@ export default function UserManagementPage() {
       const updatedUsers = await usersService.getAll()
       setData(updatedUsers)
     } catch (error) {
+      console.error("Failed to save user:", error)
       toast({ title: "Error", description: "Operation failed", variant: "destructive" })
     } finally {
       setIsSaving(false)
@@ -323,6 +478,7 @@ export default function UserManagementPage() {
           <TabsList>
             <TabsTrigger value="list">Users List</TabsTrigger>
             <TabsTrigger value="hierarchy">Organization Overview</TabsTrigger>
+            <TabsTrigger value="kam_hierarchy">KAM Overview</TabsTrigger>
           </TabsList>
         </div>
 
@@ -411,6 +567,17 @@ export default function UserManagementPage() {
           <OrganizationHierarchyView 
             users={data} 
             companies={companies} 
+            cafeterias={cafeterias} 
+            vendors={vendors} 
+          />
+        </TabsContent>
+
+        <TabsContent value="kam_hierarchy" className="mt-0">
+          <KAMHierarchyView 
+            users={data} 
+            roles={roles}
+            companies={companies} 
+            buildings={buildings}
             cafeterias={cafeterias} 
             vendors={vendors} 
           />
@@ -594,6 +761,15 @@ export default function UserManagementPage() {
                                                     <Label htmlFor={`shift-${cafe.id}-${shift.id}`} className="cursor-pointer">
                                                       {shift.name} ({shift.startTime}-{shift.endTime})
                                                     </Label>
+                                                    <Button 
+                                                      type="button" 
+                                                      variant="ghost" 
+                                                      size="icon" 
+                                                      className="h-5 w-5 text-gray-400 hover:text-blue-600"
+                                                      onClick={() => handleQuickEditShift(cafe.id, shift)}
+                                                    >
+                                                      <Pencil className="h-3 w-3" />
+                                                    </Button>
                                                   </div>
                                                   
                                                   {isShiftChecked && assignment && (
@@ -639,8 +815,95 @@ export default function UserManagementPage() {
                                             })}
                                           </div>
                                         )}
+
+                                        {isCafeChecked && (!cafe.shifts || cafe.shifts.length === 0) && (
+                                          <div className="ml-6 space-y-2 py-2">
+                                            <div className="p-3 bg-gray-50 border border-dashed rounded text-sm text-gray-500 flex flex-col items-start gap-2">
+                                              <p>No shifts exist in this cafeteria yet.</p>
+                                              <Button 
+                                                type="button" 
+                                                variant="outline" 
+                                                size="sm" 
+                                                onClick={() => handleQuickCreateShift(cafe.id)}
+                                                disabled={isSaving}
+                                              >
+                                                <Plus className="h-3 w-3 mr-1" /> Create a Shift Here
+                                              </Button>
+                                            </div>
+                                          </div>
+                                        )}
+
+                                        {/* COMPLIANCE FORMS SECTION */}
+                                        {isCafeChecked && (() => {
+                                          const cafeCompliances = complianceTemplates.filter(t => 
+                                            (t.cafetariaId && t.cafetariaId === cafe.id) ||
+                                            (!t.cafetariaId && t.buildingId && t.buildingId === building.id) ||
+                                            (!t.cafetariaId && !t.buildingId && t.companyId && t.companyId === company.id)
+                                          )
+                                          return (
+                                            <div className="ml-6 mt-4 mb-2 p-4 bg-purple-50/50 border border-purple-100 rounded-lg flex flex-col gap-3">
+                                              <h4 className="text-sm font-bold flex items-center gap-2 text-purple-900">
+                                                <FileCheck className="h-4 w-4 text-purple-600" /> Compliance Forms
+                                              </h4>
+                                              {cafeCompliances.length > 0 ? (
+                                                <div className="flex flex-col gap-2">
+                                                  {cafeCompliances.map(t => (
+                                                    <div key={t.id} className="flex justify-between items-center bg-white p-2.5 border border-purple-100 rounded shadow-sm">
+                                                      <span className="text-sm font-medium text-gray-800">{t.name}</span>
+                                                      <Button size="sm" variant="outline" className="border-purple-200 text-purple-700 hover:bg-purple-50" onClick={() => {
+                                                        setComplianceModalTemplateId(t.id)
+                                                        setComplianceModalCafeId(cafe.id)
+                                                        setComplianceModalBuildingId(building.id)
+                                                        setComplianceModalCompanyId(company.id)
+                                                        setIsComplianceModalOpen(true)
+                                                      }}>Edit Form</Button>
+                                                    </div>
+                                                  ))}
+                                                  <Button size="sm" variant="ghost" className="self-start text-purple-600 hover:text-purple-800 hover:bg-purple-100/50 mt-1" onClick={() => {
+                                                    setComplianceModalTemplateId("new")
+                                                    setComplianceModalCafeId(cafe.id)
+                                                    setComplianceModalBuildingId(building.id)
+                                                    setComplianceModalCompanyId(company.id)
+                                                    setIsComplianceModalOpen(true)
+                                                  }}>+ Create Another Form</Button>
+                                                </div>
+                                              ) : (
+                                                <div className="flex flex-col items-start gap-3 bg-white p-3 rounded border border-dashed border-purple-200">
+                                                  <p className="text-xs text-gray-500">No compliance forms exist for this cafeteria yet.</p>
+                                                  <Button size="sm" variant="outline" className="border-purple-200 text-purple-700 hover:bg-purple-50" onClick={() => {
+                                                    setComplianceModalTemplateId("new")
+                                                    setComplianceModalCafeId(cafe.id)
+                                                    setComplianceModalBuildingId(building.id)
+                                                    setComplianceModalCompanyId(company.id)
+                                                    setIsComplianceModalOpen(true)
+                                                  }}>
+                                                    <Plus className="h-3 w-3 mr-1" /> Create Compliance Form
+                                                  </Button>
+                                                </div>
+                                              )}
+                                            </div>
+                                          )
+                                        })()}
+
                                       </div>
                                     )})}
+                                  </div>
+                                )}
+                                
+                                {isBuildingChecked && buildingCafeterias.length === 0 && (
+                                  <div className="ml-6 space-y-2">
+                                    <div className="p-3 bg-gray-50 border border-dashed rounded text-sm text-gray-500 flex flex-col items-start gap-2">
+                                      <p>No cafeterias exist in this building yet.</p>
+                                      <Button 
+                                        type="button" 
+                                        variant="outline" 
+                                        size="sm" 
+                                        onClick={() => handleQuickCreateCafe(company.id, building.id)}
+                                        disabled={isSaving}
+                                      >
+                                        <Plus className="h-3 w-3 mr-1" /> Create a Cafe Here
+                                      </Button>
+                                    </div>
                                   </div>
                                 )}
                               </div>
@@ -950,6 +1213,23 @@ export default function UserManagementPage() {
               {isSaving ? "Saving..." : "Save User"}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={isComplianceModalOpen} onOpenChange={setIsComplianceModalOpen}>
+        <DialogContent className="max-w-5xl max-h-[95vh] overflow-y-auto p-0 border-0 bg-transparent shadow-none">
+          <div className="bg-white rounded-xl shadow-2xl overflow-hidden relative">
+            <ComplianceBuilder 
+              templateId={complianceModalTemplateId}
+              initialCompanyId={complianceModalCompanyId}
+              initialBuildingId={complianceModalBuildingId}
+              initialCafetariaId={complianceModalCafeId}
+              onSaved={() => {
+                fetchInitialData() // refresh to get new compliance
+                setIsComplianceModalOpen(false)
+              }}
+              onCancel={() => setIsComplianceModalOpen(false)}
+            />
+          </div>
         </DialogContent>
       </Dialog>
     </div>

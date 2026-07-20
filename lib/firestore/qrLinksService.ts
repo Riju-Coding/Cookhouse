@@ -1,4 +1,4 @@
-import { collection, doc, addDoc, getDocs, deleteDoc, Timestamp, query, orderBy, getDoc } from 'firebase/firestore'
+import { collection, doc, addDoc, getDocs, deleteDoc, updateDoc, Timestamp, query, orderBy, getDoc } from 'firebase/firestore'
 import { db } from '../firebase'
 
 export interface QRLink {
@@ -12,6 +12,9 @@ export interface QRLink {
   createdAt: Timestamp
   createdBy: string
   createdByName: string
+  requireName?: boolean
+  requireEmail?: boolean
+  requireEmployeeId?: boolean
 }
 
 const QR_LINKS_COLLECTION = 'qr_links'
@@ -38,6 +41,10 @@ export const qrLinksService = {
       return { id: snap.id, ...snap.data() } as QRLink
     }
     return null
+  },
+
+  async update(id: string, data: Partial<Pick<QRLink, 'requireName' | 'requireEmail' | 'requireEmployeeId'>>): Promise<void> {
+    await updateDoc(doc(db, QR_LINKS_COLLECTION, id), data)
   },
 
   async delete(id: string): Promise<void> {
