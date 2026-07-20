@@ -233,7 +233,7 @@ export default function PublicReportPage({ params }: { params: { id: string } })
         const updated = { ...prev }
         resolvedItems.forEach(item => {
           if (!updated[item.id]) {
-            updated[item.id] = { rating: "Satisfactory", remark: "" }
+            updated[item.id] = { rating: "Loved it", remark: "" }
           }
         })
         return updated
@@ -496,111 +496,170 @@ ${description}
         </div>
 
         {category === "Catering Services" && (
-          <div className="space-y-6 bg-gradient-to-b from-white to-slate-50 p-6 sm:p-8 rounded-[2rem] border border-blue-100 shadow-[0_8px_30px_rgb(0,0,0,0.04)] relative overflow-hidden">
-            {/* Decorative element */}
-            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-400 via-indigo-500 to-purple-500"></div>
-
-            <div className="space-y-1 border-b border-slate-100 pb-4">
-              <h3 className="text-lg font-black text-slate-800 tracking-tight flex items-center gap-2">
-                <ChefHat className="w-5 h-5 text-blue-600" />
-                Meal Feedback
-              </h3>
-              <p className="text-sm font-medium text-slate-500">Select your meal below to rate individual items.</p>
-            </div>
+          <div className="rounded-[2rem] overflow-hidden border border-violet-100 shadow-[0_8px_40px_rgba(139,92,246,0.08)]">
             
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-              <div className="space-y-2">
-                <Label className="text-xs font-bold text-slate-600 uppercase tracking-wide">Service <span className="text-blue-600">*</span></Label>
-                <Select value={selectedServiceId} onValueChange={setSelectedServiceId}>
-                  <SelectTrigger className="h-12 rounded-xl bg-white border-slate-200 focus:ring-blue-500 font-medium shadow-sm"><SelectValue placeholder="E.g. Lunch" /></SelectTrigger>
-                  <SelectContent className="rounded-xl shadow-xl">
-                    {services.map(s => <SelectItem key={s.id} value={s.id} className="py-2.5 cursor-pointer">{s.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label className="text-xs font-bold text-slate-600 uppercase tracking-wide">Sub Service <span className="text-blue-600">*</span></Label>
-                <Select value={selectedSubServiceId} onValueChange={setSelectedSubServiceId} disabled={!selectedServiceId}>
-                  <SelectTrigger className="h-12 rounded-xl bg-white border-slate-200 focus:ring-blue-500 font-medium shadow-sm disabled:opacity-50"><SelectValue placeholder="E.g. Normal Meal" /></SelectTrigger>
-                  <SelectContent className="rounded-xl shadow-xl">
-                    {subServices.filter(ss => ss.serviceId === selectedServiceId).map(ss => <SelectItem key={ss.id} value={ss.id} className="py-2.5 cursor-pointer">{ss.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
+            {/* Section Header */}
+            <div className="bg-gradient-to-br from-violet-600 via-purple-600 to-indigo-600 p-6 sm:p-8 relative overflow-hidden">
+              <div className="absolute inset-0 opacity-20" style={{backgroundImage: "radial-gradient(circle at 20% 50%, white 1px, transparent 1px), radial-gradient(circle at 80% 20%, white 1px, transparent 1px)", backgroundSize: "30px 30px"}} />
+              <div className="relative z-10">
+                <div className="inline-flex items-center gap-2 bg-white/20 backdrop-blur-sm px-3 py-1 rounded-full mb-3">
+                  <ChefHat className="w-3.5 h-3.5 text-white" />
+                  <span className="text-[11px] font-black text-white uppercase tracking-widest">Today's Meal Feedback</span>
+                </div>
+                <h3 className="text-2xl font-black text-white tracking-tight">How was your meal? 🍽️</h3>
+                <p className="text-violet-200 text-sm font-medium mt-1">Rate each dish honestly — your feedback helps us improve!</p>
               </div>
             </div>
 
-            {menuLoading ? (
-              <div className="flex flex-col items-center justify-center py-8 text-slate-400 gap-3">
-                <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
-                <span className="text-sm font-semibold tracking-wide">Locating today's menu...</span>
+            {/* Service Selectors */}
+            <div className="bg-white p-5 sm:p-6 border-b border-slate-100">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Service</Label>
+                  <Select value={selectedServiceId} onValueChange={setSelectedServiceId}>
+                    <SelectTrigger className="h-12 rounded-2xl bg-slate-50 border-slate-200 focus:ring-violet-500 font-semibold text-slate-700 shadow-none hover:bg-white transition-colors">
+                      <SelectValue placeholder="e.g. Lunch, Dinner…" />
+                    </SelectTrigger>
+                    <SelectContent className="rounded-2xl shadow-2xl border-slate-100">
+                      {services.map(s => <SelectItem key={s.id} value={s.id} className="py-3 cursor-pointer font-semibold">{s.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Meal Type</Label>
+                  <Select value={selectedSubServiceId} onValueChange={setSelectedSubServiceId} disabled={!selectedServiceId}>
+                    <SelectTrigger className="h-12 rounded-2xl bg-slate-50 border-slate-200 focus:ring-violet-500 font-semibold text-slate-700 shadow-none hover:bg-white transition-colors disabled:opacity-40">
+                      <SelectValue placeholder="e.g. Normal Meal…" />
+                    </SelectTrigger>
+                    <SelectContent className="rounded-2xl shadow-2xl border-slate-100">
+                      {subServices.filter(ss => ss.serviceId === selectedServiceId).map(ss => (
+                        <SelectItem key={ss.id} value={ss.id} className="py-3 cursor-pointer font-semibold">{ss.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
-            ) : !todayMenuData ? (
-              <div className="bg-amber-50 border border-amber-100 p-4 rounded-2xl text-center">
-                <p className="text-sm font-semibold text-amber-700">No active menu found for today.</p>
-                <p className="text-xs text-amber-600 mt-1">You can still provide general remarks above.</p>
-              </div>
-            ) : (!selectedServiceId || !selectedSubServiceId) ? (
-              <div className="bg-blue-50/50 border border-blue-100/50 p-6 rounded-2xl text-center border-dashed">
-                <p className="text-sm font-semibold text-blue-700">Please select a service above to view menu items.</p>
-              </div>
-            ) : todayMenuItems.length === 0 ? (
-              <div className="bg-slate-50 border border-slate-200 p-6 rounded-2xl text-center border-dashed">
-                <p className="text-sm font-semibold text-slate-600">No items found for this selection.</p>
-              </div>
-            ) : (
-              <div className="space-y-4 pt-2">
-                {todayMenuItems.map(item => (
-                  <div key={item.id} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm transition-all hover:shadow-md hover:border-blue-200 group">
-                    <p className="font-bold text-slate-800 text-lg mb-4">{item.name}</p>
-                    
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                      {[
-                        { label: "Satisfactory", color: "emerald", icon: "👍" },
-                        { label: "Good", color: "blue", icon: "✨" },
-                        { label: "Bad", color: "orange", icon: "👎" },
-                        { label: "Not Likeable", color: "red", icon: "🤢" }
-                      ].map(rating => {
-                        const isSelected = menuFeedback[item.id]?.rating === rating.label;
-                        return (
-                          <div 
-                            key={rating.label}
-                            onClick={() => handleMenuFeedbackChange(item.id, "rating", rating.label)}
-                            className={`
-                              cursor-pointer rounded-xl border p-3 flex flex-col items-center justify-center gap-1.5 transition-all duration-200 transform hover:scale-[1.02] active:scale-95
-                              ${isSelected 
-                                ? rating.color === 'emerald' ? 'bg-emerald-50 border-emerald-500 text-emerald-700 shadow-[0_0_0_1px_rgba(16,185,129,1)]' :
-                                  rating.color === 'blue' ? 'bg-blue-50 border-blue-500 text-blue-700 shadow-[0_0_0_1px_rgba(59,130,246,1)]' :
-                                  rating.color === 'orange' ? 'bg-orange-50 border-orange-500 text-orange-700 shadow-[0_0_0_1px_rgba(249,115,22,1)]' :
-                                  'bg-red-50 border-red-500 text-red-700 shadow-[0_0_0_1px_rgba(239,68,68,1)]'
-                                : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100 hover:border-slate-300"}
-                            `}
-                          >
-                            <span className="text-xl">{rating.icon}</span>
-                            <span className={`text-[10px] sm:text-xs font-black uppercase tracking-wider ${isSelected ? 'opacity-100' : 'opacity-70'}`}>
-                              {rating.label}
-                            </span>
-                          </div>
-                        )
-                      })}
-                    </div>
-                    
-                    {(menuFeedback[item.id]?.rating === "Bad" || menuFeedback[item.id]?.rating === "Not Likeable") && (
-                      <div className="pt-4 animate-in fade-in slide-in-from-top-2 duration-300">
-                        <div className="relative">
-                          <Input 
-                            placeholder={`Please tell us why ${item.name} was ${menuFeedback[item.id]?.rating.toLowerCase()}...`}
-                            value={menuFeedback[item.id]?.remark || ""}
-                            onChange={e => handleMenuFeedbackChange(item.id, "remark", e.target.value)}
-                            className="pl-4 pr-4 h-12 rounded-xl bg-red-50/30 border-red-200 focus-visible:ring-red-500 focus-visible:bg-white text-sm"
-                            autoFocus
-                          />
-                        </div>
-                      </div>
-                    )}
+            </div>
+
+            {/* Menu Item Cards */}
+            <div className="bg-slate-50/70 p-5 sm:p-6 space-y-4">
+              {menuLoading ? (
+                <div className="flex flex-col items-center justify-center py-14 gap-4">
+                  <div className="relative">
+                    <div className="w-16 h-16 rounded-full border-4 border-violet-100 border-t-violet-500 animate-spin" />
+                    <span className="absolute inset-0 flex items-center justify-center text-2xl">🍳</span>
                   </div>
-                ))}
-              </div>
-            )}
+                  <p className="text-sm font-bold text-slate-500">Fetching today's menu…</p>
+                </div>
+
+              ) : !todayMenuData ? (
+                <div className="text-center py-10 space-y-2">
+                  <p className="text-4xl">🗓️</p>
+                  <p className="font-black text-slate-700">No menu today</p>
+                  <p className="text-sm text-slate-400">You can still leave overall feedback above.</p>
+                </div>
+
+              ) : (!selectedServiceId || !selectedSubServiceId) ? (
+                <div className="text-center py-10 space-y-3">
+                  <div className="w-16 h-16 bg-violet-100 rounded-[1.5rem] flex items-center justify-center mx-auto">
+                    <span className="text-3xl">👆</span>
+                  </div>
+                  <p className="font-black text-slate-700">Pick your meal above</p>
+                  <p className="text-sm text-slate-400 max-w-[220px] mx-auto">Select a service and meal type to see today's dishes</p>
+                </div>
+
+              ) : todayMenuItems.length === 0 ? (
+                <div className="text-center py-10 space-y-2">
+                  <p className="text-4xl">🤷</p>
+                  <p className="font-black text-slate-700">No dishes found</p>
+                  <p className="text-sm text-slate-400">Try a different service or meal type.</p>
+                </div>
+
+              ) : (
+                <div className="space-y-3">
+                  {/* Count pill */}
+                  <div className="flex items-center gap-2 pb-1">
+                    <span className="text-xs font-black text-violet-600 uppercase tracking-widest">{todayMenuItems.length} dishes to rate</span>
+                    <div className="flex-1 h-px bg-violet-100" />
+                  </div>
+
+                  {todayMenuItems.map((item, idx) => {
+                    const selected = menuFeedback[item.id]?.rating
+                    const ratings = [
+                      { label: "Loved it",      short: "Loved it",    emoji: "😍", bg: "from-pink-500 to-rose-500",     activeBg: "bg-gradient-to-r from-pink-500 to-rose-500",     activeTxt: "text-white", ring: "ring-pink-400"   },
+                      { label: "Good",           short: "Good",        emoji: "😊", bg: "from-emerald-400 to-teal-500",  activeBg: "bg-gradient-to-r from-emerald-400 to-teal-500",  activeTxt: "text-white", ring: "ring-emerald-400" },
+                      { label: "It's okay",      short: "Okay",        emoji: "😐", bg: "from-amber-400 to-orange-400",  activeBg: "bg-gradient-to-r from-amber-400 to-orange-400",  activeTxt: "text-white", ring: "ring-amber-400"   },
+                      { label: "Not Likeable",   short: "Nope",        emoji: "😤", bg: "from-slate-400 to-slate-500",   activeBg: "bg-gradient-to-r from-slate-500 to-slate-600",   activeTxt: "text-white", ring: "ring-slate-400"   },
+                    ]
+                    return (
+                      <div
+                        key={item.id}
+                        className={`bg-white rounded-[1.5rem] overflow-hidden shadow-sm border transition-all duration-300 ${
+                          selected ? "border-violet-200 shadow-[0_4px_20px_rgba(139,92,246,0.12)]" : "border-slate-100"
+                        }`}
+                      >
+                        {/* Item header */}
+                        <div className="flex items-center gap-3 px-5 pt-5 pb-3">
+                          <div className="w-9 h-9 rounded-2xl bg-gradient-to-br from-violet-100 to-indigo-100 flex items-center justify-center shrink-0 text-lg font-black text-violet-600">
+                            {idx + 1}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-black text-slate-800 text-base truncate">{item.name}</p>
+                            {selected && (
+                              <p className="text-[11px] font-bold text-violet-500 mt-0.5 animate-in fade-in duration-200">
+                                {ratings.find(r => r.label === selected)?.emoji} You rated: {selected}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Rating pills — horizontal scroll on mobile */}
+                        <div className="px-4 pb-4">
+                          <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
+                            {ratings.map(rating => {
+                              const isSelected = selected === rating.label
+                              return (
+                                <button
+                                  key={rating.label}
+                                  type="button"
+                                  onClick={() => handleMenuFeedbackChange(item.id, "rating", rating.label)}
+                                  className={`
+                                    flex-shrink-0 flex items-center gap-2 px-4 py-2.5 rounded-full font-bold text-sm
+                                    transition-all duration-200 active:scale-95 select-none
+                                    ${isSelected
+                                      ? `${rating.activeBg} ${rating.activeTxt} ring-2 ring-offset-1 ${rating.ring} shadow-lg scale-[1.03]`
+                                      : "bg-slate-100 text-slate-500 hover:bg-slate-200 hover:scale-[1.02]"
+                                    }
+                                  `}
+                                >
+                                  <span className="text-base leading-none">{rating.emoji}</span>
+                                  <span className="whitespace-nowrap">{rating.short}</span>
+                                </button>
+                              )
+                            })}
+                          </div>
+                        </div>
+
+                        {/* Remark input — slides in for negative ratings */}
+                        {(selected === "It's okay" || selected === "Not Likeable") && (
+                          <div className="px-5 pb-5 animate-in slide-in-from-top-2 fade-in duration-300">
+                            <div className="relative">
+                              <Input
+                                placeholder={`What didn't hit right about ${item.name}? 💬`}
+                                value={menuFeedback[item.id]?.remark || ""}
+                                onChange={e => handleMenuFeedbackChange(item.id, "remark", e.target.value)}
+                                className="h-12 rounded-2xl bg-slate-50 border-slate-200 focus-visible:ring-violet-400 focus-visible:bg-white text-sm font-medium pl-4 pr-4 placeholder:text-slate-400"
+                                autoFocus
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
           </div>
         )}
 
