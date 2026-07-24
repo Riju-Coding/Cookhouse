@@ -6,6 +6,7 @@ import { db } from "@/lib/firebase"
 import { collection, getDocs } from "firebase/firestore"
 import { complianceTemplatesService, type ComplianceTemplate, type ComplianceTemplateType, type ComplianceFrequency, type VehicleCheckField } from "@/lib/firestore/complianceTemplatesService"
 import { complianceTemplateFieldsService, type ComplianceTemplateField, type TemplateFieldType } from "@/lib/firestore/complianceTemplateFieldsService"
+import { structureAssignmentsService } from "@/lib/services"
 import { toast } from "@/hooks/use-toast"
 
 import { 
@@ -99,6 +100,10 @@ export function ComplianceBuilder({
   const [services, setServices] = useState<any[]>([])
   const [subServices, setSubServices] = useState<any[]>([])
 
+  // Assigned structure state
+  const [assignedServiceIds, setAssignedServiceIds] = useState<string[]>([])
+  const [assignedSubServiceIds, setAssignedSubServiceIds] = useState<string[]>([])
+
   // Copy form state
   const [isCopyModalOpen, setIsCopyModalOpen] = useState(false)
   const [copyTemplates, setCopyTemplates] = useState<ComplianceTemplate[]>([])
@@ -115,13 +120,51 @@ export function ComplianceBuilder({
     if (!isNew) fetchExistingTemplate()
   }, [])
 
+  useEffect(() => {
+    const fetchAssignedStructure = async () => {
+      if (companyId && buildingId && companyId !== 'none' && buildingId !== 'none') {
+        try {
+          const structures = await structureAssignmentsService.getAll()
+          const structure = structures.find((s: any) => s.companyId === companyId && s.buildingId === buildingId && s.status === 'active')
+          if (structure && structure.weekStructure) {
+            const sIds = new Set<string>()
+            const ssIds = new Set<string>()
+            Object.values(structure.weekStructure).forEach((dayArr: any) => {
+              if (Array.isArray(dayArr)) {
+                dayArr.forEach(item => {
+                  if (item.serviceId) sIds.add(item.serviceId)
+                  if (Array.isArray(item.subServices)) {
+                    item.subServices.forEach((sub: any) => {
+                      if (sub.subServiceId) ssIds.add(sub.subServiceId)
+                    })
+                  }
+                })
+              }
+            })
+            setAssignedServiceIds(Array.from(sIds))
+            setAssignedSubServiceIds(Array.from(ssIds))
+          } else {
+            setAssignedServiceIds([])
+            setAssignedSubServiceIds([])
+          }
+        } catch(e) {
+          console.error(e)
+        }
+      } else {
+        setAssignedServiceIds([])
+        setAssignedSubServiceIds([])
+      }
+    }
+    fetchAssignedStructure()
+  }, [companyId, buildingId])
+
   const fetchLookups = async () => {
     try {
       const [v, c, b, caf, a, r, s, ss] = await Promise.all([
         getDocs(collection(db, 'vendors')),
         getDocs(collection(db, 'companies')),
         getDocs(collection(db, 'buildings')),
-        getDocs(collection(db, 'cafeterias')),
+        getDocs(collection(db, 'cafetarias')),
         getDocs(collection(db, 'areas')),
         getDocs(collection(db, 'roles')),
         getDocs(collection(db, 'services')),
@@ -207,6 +250,7 @@ export function ComplianceBuilder({
       isPhotoRequired: f.isPhotoRequired,
       options: f.options,
       order: customFields.length + i,
+      servicePhase: f.servicePhase || 'none',
     }))
     setCustomFields([...customFields, ...newFields])
     setIsCopyModalOpen(false)
@@ -230,6 +274,7 @@ export function ComplianceBuilder({
       isRequired: true,
       isPhotoRequired: false,
       order: customFields.length + i,
+      servicePhase: 'none' as const,
     }))
 
     setCustomFields([...customFields, ...newFields])
@@ -259,11 +304,11 @@ export function ComplianceBuilder({
       if (buildingId && buildingId !== 'none') payload.buildingId = buildingId
       if (cafetariaId && cafetariaId !== 'none') payload.cafetariaId = cafetariaId
       if (areaId && areaId !== 'none') payload.areaId = areaId
+      if (serviceId && serviceId !== 'none') payload.serviceId = serviceId
+      if (subServiceId && subServiceId !== 'none') payload.subServiceId = subServiceId
       
       if (['kitchen_readiness', 'dispatch', 'service_point'].includes(templateType)) {
         payload.menuSourceType = menuSource
-        if (serviceId && serviceId !== 'none') payload.serviceId = serviceId
-        if (subServiceId && subServiceId !== 'none') payload.subServiceId = subServiceId
       }
 
       if (templateType === 'dispatch') {
@@ -290,6 +335,7 @@ export function ComplianceBuilder({
             isRequired: f.isRequired,
             isPhotoRequired: f.isPhotoRequired,
             order: i,
+            servicePhase: f.servicePhase || 'none',
           }
           if (f.options !== undefined) {
             fieldPayload.options = f.options
@@ -317,7 +363,12 @@ export function ComplianceBuilder({
   const filteredBuildings = buildings.filter(b => b.companyId === companyId)
   const filteredCafeterias = cafeterias.filter(c => c.buildingId === buildingId)
   const filteredAreas = areas.filter(a => a.cafeteriaId === cafetariaId)
-  const filteredSubServices = subServices.filter(s => s.serviceId === serviceId)
+  
+  const availableServices = assignedServiceIds.length > 0 
+    ? services.filter(s => assignedServiceIds.includes(s.id))
+    : services
+    
+  const filteredSubServices = subServices.filter(s => s.serviceId === serviceId && (assignedSubServiceIds.length === 0 || assignedSubServiceIds.includes(s.id)))
 
   if (loading) return <div className="p-12 text-center text-gray-500">Loading template...</div>
 
@@ -468,6 +519,26 @@ export function ComplianceBuilder({
                     </SelectContent>
                   </Select>
                 </div>
+                <div className="space-y-2">
+                  <Label>Service</Label>
+                  <Select value={serviceId} onValueChange={val => { setServiceId(val); setSubServiceId(''); }} disabled={!buildingId || buildingId === 'none'}>
+                    <SelectTrigger><SelectValue placeholder="Any Service" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Any Service</SelectItem>
+                      {availableServices.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Sub-Service</Label>
+                  <Select value={subServiceId} onValueChange={setSubServiceId} disabled={!serviceId || serviceId === 'none'}>
+                    <SelectTrigger><SelectValue placeholder="Any Sub-Service" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Any Sub-Service</SelectItem>
+                      {filteredSubServices.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
             </div>
           )}
@@ -493,26 +564,6 @@ export function ComplianceBuilder({
                         <SelectContent>
                           <SelectItem value="combined">Combined Menu (Global)</SelectItem>
                           <SelectItem value="company">Company Specific Menu</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Filter by Service (Optional)</Label>
-                      <Select value={serviceId} onValueChange={val => { setServiceId(val); setSubServiceId(''); }}>
-                        <SelectTrigger className="bg-white"><SelectValue placeholder="All Services" /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none">All Services</SelectItem>
-                          {services.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Filter by Sub-Service (Optional)</Label>
-                      <Select value={subServiceId} onValueChange={setSubServiceId} disabled={!serviceId || serviceId === 'none'}>
-                        <SelectTrigger className="bg-white"><SelectValue placeholder="All Sub-Services" /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none">All Sub-Services</SelectItem>
-                          {filteredSubServices.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
                         </SelectContent>
                       </Select>
                     </div>
@@ -590,12 +641,26 @@ export function ComplianceBuilder({
                             className="flex-1 bg-white"
                           />
                           <Select 
+                            value={field.servicePhase || 'none'} 
+                            onValueChange={(val: any) => {
+                              const nf = [...customFields]; nf[index].servicePhase = val; setCustomFields(nf);
+                            }}
+                          >
+                            <SelectTrigger className="w-36 bg-white"><SelectValue placeholder="Service Phase" /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">N/A Phase</SelectItem>
+                              <SelectItem value="before_service">Before Service</SelectItem>
+                              <SelectItem value="during_service">During Service</SelectItem>
+                              <SelectItem value="after_service">After Service</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <Select 
                             value={field.type} 
                             onValueChange={(val: any) => {
                               const nf = [...customFields]; nf[index].type = val; setCustomFields(nf);
                             }}
                           >
-                            <SelectTrigger className="w-40 bg-white"><SelectValue /></SelectTrigger>
+                            <SelectTrigger className="w-36 bg-white"><SelectValue /></SelectTrigger>
                             <SelectContent>
                               <SelectItem value="yes_no">Yes / No</SelectItem>
                               <SelectItem value="text">Text Input</SelectItem>

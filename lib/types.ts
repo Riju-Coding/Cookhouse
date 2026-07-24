@@ -120,3 +120,33 @@ export type { ComplianceTemplate, ComplianceTemplateType, ComplianceFrequency, V
 export type { ComplianceTemplateField, TemplateFieldType, MeasurementUnit } from "@/lib/firestore/complianceTemplateFieldsService"
 export type { Vehicle, VehicleType, VehicleStatus } from "@/lib/firestore/vehiclesService"
 export type { ComplianceRecord, ComplianceRecordItem, ComplianceRecordStatus, VehicleConditionSnapshot, ComplianceAnswer } from "@/lib/firestore/complianceRecordsService"
+
+// ─── Tech Recruitment Types ────────────────────────────────────────────────
+
+export interface TechQuestion {
+  id: string;
+  type: "multiple_choice" | "code";
+  prompt: string;
+  options?: string[]; // Only for multiple_choice
+  idealAnswer: string; // Used by AI to evaluate the candidate's answer
+}
+
+export interface TechRound {
+  id?: string;
+  title: string;
+  createdAt: any;
+  questions: TechQuestion[];
+}
+
+export interface TechCandidate {
+  id?: string;
+  email: string;
+  techRoundId: string;
+  techRoundTitle: string;
+  status: "pending" | "in_progress" | "completed";
+  answers?: Record<string, string>; // Maps questionId to candidate's answer string
+  score?: number; // Out of 10
+  feedback?: string; // AI feedback
+  createdAt: any;
+  completedAt?: any;
+}

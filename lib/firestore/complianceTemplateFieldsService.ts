@@ -42,6 +42,7 @@ export interface ComplianceTemplateField {
   maxValue?: number           // Validation: max threshold
   options?: string[]          // For dropdown type — list of options
   order: number               // Sort order
+  servicePhase?: 'before_service' | 'during_service' | 'after_service' | 'none'
   createdAt?: any
 }
 

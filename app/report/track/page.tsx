@@ -4,6 +4,7 @@ import { useSearchParams } from "next/navigation"
 import { ticketService, Ticket, TicketComment } from "@/lib/firestore/ticketService"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Badge } from "@/components/ui/badge"
 import { Loader2, Search, AlertCircle, CheckCircle2, MessageSquare } from "lucide-react"
 
 function TrackTicketContent() {
@@ -123,15 +124,30 @@ function TrackTicketContent() {
                 Updates & Comments
               </h4>
               <div className="space-y-3">
-                {comments.map(comment => (
-                  <div key={comment.id} className="bg-white p-4 rounded-lg border shadow-sm border-gray-200">
-                    <div className="flex justify-between items-center mb-2">
-                      <span className="font-semibold text-sm text-blue-700">{comment.userName}</span>
-                      <span className="text-xs text-gray-500">{comment.timestamp.toDate().toLocaleString()}</span>
+                {comments.map(comment => {
+                  const isStaff = comment.userRole === 'Vendor Staff'
+                  const isKAM = comment.userRole === 'Key Account Manager'
+                  const isAdmin = comment.userRole === 'Super Admin'
+                  
+                  return (
+                    <div key={comment.id} className="bg-white p-4 rounded-lg border shadow-sm border-gray-200">
+                      <div className="flex items-center gap-2 mb-2 flex-wrap">
+                        <span className="font-semibold text-sm text-blue-700">{comment.userName}</span>
+                        {comment.userRole && (
+                          <Badge variant="secondary" className={`text-[10px] px-1.5 py-0 ${
+                            isAdmin ? 'bg-indigo-50 text-indigo-700 border-indigo-200' :
+                            isKAM ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                            'bg-emerald-50 text-emerald-700 border-emerald-200'
+                          }`}>
+                            {comment.userRole}
+                          </Badge>
+                        )}
+                        <span className="text-xs text-gray-500 ml-auto">{comment.timestamp.toDate().toLocaleString()}</span>
+                      </div>
+                      <p className="text-sm text-gray-800 whitespace-pre-wrap">{comment.text}</p>
                     </div>
-                    <p className="text-sm text-gray-800 whitespace-pre-wrap">{comment.text}</p>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             </div>
           )}

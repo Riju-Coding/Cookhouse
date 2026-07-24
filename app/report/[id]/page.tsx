@@ -2,12 +2,13 @@
 import { useState, useEffect } from "react"
 import { qrLinksService, QRLink } from "@/lib/firestore/qrLinksService"
 import { ticketService, TicketPriority } from "@/lib/firestore/ticketService"
+import { usersService, type User } from "@/lib/firestore/usersService"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { MapPin, Loader2, CheckCircle2, Ticket, ImagePlus, X, ChefHat } from "lucide-react"
+import { MapPin, Loader2, CheckCircle2, Ticket, ImagePlus, X, ChefHat, Copy, CheckSquare } from "lucide-react"
 import { toast } from "@/hooks/use-toast"
 import { storage, db } from "@/lib/firebase"
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage"
@@ -16,12 +17,10 @@ import { menuItemsService, servicesService, subServicesService, mealPlanStructur
 import Link from "next/link"
 
 const COMPLAINT_CATEGORIES = [
-  "Maintenance & Repairs",
-  "Cleaning & Hygiene",
-  "Food Quality & Service",
-  "Catering Services",
-  "Safety Hazard",
-  "Other"
+  "Cleaning and Hygiene",
+  "Food Quality",
+  "Food Shortage",
+  "Staff"
 ]
 
 export default function PublicReportPage({ params }: { params: { id: string } }) {
@@ -43,6 +42,11 @@ export default function PublicReportPage({ params }: { params: { id: string } })
   const [todayMenuData, setTodayMenuData] = useState<any>(null)
   const [todayMenuItems, setTodayMenuItems] = useState<{ id: string; name: string }[]>([])
   const [menuFeedback, setMenuFeedback] = useState<Record<string, { rating: string; remark: string }>>({})
+  const [shortItems, setShortItems] = useState<Set<string>>(new Set())
+  
+  // Staff Selection State
+  const [companyStaff, setCompanyStaff] = useState<User[]>([])
+  const [selectedStaffId, setSelectedStaffId] = useState("")
   
   const [services, setServices] = useState<{ id: string; name: string }[]>([])
   const [subServices, setSubServices] = useState<{ id: string; name: string; serviceId: string }[]>([])
@@ -102,8 +106,21 @@ export default function PublicReportPage({ params }: { params: { id: string } })
   }, [params.id])
 
   useEffect(() => {
+    async function fetchStaff() {
+      if (category !== "Staff" || !linkInfo) return
+      try {
+        const staff = await usersService.getByCompany(linkInfo.companyId)
+        setCompanyStaff(staff)
+      } catch (err) {
+        console.error("Failed to fetch staff:", err)
+      }
+    }
+    fetchStaff()
+  }, [category, linkInfo])
+
+  useEffect(() => {
     async function fetchTodayMenu() {
-      if (category !== "Catering Services" || !linkInfo) return
+      if ((category !== "Food Quality" && category !== "Food Shortage") || !linkInfo) return
       if (menuLoaded) return // prevent refetching
 
       setMenuLoading(true)
@@ -160,8 +177,6 @@ export default function PublicReportPage({ params }: { params: { id: string } })
           
           const todayDate = new Date().toISOString().split("T")[0]
           const todayData = menuData[todayDate] || null
-          
-          console.log("[DEBUG] Fetching menu for date:", todayDate, "Found data:", !!todayData)
           
           setTodayMenuData(todayData)
           
@@ -240,13 +255,22 @@ export default function PublicReportPage({ params }: { params: { id: string } })
       })
     })
 
-  }, [todayMenuData, selectedServiceId, selectedSubServiceId])
+  }, [todayMenuData, selectedServiceId, selectedSubServiceId, todayStructure])
 
   const handleMenuFeedbackChange = (itemId: string, field: "rating" | "remark", value: string) => {
     setMenuFeedback(prev => ({
       ...prev,
       [itemId]: { ...prev[itemId], [field]: value }
     }))
+  }
+
+  const toggleShortItem = (itemId: string) => {
+    setShortItems(prev => {
+      const next = new Set(prev)
+      if (next.has(itemId)) next.delete(itemId)
+      else next.add(itemId)
+      return next
+    })
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -275,7 +299,7 @@ ${description}
 
       let finalDescription = fullDescription
 
-      if (category === "Catering Services" && todayMenuItems.length > 0) {
+      if (category === "Food Quality" && todayMenuItems.length > 0) {
         const serviceName = services.find(s => s.id === selectedServiceId)?.name || 'Unknown Service'
         const subServiceName = subServices.find(s => s.id === selectedSubServiceId)?.name || 'Unknown Sub-Service'
         let menuFeedbackText = `\n\n--- Meal Feedback (${serviceName} - ${subServiceName}) ---\n`
@@ -290,6 +314,22 @@ ${description}
           }
         })
         finalDescription += menuFeedbackText
+      } else if (category === "Food Shortage" && shortItems.size > 0) {
+        const serviceName = services.find(s => s.id === selectedServiceId)?.name || 'Unknown Service'
+        const subServiceName = subServices.find(s => s.id === selectedSubServiceId)?.name || 'Unknown Sub-Service'
+        let shortageText = `\n\n--- Food Shortage (${serviceName} - ${subServiceName}) ---\nShort Items:\n`
+        
+        todayMenuItems.forEach(item => {
+          if (shortItems.has(item.id)) {
+            shortageText += `- ${item.name}\n`
+          }
+        })
+        finalDescription += shortageText
+      } else if (category === "Staff" && selectedStaffId) {
+        const staff = companyStaff.find(s => s.id === selectedStaffId)
+        if (staff) {
+          finalDescription += `\n\n--- Staff Member Involved ---\nName: ${staff.name}\nEmail: ${staff.email}\nPhone: ${staff.phone}`
+        }
       }
 
       setUploadingPhotos(true)
@@ -319,7 +359,8 @@ ${description}
         companyId: linkInfo!.companyId,
         companyName: linkInfo!.companyName,
         priority: priority,
-        photos: photoUrls
+        photos: photoUrls,
+        category: category
       })
 
       // Save to local storage so they don't lose it
@@ -366,9 +407,22 @@ ${description}
         <h2 className="text-2xl font-bold text-gray-900 mb-3">Complaint Received</h2>
         <p className="text-gray-600 mb-6">Thank you for reporting this issue. Our facility team has been notified.</p>
         
-        <div className="bg-gray-50 p-4 rounded-lg mb-8 border border-gray-100">
-          <p className="text-sm text-gray-500 mb-1">Your Tracking ID</p>
-          <p className="font-mono text-xl font-bold text-blue-600">{successTicketId}</p>
+        <div className="bg-gray-50 p-4 rounded-lg mb-8 border border-gray-100 flex items-center justify-between">
+          <div className="text-left">
+            <p className="text-sm text-gray-500 mb-1">Your Tracking ID</p>
+            <p className="font-mono text-xl font-bold text-blue-600">{successTicketId}</p>
+          </div>
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={() => {
+              navigator.clipboard.writeText(successTicketId)
+              toast({ title: "Copied!", description: "Ticket ID copied to clipboard." })
+            }}
+            className="flex items-center gap-2"
+          >
+            <Copy className="w-4 h-4" /> Copy
+          </Button>
         </div>
 
         <Link href={`/report/track?id=${successTicketId}`}>
@@ -467,6 +521,30 @@ ${description}
           </Select>
         </div>
 
+        {category === "Staff" && (
+          <div className="space-y-2.5 animate-in slide-in-from-top-2 fade-in duration-300">
+            <Label className="text-sm font-bold text-slate-700 flex items-center gap-2">
+              Select Staff Member <span className="text-red-500">*</span>
+            </Label>
+            <Select value={selectedStaffId} onValueChange={setSelectedStaffId}>
+              <SelectTrigger className="rounded-xl h-12 px-4 bg-white border-slate-200 transition-all hover:bg-slate-50">
+                <SelectValue placeholder="Which staff member is involved?" />
+              </SelectTrigger>
+              <SelectContent className="rounded-xl overflow-hidden shadow-xl border-slate-100 max-h-[300px]">
+                {companyStaff.length === 0 ? (
+                  <div className="py-4 text-center text-sm text-gray-500">No staff found for this company.</div>
+                ) : (
+                  companyStaff.map(staff => (
+                    <SelectItem key={staff.id} value={staff.id} className="py-2.5 cursor-pointer font-medium">
+                      {staff.name} {staff.userType === 'vendor_staff' ? '(Vendor Staff)' : ''}
+                    </SelectItem>
+                  ))
+                )}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+
         <div className="space-y-2.5">
           <Label className="text-sm font-bold text-slate-700">Urgency / Priority</Label>
           <Select value={priority} onValueChange={(val: TicketPriority) => setPriority(val)}>
@@ -484,30 +562,32 @@ ${description}
 
         <div className="space-y-2.5">
           <Label className="text-sm font-bold text-slate-700 flex items-center gap-2">
-            {category === "Catering Services" ? "General Remarks (Optional)" : "Description *"}
-            {category !== "Catering Services" && <span className="text-red-500">*</span>}
+            {(category === "Food Quality" || category === "Food Shortage") ? "General Remarks (Optional)" : "Description *"}
+            {(category !== "Food Quality" && category !== "Food Shortage") && <span className="text-red-500">*</span>}
           </Label>
           <Textarea 
-            placeholder={category === "Catering Services" ? "Any overall feedback about the catering services..." : "Please describe the issue in detail..."}
+            placeholder={(category === "Food Quality" || category === "Food Shortage") ? "Any overall feedback..." : "Please describe the issue in detail..."}
             className="min-h-[140px] rounded-2xl bg-slate-50/50 border-slate-200 focus-visible:ring-blue-500 p-4 transition-all hover:bg-white resize-none"
             value={description}
             onChange={e => setDescription(e.target.value)}
           />
         </div>
 
-        {category === "Catering Services" && (
+        {(category === "Food Quality" || category === "Food Shortage") && (
           <div className="rounded-[2rem] overflow-hidden border border-violet-100 shadow-[0_8px_40px_rgba(139,92,246,0.08)]">
             
             {/* Section Header */}
-            <div className="bg-gradient-to-br from-violet-600 via-purple-600 to-indigo-600 p-6 sm:p-8 relative overflow-hidden">
+            <div className={`bg-gradient-to-br ${category === "Food Quality" ? "from-violet-600 via-purple-600 to-indigo-600" : "from-orange-500 via-amber-500 to-yellow-500"} p-6 sm:p-8 relative overflow-hidden`}>
               <div className="absolute inset-0 opacity-20" style={{backgroundImage: "radial-gradient(circle at 20% 50%, white 1px, transparent 1px), radial-gradient(circle at 80% 20%, white 1px, transparent 1px)", backgroundSize: "30px 30px"}} />
               <div className="relative z-10">
                 <div className="inline-flex items-center gap-2 bg-white/20 backdrop-blur-sm px-3 py-1 rounded-full mb-3">
                   <ChefHat className="w-3.5 h-3.5 text-white" />
-                  <span className="text-[11px] font-black text-white uppercase tracking-widest">Today's Meal Feedback</span>
+                  <span className="text-[11px] font-black text-white uppercase tracking-widest">{category === "Food Quality" ? "Today's Meal Feedback" : "Today's Menu"}</span>
                 </div>
-                <h3 className="text-2xl font-black text-white tracking-tight">How was your meal? 🍽️</h3>
-                <p className="text-violet-200 text-sm font-medium mt-1">Rate each dish honestly — your feedback helps us improve!</p>
+                <h3 className="text-2xl font-black text-white tracking-tight">{category === "Food Quality" ? "How was your meal? 🍽️" : "What items were short? 📉"}</h3>
+                <p className={`text-white/80 text-sm font-medium mt-1`}>
+                  {category === "Food Quality" ? "Rate each dish honestly — your feedback helps us improve!" : "Select the items below that were missing or ran out."}
+                </p>
               </div>
             </div>
 
@@ -579,11 +659,36 @@ ${description}
                 <div className="space-y-3">
                   {/* Count pill */}
                   <div className="flex items-center gap-2 pb-1">
-                    <span className="text-xs font-black text-violet-600 uppercase tracking-widest">{todayMenuItems.length} dishes to rate</span>
-                    <div className="flex-1 h-px bg-violet-100" />
+                    <span className={`text-xs font-black uppercase tracking-widest ${category === "Food Quality" ? "text-violet-600" : "text-amber-600"}`}>
+                      {todayMenuItems.length} dishes to {category === "Food Quality" ? "rate" : "check"}
+                    </span>
+                    <div className="flex-1 h-px bg-slate-200" />
                   </div>
 
                   {todayMenuItems.map((item, idx) => {
+                    if (category === "Food Shortage") {
+                      const isShort = shortItems.has(item.id)
+                      return (
+                        <div
+                          key={item.id}
+                          onClick={() => toggleShortItem(item.id)}
+                          className={`bg-white rounded-[1.5rem] shadow-sm border transition-all duration-300 cursor-pointer flex items-center p-4 gap-4 ${
+                            isShort ? "border-amber-400 bg-amber-50 shadow-[0_4px_20px_rgba(251,191,36,0.15)]" : "border-slate-100 hover:border-amber-200"
+                          }`}
+                        >
+                          <div className={`w-6 h-6 rounded flex items-center justify-center shrink-0 border-2 transition-colors ${
+                            isShort ? "bg-amber-500 border-amber-500 text-white" : "border-slate-300 bg-white"
+                          }`}>
+                            {isShort && <CheckSquare className="w-4 h-4" />}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-black text-slate-800 text-base truncate">{item.name}</p>
+                          </div>
+                        </div>
+                      )
+                    }
+
+                    // Food Quality layout
                     const selected = menuFeedback[item.id]?.rating
                     const ratings = [
                       { label: "Loved it",      short: "Loved it",    emoji: "😍", bg: "from-pink-500 to-rose-500",     activeBg: "bg-gradient-to-r from-pink-500 to-rose-500",     activeTxt: "text-white", ring: "ring-pink-400"   },

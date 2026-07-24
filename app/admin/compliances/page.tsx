@@ -202,6 +202,17 @@ export default function ComplianceDashboardPage() {
     }
   }
 
+  const handleDeleteRecord = async (id: string) => {
+    if (!confirm("Are you sure you want to delete this draft record? This action cannot be undone.")) return
+    try {
+      await complianceRecordsService.delete(id)
+      toast({ title: "Deleted", description: "Draft record deleted successfully." })
+      fetchAll()
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to delete draft record.", variant: "destructive" })
+    }
+  }
+
   const handleExportExcel = async () => {
     setIsExporting(true);
     toast({ title: "Exporting...", description: "Please wait while we prepare the file and fetch images.", duration: 5000 });
@@ -631,17 +642,30 @@ export default function ComplianceDashboardPage() {
                           </Badge>
                         </TableCell>
                         <TableCell className="text-right">
-                          <Button 
-                            variant="ghost" 
-                            size="sm" 
-                            className="h-7 text-xs text-blue-600 hover:bg-blue-50"
-                            onClick={() => {
-                              setSelectedRecordId(record.id)
-                              setRecordModalOpen(true)
-                            }}
-                          >
-                            <Eye className="h-3 w-3 mr-1" /> View
-                          </Button>
+                          <div className="flex items-center justify-end gap-1">
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              className="h-7 text-xs text-blue-600 hover:bg-blue-50"
+                              onClick={() => {
+                                setSelectedRecordId(record.id)
+                                setRecordModalOpen(true)
+                              }}
+                            >
+                              <Eye className="h-3 w-3 mr-1" /> View
+                            </Button>
+                            {record.status === 'draft' && (
+                              <Button 
+                                variant="ghost" 
+                                size="sm" 
+                                className="h-7 text-xs text-red-600 hover:bg-red-50 px-2"
+                                onClick={() => handleDeleteRecord(record.id)}
+                                title="Delete Draft"
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
+                            )}
+                          </div>
                         </TableCell>
                       </TableRow>
                     )

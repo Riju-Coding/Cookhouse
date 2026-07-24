@@ -372,3 +372,6 @@ export const menuPlanningRulesService = {
     }
   }
 }
+
+export * from "./firestore/techRoundsService"
+export * from "./firestore/techCandidatesService"

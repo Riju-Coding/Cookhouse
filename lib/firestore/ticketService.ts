@@ -20,6 +20,7 @@ export interface Ticket {
   assigneeId?: string
   assigneeName?: string
   slaBreachAt: Timestamp
+  category?: string
 }
 
 export interface TicketComment {
@@ -27,6 +28,7 @@ export interface TicketComment {
   ticketId: string
   userId: string
   userName: string
+  userRole?: string
   text: string
   photos?: string[]
   timestamp: Timestamp
@@ -71,7 +73,7 @@ export const ticketService = {
     await updateDoc(docRef, updateData)
   },
 
-  async addTicketComment(ticketId: string, userId: string, userName: string, text: string, photos: string[] = []): Promise<string> {
+  async addTicketComment(ticketId: string, userId: string, userName: string, text: string, photos: string[] = [], userRole?: string): Promise<string> {
     const now = Timestamp.now()
     
     // Add comment
@@ -79,6 +81,7 @@ export const ticketService = {
       ticketId,
       userId,
       userName,
+      userRole: userRole || null,
       text,
       photos,
       timestamp: now
