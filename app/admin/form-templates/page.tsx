@@ -6,6 +6,7 @@ import { collection, getDocs } from "firebase/firestore"
 import { complianceFormsService, type ComplianceForm } from "@/lib/firestore/complianceFormsService"
 import { complianceSubFormsService, type ComplianceSubForm } from "@/lib/firestore/complianceSubFormsService"
 import { toast } from "@/hooks/use-toast"
+import { useAuth } from "@/hooks/use-auth"
 
 // Icons
 import { Plus, Pencil, Trash2, ChevronDown, ChevronUp, Loader2 } from "lucide-react"
@@ -44,6 +45,10 @@ const initialSubFormState = {
 }
 
 export default function FormTemplatesPage() {
+  const { userProfile, userType } = useAuth()
+  const [selectedCompanyId, setSelectedCompanyId] = useState("all")
+  const [selectedBuildingId, setSelectedBuildingId] = useState("all")
+  const [selectedCafeteriaId, setSelectedCafeteriaId] = useState("all")
   const [forms, setForms] = useState<ComplianceForm[]>([])
   const [subForms, setSubForms] = useState<ComplianceSubForm[]>([])
   const [expandedFormId, setExpandedFormId] = useState<string | null>(null)
@@ -71,7 +76,7 @@ export default function FormTemplatesPage() {
   const fetchInitialData = async () => {
     try {
       setLoading(true)
-      const [
+      let [
         formsRes,
         companiesSnap,
         buildingsSnap,
@@ -87,8 +92,22 @@ export default function FormTemplatesPage() {
         getDocs(collection(db, 'vendors')),
       ])
 
-      setForms(formsRes)
-      setCompanies(companiesSnap.docs.map(d => ({ id: d.id, ...d.data() })))
+      let companiesData = companiesSnap.docs.map(d => ({ id: d.id, ...d.data() }))
+      let formsData = formsRes
+
+      // --- DATA ISOLATION ---
+      if (userProfile?.companyIds?.length) {
+        companiesData = companiesData.filter(c => userProfile.companyIds.includes(c.id))
+        formsData = formsData.filter(f => !f.companyId || userProfile.companyIds.includes(f.companyId))
+      }
+      
+      if (userProfile?.vendorId) {
+        companiesData = companiesData.filter(c => (c as any).vendorIds?.includes(userProfile.vendorId))
+        formsData = formsData.filter(f => f.vendorId === userProfile.vendorId)
+      }
+
+      setForms(formsData)
+      setCompanies(companiesData)
       setBuildings(buildingsSnap.docs.map(d => ({ id: d.id, ...d.data() })))
       setCafeterias(cafeteriasSnap.docs.map(d => ({ id: d.id, ...d.data() })))
       setAreas(areasSnap.docs.map(d => ({ id: d.id, ...d.data() })))
@@ -266,176 +285,149 @@ export default function FormTemplatesPage() {
         </Button>
       </div>
 
-      <div className="space-y-3">
-        {forms.length === 0 ? (
-          <div className="text-center py-12 bg-gray-50 rounded-lg border">
-            <p className="text-gray-500 text-sm">No forms found. Create one to get started.</p>
-          </div>
-        ) : (
-          forms.map(form => (
-            <Card key={form.id} className="hover:shadow-md transition-shadow">
-              <CardHeader className="pb-3">
-                <div className="flex justify-between items-start">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-3">
-                      <CardTitle className="text-lg">{form.name}</CardTitle>
-                      <Badge variant={form.status === 'active' ? 'default' : 'secondary'} className="text-xs">
-                        {form.status === 'active' ? 'Active' : 'Inactive'}
-                      </Badge>
-                    </div>
-                    <div className="text-sm text-gray-600 mt-3 space-y-2">
-                      <div className="flex items-center justify-between gap-4">
-                        <div>
-                          <span className="text-gray-500">Frequency:</span>
-                          <span className="font-medium ml-2 capitalize">{form.frequency}</span>
-                        </div>
-                        {form.vendorId && (
-                          <div>
-                            <span className="text-gray-500">Vendor:</span>
-                            <span className="font-medium ml-2">{vendors.find(v => v.id === form.vendorId)?.name || 'Unknown'}</span>
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-4 flex-wrap">
-                        {form.companyId && (
-                          <div className="bg-blue-50 px-3 py-1 rounded text-xs">
-                            <span className="text-gray-600">Company:</span>
-                            <span className="font-medium ml-1">{getCompanyName(form.companyId)}</span>
-                          </div>
-                        )}
-                        {form.buildingId && (
-                          <div className="bg-green-50 px-3 py-1 rounded text-xs">
-                            <span className="text-gray-600">Building:</span>
-                            <span className="font-medium ml-1">{getBuildingName(form.buildingId)}</span>
-                          </div>
-                        )}
-                        {form.cafetariaId && (
-                          <div className="bg-orange-50 px-3 py-1 rounded text-xs">
-                            <span className="text-gray-600">Cafeteria:</span>
-                            <span className="font-medium ml-1">{getCafeteriaName(form.cafetariaId)}</span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex gap-1">
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="text-blue-600 hover:bg-blue-50"
-                      onClick={() => handleEditForm(form)}
-                    >
-                      <Pencil className="w-4 h-4" />
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="text-red-600 hover:bg-red-50"
-                      onClick={() => handleDeleteForm(form.id)}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => toggleFormExpand(form.id)}
-                  className="w-full justify-between bg-gray-50 hover:bg-gray-100"
-                >
-                  <span className="font-medium">
-                    Questions ({subForms.filter(s => s.formId === form.id).length})
-                  </span>
-                  {expandedFormId === form.id ? (
-                    <ChevronUp className="w-4 h-4" />
-                  ) : (
-                    <ChevronDown className="w-4 h-4" />
-                  )}
-                </Button>
+      
+      {/* Filters */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-gray-50 p-4 rounded-lg border">
+        <div>
+          <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 block">Company</Label>
+          <Select value={selectedCompanyId} onValueChange={(v) => { setSelectedCompanyId(v); setSelectedBuildingId("all"); setSelectedCafeteriaId("all"); }}>
+            <SelectTrigger className="bg-white"><SelectValue placeholder="All Companies" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Companies</SelectItem>
+              {companies.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+        <div>
+          <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 block">Building</Label>
+          <Select value={selectedBuildingId} onValueChange={(v) => { setSelectedBuildingId(v); setSelectedCafeteriaId("all"); }} disabled={selectedCompanyId === "all"}>
+            <SelectTrigger className="bg-white"><SelectValue placeholder="All Buildings" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Buildings</SelectItem>
+              {buildings.filter(b => b.companyId === selectedCompanyId).map(b => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+        <div>
+          <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 block">Cafeteria</Label>
+          <Select value={selectedCafeteriaId} onValueChange={setSelectedCafeteriaId} disabled={selectedBuildingId === "all"}>
+            <SelectTrigger className="bg-white"><SelectValue placeholder="All Cafeterias" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Cafeterias</SelectItem>
+              {cafeterias.filter(c => c.buildingId === selectedBuildingId).map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
 
+      <div className="border rounded-lg overflow-hidden bg-white shadow-sm">
+        <Table>
+          <TableHeader className="bg-gray-50">
+            <TableRow>
+              <TableHead className="w-10"></TableHead>
+              <TableHead>Form Name</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Frequency</TableHead>
+              <TableHead>Assignments</TableHead>
+              <TableHead className="text-right">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {forms.filter(f => {
+              if (selectedCompanyId !== "all" && f.companyId !== selectedCompanyId) return false;
+              if (selectedBuildingId !== "all" && f.buildingId !== selectedBuildingId) return false;
+              if (selectedCafeteriaId !== "all" && f.cafetariaId !== selectedCafeteriaId) return false;
+              return true;
+            }).length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={6} className="text-center py-12 text-gray-500">No form templates found matching filters.</TableCell>
+              </TableRow>
+            ) : forms.filter(f => {
+              if (selectedCompanyId !== "all" && f.companyId !== selectedCompanyId) return false;
+              if (selectedBuildingId !== "all" && f.buildingId !== selectedBuildingId) return false;
+              if (selectedCafeteriaId !== "all" && f.cafetariaId !== selectedCafeteriaId) return false;
+              return true;
+            }).map(form => (
+              <React.Fragment key={form.id}>
+                <TableRow className="hover:bg-gray-50 cursor-pointer" onClick={() => toggleFormExpand(form.id)}>
+                  <TableCell>
+                    {expandedFormId === form.id ? <ChevronUp className="w-4 h-4 text-gray-500" /> : <ChevronDown className="w-4 h-4 text-gray-500" />}
+                  </TableCell>
+                  <TableCell className="font-medium text-gray-900">{form.name}</TableCell>
+                  <TableCell>
+                    <Badge variant={form.status === 'active' ? 'default' : 'secondary'} className="text-xs">
+                      {form.status === 'active' ? 'Active' : 'Inactive'}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="capitalize">{form.frequency}</TableCell>
+                  <TableCell>
+                    <div className="flex flex-wrap gap-1">
+                      {form.vendorId && <Badge variant="outline" className="text-xs">Vendor: {vendors.find(v => v.id === form.vendorId)?.name || 'Unknown'}</Badge>}
+                      {form.companyId && <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700">Company: {getCompanyName(form.companyId)}</Badge>}
+                      {form.buildingId && <Badge variant="outline" className="text-xs bg-green-50 text-green-700">Building: {getBuildingName(form.buildingId)}</Badge>}
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+                      <Button size="sm" variant="ghost" className="text-blue-600 hover:bg-blue-50 h-8 w-8 p-0" onClick={() => handleEditForm(form)}>
+                        <Pencil className="w-4 h-4" />
+                      </Button>
+                      <Button size="sm" variant="ghost" className="text-red-600 hover:bg-red-50 h-8 w-8 p-0" onClick={() => handleDeleteForm(form.id)}>
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
                 {expandedFormId === form.id && (
-                  <div className="mt-4 space-y-3 border-t pt-4">
-                    {isFetching ? (
-                      <div className="flex items-center justify-center py-4">
-                        <Spinner className="h-5 w-5 mr-2" />
-                        <span className="text-sm text-gray-600">Loading questions...</span>
-                      </div>
-                    ) : subForms.filter(s => s.formId === form.id).length === 0 ? (
-                      <p className="text-sm text-gray-500 text-center py-4">No questions added yet</p>
-                    ) : (
-                      <div className="space-y-2">
-                        {subForms.filter(s => s.formId === form.id).map((subForm, index) => (
-                          <div key={subForm.id} className="flex justify-between items-start p-3 bg-gray-50 rounded-lg border hover:border-gray-300 transition-colors">
-                            <div className="flex-1">
-                              <div className="flex items-start gap-2">
-                                <span className="text-xs font-semibold text-gray-400 bg-gray-200 rounded-full w-5 h-5 flex items-center justify-center mt-0.5">
-                                  {index + 1}
-                                </span>
-                                <p className="text-sm font-medium text-gray-900">{subForm.question}</p>
+                  <TableRow className="bg-gray-50/50">
+                    <TableCell colSpan={6} className="p-0 border-b">
+                      <div className="p-6">
+                        <div className="flex justify-between items-center mb-4">
+                          <h4 className="font-semibold text-gray-700 text-sm">Questions List ({subForms.filter(s => s.formId === form.id).length})</h4>
+                          <Button size="sm" className="bg-blue-50 text-blue-600 hover:bg-blue-100 border border-blue-200 h-8" variant="outline" onClick={() => {
+                            setSubFormData({ ...initialSubFormState, formId: form.id, order: subForms.filter(s => s.formId === form.id).length });
+                            setEditingSubFormId(null);
+                            setIsSubFormModalOpen(true);
+                          }}>
+                            <Plus className="w-3 h-3 mr-1" /> Add Question
+                          </Button>
+                        </div>
+                        
+                        {isFetching ? (
+                          <div className="flex items-center justify-center py-4"><Spinner className="h-5 w-5 mr-2" /><span className="text-sm text-gray-600">Loading questions...</span></div>
+                        ) : subForms.filter(s => s.formId === form.id).length === 0 ? (
+                          <p className="text-sm text-gray-500 text-center py-4 border rounded bg-white">No questions added yet</p>
+                        ) : (
+                          <div className="space-y-2">
+                            {subForms.filter(s => s.formId === form.id).map((subForm, index) => (
+                              <div key={subForm.id} className="flex justify-between items-start p-3 bg-white rounded border hover:border-gray-300 transition-colors">
+                                <div className="flex-1">
+                                  <div className="flex items-start gap-2">
+                                    <span className="text-xs font-semibold text-gray-500 bg-gray-100 rounded-full w-5 h-5 flex items-center justify-center mt-0.5">{index + 1}</span>
+                                    <p className="text-sm font-medium text-gray-900">{subForm.question}</p>
+                                  </div>
+                                  <div className="flex gap-2 mt-2 ml-7 flex-wrap">
+                                    <Badge variant="outline" className="text-[10px] uppercase bg-gray-50 text-gray-600">{subForm.type.replace('_', ' ')}</Badge>
+                                    {subForm.isRequired && <Badge className="text-[10px] uppercase bg-red-50 text-red-700 border-red-200 hover:bg-red-50">Required</Badge>}
+                                    {subForm.isPhotoRequired && <Badge className="text-[10px] uppercase bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-50">Photo Required</Badge>}
+                                  </div>
+                                </div>
+                                <div className="flex gap-1 ml-2">
+                                  <Button size="sm" variant="ghost" className="text-blue-600 hover:bg-blue-50 h-7 w-7 p-0" onClick={() => handleEditSubForm(subForm)}><Pencil className="w-3 h-3" /></Button>
+                                  <Button size="sm" variant="ghost" className="text-red-600 hover:bg-red-50 h-7 w-7 p-0" onClick={() => handleDeleteSubForm(subForm.id)}><Trash2 className="w-3 h-3" /></Button>
+                                </div>
                               </div>
-                              <div className="flex gap-2 mt-2 ml-7 flex-wrap">
-                                <Badge variant="outline" className="text-xs capitalize bg-white">
-                                  {subForm.type.replace('_', ' ')}
-                                </Badge>
-                                {subForm.isRequired && (
-                                  <Badge className="text-xs bg-red-100 text-red-700 border-red-200">
-                                    Required
-                                  </Badge>
-                                )}
-                                {subForm.isPhotoRequired && (
-                                  <Badge className="text-xs bg-purple-100 text-purple-700 border-purple-200">
-                                    Photo Required
-                                  </Badge>
-                                )}
-                              </div>
-                            </div>
-                            <div className="flex gap-1 ml-2">
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="text-blue-600 hover:bg-blue-50"
-                                onClick={() => handleEditSubForm(subForm)}
-                              >
-                                <Pencil className="w-3 h-3" />
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="text-red-600 hover:bg-red-50"
-                                onClick={() => handleDeleteSubForm(subForm.id)}
-                              >
-                                <Trash2 className="w-3 h-3" />
-                              </Button>
-                            </div>
+                            ))}
                           </div>
-                        ))}
+                        )}
                       </div>
-                    )}
-                    <Button
-                      size="sm"
-                      className="w-full bg-blue-50 text-blue-600 hover:bg-blue-100 border border-blue-200"
-                      variant="outline"
-                      onClick={() => {
-                        setSubFormData({
-                          ...initialSubFormState,
-                          formId: form.id,
-                          order: subForms.filter(s => s.formId === form.id).length,
-                        })
-                        setEditingSubFormId(null)
-                        setIsSubFormModalOpen(true)
-                      }}
-                    >
-                      <Plus className="w-3 h-3 mr-2" />
-                      Add Question
-                    </Button>
-                  </div>
+                    </TableCell>
+                  </TableRow>
                 )}
-              </CardContent>
-            </Card>
-          ))
-        )}
+              </React.Fragment>
+            ))}
+          </TableBody>
+        </Table>
       </div>
 
       {/* Form Modal */}

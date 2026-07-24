@@ -4,6 +4,7 @@ import React, { useState, useEffect, useMemo, useCallback } from "react"
 import { db } from "@/lib/firebase"
 import { collection, getDocs } from "firebase/firestore"
 import { accessPathsService, type AccessPath } from "@/lib/firestore/accessPathsService"
+import { rolesService, type Role } from "@/lib/firestore/rolesService"
 import { useAuth } from "@/hooks/use-auth"
 import { toast } from "@/hooks/use-toast"
 
@@ -138,6 +139,7 @@ export default function AccessManagementPage() {
   // Data
   const [companies, setCompanies] = useState<Entity[]>([])
   const [vendors, setVendors] = useState<Entity[]>([])
+  const [roles, setRoles] = useState<Role[]>([])
   const [allRoutes, setAllRoutes] = useState<RouteInfo[]>([])
   const [existingPaths, setExistingPaths] = useState<AccessPath[]>([])
   const [loading, setLoading] = useState(true)
@@ -156,15 +158,17 @@ export default function AccessManagementPage() {
   const fetchData = useCallback(async () => {
     try {
       setLoading(true)
-      const [companiesSnap, vendorsSnap, routesRes, pathsRes] = await Promise.all([
+      const [companiesSnap, vendorsSnap, rolesRes, routesRes, pathsRes] = await Promise.all([
         getDocs(collection(db, "companies")),
         getDocs(collection(db, "vendors")),
+        rolesService.getAll(),
         fetch("/api/routes").then((r) => r.json()),
         accessPathsService.getAll(),
       ])
 
       setCompanies(companiesSnap.docs.map((d) => ({ id: d.id, ...d.data() })) as Entity[])
       setVendors(vendorsSnap.docs.map((d) => ({ id: d.id, ...d.data() })) as Entity[])
+      setRoles(rolesRes)
       setAllRoutes(routesRes.routes || [])
       setExistingPaths(pathsRes)
     } catch (error) {
@@ -187,10 +191,13 @@ export default function AccessManagementPage() {
 
       const userType = activeTab === "companies" ? "company_user" : "vendor_staff"
 
-      // Find existing access path for this entity
-      const existingPath = existingPaths.find(
-        (p) => p.entityId === entity.id && p.userType === userType
-      )
+      // Find existing access path for this entity or role
+      let existingPath
+      if (activeTab === "roles") {
+        existingPath = existingPaths.find((p) => p.roleId === entity.id)
+      } else {
+        existingPath = existingPaths.find((p) => p.entityId === entity.id && p.userType === userType)
+      }
 
       if (existingPath) {
         setSelectedRoutes(new Set(existingPath.allowedRoutes))
@@ -258,15 +265,18 @@ export default function AccessManagementPage() {
     try {
       setSaving(true)
 
-      // Find existing access path for this entity
-      const existingPath = existingPaths.find(
-        (p) => p.entityId === selectedEntity.id && p.userType === userType
-      )
+      // Find existing access path for this entity or role
+      let existingPath
+      if (activeTab === "roles") {
+        existingPath = existingPaths.find((p) => p.roleId === selectedEntity.id)
+      } else {
+        existingPath = existingPaths.find((p) => p.entityId === selectedEntity.id && p.userType === userType)
+      }
 
       const payload = {
-        userType: userType as any,
-        entityId: selectedEntity.id,
-        entityName: selectedEntity.name,
+        userType: activeTab === "roles" ? ("company_user" as any) : (userType as any), // Fallback for role
+        ...(activeTab === "roles" ? { roleId: selectedEntity.id } : { entityId: selectedEntity.id }),
+        entityName: selectedEntity.name || (selectedEntity as any).key,
         allowedRoutes: Array.from(selectedRoutes),
         deniedRoutes: [],
         label: `${selectedEntity.name} Access Profile`,
@@ -321,14 +331,20 @@ export default function AccessManagementPage() {
 
   // ─── FILTERED ENTITIES ────────────────────────────────────────────────────────
   const filteredEntities = useMemo(() => {
-    const entities = activeTab === "companies" ? companies : vendors
-    if (!searchQuery.trim()) return entities
-    return entities.filter(
+    let list: Entity[] = []
+    if (activeTab === "companies") list = companies
+    if (activeTab === "vendors") list = vendors
+    if (activeTab === "roles") list = roles.map(r => ({ id: r.id, name: r.name, key: r.key }))
+
+    if (!searchQuery) return list
+    const q = searchQuery.toLowerCase()
+    return list.filter(
       (e) =>
-        e.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        e.email?.toLowerCase().includes(searchQuery.toLowerCase())
+        e.name.toLowerCase().includes(q) ||
+        (e.email && e.email.toLowerCase().includes(q)) ||
+        ((e as any).key && (e as any).key.toLowerCase().includes(q))
     )
-  }, [activeTab, companies, vendors, searchQuery])
+  }, [companies, vendors, roles, activeTab, searchQuery])
 
   // ─── NOT SUPER ADMIN GUARD ────────────────────────────────────────────────────
   if (!isSuperAdmin) {
@@ -377,7 +393,7 @@ export default function AccessManagementPage() {
           <Card className="sticky top-20">
             <CardHeader className="pb-3">
               <Tabs value={activeTab} onValueChange={(v) => { setActiveTab(v); setSelectedEntity(null); setSearchQuery("") }}>
-                <TabsList className="grid w-full grid-cols-2">
+                <TabsList className="grid w-full grid-cols-3">
                   <TabsTrigger value="companies" className="gap-2">
                     <Building2 className="h-3.5 w-3.5" />
                     Companies ({companies.length})
@@ -385,6 +401,10 @@ export default function AccessManagementPage() {
                   <TabsTrigger value="vendors" className="gap-2">
                     <ChefHat className="h-3.5 w-3.5" />
                     Vendors ({vendors.length})
+                  </TabsTrigger>
+                  <TabsTrigger value="roles" className="gap-2">
+                    <Shield className="h-3.5 w-3.5" />
+                    Roles ({roles.length})
                   </TabsTrigger>
                 </TabsList>
               </Tabs>
@@ -410,12 +430,18 @@ export default function AccessManagementPage() {
                     filteredEntities.map((entity) => {
                       const isSelected = selectedEntity?.id === entity.id
                       const userType = activeTab === "companies" ? "company_user" : "vendor_staff"
-                      const hasAccess = existingPaths.some(
-                        (p) => p.entityId === entity.id && p.userType === userType
-                      )
-                      const routeCount = existingPaths.find(
-                        (p) => p.entityId === entity.id && p.userType === userType
-                      )?.allowedRoutes?.length || 0
+                      let hasAccess = false
+                      let routeCount = 0
+
+                      if (activeTab === "roles") {
+                        const existingPath = existingPaths.find((p) => p.roleId === entity.id)
+                        hasAccess = !!existingPath
+                        routeCount = existingPath?.allowedRoutes?.length || 0
+                      } else {
+                        const existingPath = existingPaths.find((p) => p.entityId === entity.id && p.userType === userType)
+                        hasAccess = !!existingPath
+                        routeCount = existingPath?.allowedRoutes?.length || 0
+                      }
 
                       return (
                         <button

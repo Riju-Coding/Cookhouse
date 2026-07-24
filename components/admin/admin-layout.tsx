@@ -63,6 +63,7 @@ const navigation = [
   { name: "Sub Services", href: "/admin/sub-services", icon: Grid3X3, category: "services" },
   { name: "Companies", href: "/admin/companies", icon: Building2, category: "organization" },
   { name: "Buildings", href: "/admin/buildings", icon: Building, category: "organization" },
+  { name: "Compliances", href: "/admin/compliances", icon: FileText, category: "organization" },
   { name: "KAM Notebook", href: "/admin/kam-notebook", icon: FileText, category: "organization" },
   { name: "Tickets & Rewards", href: "/admin/ticketing", icon: Ticket, category: "organization" },
   { name: "Public QR Links", href: "/admin/qr-links", icon: Ticket, category: "organization" },
@@ -111,7 +112,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
   const [isIframe, setIsIframe] = useState(false)
   const sidebarScrollRef = useRef<HTMLElement>(null)
   const sidebarScrollPositionRef = useRef(0)
-  const { signOut, hasRouteAccess, isSuperAdmin } = useAuth()
+  const { user, loading, userProfile, isSuperAdmin, hasRouteAccess, allowedRoutes, signOut } = useAuth()
   const pathname = usePathname()
 
   useEffect(() => {
@@ -236,6 +237,10 @@ export function AdminLayout({ children }: AdminLayoutProps) {
           speed={200}
           shadow="0 0 10px #000000,0 0 5px #000000"
         />
+        {/* DEBUG BANNER */}
+        <div className="bg-red-500 text-white text-xs p-1 px-4 z-50">
+          <strong>DEBUG:</strong> Type: {userProfile?.userType} | Role ID: {userProfile?.roleId || "NONE"} | Routes: {Array.from(allowedRoutes).length}
+        </div>
         <main className="h-screen w-full overflow-y-auto">
           {children}
         </main>
@@ -256,6 +261,19 @@ export function AdminLayout({ children }: AdminLayoutProps) {
         speed={200}
         shadow="0 0 10px #000000,0 0 5px #000000"
       />
+      
+      {/* DEBUG BANNER */}
+      <div className="bg-red-500 text-white text-xs p-1 px-4 z-50 sticky top-0 break-words">
+        <strong>DEBUG:</strong> Type: {userProfile?.userType} | Role ID: {userProfile?.roleId || "NONE"} | isSuperAdmin: {isSuperAdmin ? "YES" : "NO"} <br/>
+        <strong>ROUTES:</strong> {Array.from(allowedRoutes).join(", ")}
+      </div>
+
+      {isSuperAdmin && (
+        <div className="bg-red-600 text-white p-4 font-bold text-xl text-center shadow-lg">
+          WARNING: YOU ARE LOGGED IN AS A SUPER ADMIN! THIS BYPASSES ALL PATH RESTRICTIONS.
+        </div>
+      )}
+
       <ActivityTracker />
 
       {sidebarOpen && (

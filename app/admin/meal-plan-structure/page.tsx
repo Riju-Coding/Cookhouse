@@ -1,4 +1,4 @@
-﻿
+
 "use client"
 
 import { useState, useEffect, useMemo, Fragment } from "react"
@@ -57,6 +57,7 @@ import {
 import { collection, addDoc, updateDoc, doc, onSnapshot, query, where } from "firebase/firestore"
 import { db } from "@/lib/firebase"
 import { Input } from "@/components/ui/input"
+import { useAuth } from "@/hooks/use-auth"
 
 // --- Types ---
 
@@ -115,6 +116,7 @@ interface BaseService {
 // --- Main Component ---
 
 export default function MealPlanStructurePage() {
+  const { userProfile, userType, isSuperAdmin } = useAuth()
   const [companies, setCompanies] = useState<Company[]>([])
   const [buildings, setBuildings] = useState<Building[]>([])
   const [services, setServices] = useState<Service[]>([])
@@ -199,9 +201,20 @@ export default function MealPlanStructurePage() {
           subMealPlansService.getAll(),
         ])
 
-        const sortedCompanies = companiesData
+        let sortedCompanies = companiesData
           .filter((c) => !c.status || c.status === "active")
           .sort((a, b) => (a.name || "").localeCompare(b.name || ""))
+
+        // --- DATA ISOLATION ---
+        // If the user is assigned specific companies, ONLY show those companies
+        if (userProfile?.companyIds?.length) {
+          sortedCompanies = sortedCompanies.filter(c => userProfile.companyIds.includes(c.id))
+        }
+        
+        // If the user belongs to a vendor, ONLY show companies that belong to that vendor
+        if (userProfile?.vendorId) {
+          sortedCompanies = sortedCompanies.filter(c => (c as any).vendorIds?.includes(userProfile.vendorId))
+        }
 
         setCompanies(sortedCompanies)
         setServices(servicesData.filter((s) => !s.status || s.status === "active"))
@@ -234,9 +247,14 @@ export default function MealPlanStructurePage() {
       if (selectedCompany) {
         try {
           const buildingsData = await buildingsService.getAll()
-          const sortedBuildings = buildingsData
+          let sortedBuildings = buildingsData
             .filter((b) => b.companyId === selectedCompany && (!b.status || b.status === "active"))
             .sort((a, b) => (a.name || "").localeCompare(b.name || ""))
+
+          // --- DATA ISOLATION ---
+          if (userType === "company_user" && userProfile?.buildingIds?.length) {
+            sortedBuildings = sortedBuildings.filter(b => userProfile.buildingIds.includes(b.id))
+          }
 
           setBuildings(sortedBuildings)
         } catch (error) {
@@ -1367,7 +1385,7 @@ export default function MealPlanStructurePage() {
                   .filter((b) => b.id !== selectedBuilding)
                   .map((building) => (
                     <div key={building.id} className="flex items-center space-x-2">
-                      <Checkbox
+                      <Checkbox disabled={!isSuperAdmin}
                         id={`target-${building.id}`}
                         checked={selectedTargetBuildings.includes(building.id)}
                         onCheckedChange={() => toggleTargetBuilding(building.id)}
@@ -1388,13 +1406,13 @@ export default function MealPlanStructurePage() {
             <Button variant="outline" onClick={() => setIsCopyModalOpen(false)}>
               Cancel
             </Button>
-            <Button
+            {isSuperAdmin && <Button
               onClick={handleCopyStructureToBuildings}
               disabled={copyLoading || selectedTargetBuildings.length === 0}
             >
               {copyLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Copy className="h-4 w-4 mr-2" />}
               Confirm Copy
-            </Button>
+            </Button>}}
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1435,7 +1453,7 @@ export default function MealPlanStructurePage() {
               <div className="space-y-3">
                 {DAYS.filter((d) => d !== selectedChoiceToCopy?.day).map((day) => (
                   <div key={day} className="flex items-center space-x-2">
-                    <Checkbox
+                    <Checkbox disabled={!isSuperAdmin}
                       id={`copy-day-${day}`}
                       checked={selectedTargetDays.includes(day)}
                       onCheckedChange={() => {
@@ -1552,7 +1570,7 @@ export default function MealPlanStructurePage() {
                         return (
                           <div key={mp.id} className="space-y-1">
                             <div className="flex items-center space-x-2 py-2 bg-gray-50 rounded px-2">
-                              <Checkbox 
+                              <Checkbox disabled={!isSuperAdmin} 
                                 id={`choice-mp-${mp.id}`} 
                                 checked={isSelected} 
                                 onCheckedChange={(checked) => {
@@ -1571,7 +1589,7 @@ export default function MealPlanStructurePage() {
                               <div className="ml-6 space-y-1">
                                 {subMealsForPlan.map((smp) => (
                                   <div key={smp.id} className="flex items-center space-x-2">
-                                    <Checkbox 
+                                    <Checkbox disabled={!isSuperAdmin} 
                                       id={`choice-smp-${smp.id}`} 
                                       checked={currentAssignment?.subMealPlans?.some(s => s.subMealPlanId === smp.id) || false}
                                       onCheckedChange={(checked) => {
@@ -1683,7 +1701,7 @@ export default function MealPlanStructurePage() {
                    if (d === copyMpTarget?.sourceDay) return null;
                    return (
                       <div key={d} className="flex items-center space-x-2">
-                         <Checkbox 
+                         <Checkbox disabled={!isSuperAdmin} 
                            id={`copy-mp-${d}`}
                            checked={copyMpSelectedDays.includes(d)}
                            onCheckedChange={(c) => {
@@ -1987,7 +2005,7 @@ export default function MealPlanStructurePage() {
                                                                      return (
                                                                         <div key={smp.id} className="flex flex-row items-center justify-between gap-1 p-1 rounded border border-blue-300 bg-blue-50 hover:border-blue-400 transition-colors whitespace-nowrap overflow-hidden">
                                                                            <div className="flex items-center gap-1.5 overflow-hidden">
-                                                                              <Checkbox 
+                                                                              <Checkbox disabled={!isSuperAdmin} 
                                                                                  id={`chk-${day}-${mp.id}-${smp.id}`}
                                                                                  checked={true}
                                                                                  onCheckedChange={(c) => {
@@ -2127,7 +2145,7 @@ export default function MealPlanStructurePage() {
                                                                   <div className="flex gap-0.5 justify-end">
                                                                       <button onClick={() => handleEditChoice({...choice, day, serviceId: svc.serviceId, subServiceId: subSvc.subServiceId})} className="text-blue-500 hover:bg-blue-50 p-1 rounded" title="Edit Choice"><Edit className="w-3 h-3"/></button>
                                                                       <button onClick={() => handleCopyChoice({...choice, day, serviceId: svc.serviceId, subServiceId: subSvc.subServiceId})} className="text-green-500 hover:bg-green-50 p-1 rounded" title="Copy to other days"><Copy className="w-3 h-3"/></button>
-                                                                      <button onClick={() => handleDeleteChoice(day, svc.serviceId, subSvc.subServiceId, choice.choiceId)} className="text-red-500 hover:bg-red-50 p-1 rounded" title="Delete Choice"><Trash2 className="w-3 h-3"/></button>
+                                                                      {isSuperAdmin && <button onClick={() => handleDeleteChoice(day, svc.serviceId, subSvc.subServiceId, choice.choiceId)} className="text-red-500 hover:bg-red-50 p-1 rounded" title="Delete Choice"><Trash2 className="w-3 h-3"/></button>}
                                                                   </div>
                                                               </div>
                                                               <div className="text-[10px] text-amber-700 mt-1 line-clamp-2">
@@ -2179,10 +2197,10 @@ export default function MealPlanStructurePage() {
               <Button variant="outline" onClick={() => setIsModalOpen(false)}>
                 Cancel
               </Button>
-              <Button onClick={handleSaveStructure} disabled={loading} className="min-w-[120px]">
+              {isSuperAdmin && <Button onClick={handleSaveStructure} disabled={loading} className="min-w-[120px]">
                 {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
                 Save Changes
-              </Button>
+              </Button>}
             </div>
           </DialogFooter>
         </DialogContent>
@@ -2761,7 +2779,7 @@ function MealPlanSelector({
                         <tr key={mp.id} className={`border-b border-slate-200 hover:bg-blue-50/40 transition-colors ${rowBg}`}>
                           <td className={`sticky left-0 z-10 px-4 py-3 border-r border-slate-200 ${rowBg} shadow-[2px_0_5px_-2px_rgba(0,0,0,0.03)] align-top`}>
                             <div className="flex items-start gap-3 mt-1">
-                              <Checkbox
+                              <Checkbox disabled={!isSuperAdmin}
                                 id={`mp-${mp.id}`}
                                 checked={isSelected}
                                 onCheckedChange={(c) => toggleMealPlan(mp.id, c as boolean)}
@@ -2797,7 +2815,7 @@ function MealPlanSelector({
                                   !isSelected ? "opacity-60 grayscale-[0.5]" : ""
                                 } ${isSubMealSelected ? "bg-white border border-blue-200 shadow-sm" : "bg-transparent border border-transparent hover:border-slate-200"}`}>
                                   <div className="flex items-start gap-2.5">
-                                    <Checkbox
+                                    <Checkbox disabled={!isSuperAdmin}
                                       id={`smp-${mp.id}-${smp.id}`}
                                       checked={isSubMealSelected}
                                       disabled={!isSelected}

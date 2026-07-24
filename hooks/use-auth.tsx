@@ -2,7 +2,7 @@
 
 import { useState, useEffect, createContext, useContext, useCallback, useRef, type ReactNode } from "react"
 import { type User as FirebaseUser, signInWithEmailAndPassword, signOut as firebaseSignOut, onAuthStateChanged } from "firebase/auth"
-import { collection, query, where, getDocs, onSnapshot, type Unsubscribe } from "firebase/firestore"
+import { collection, query, where, getDocs, onSnapshot, or, type Unsubscribe } from "firebase/firestore"
 import { auth, db } from "@/lib/firebase"
 import { resolveUserProfile } from "@/lib/firestore/usersService"
 import { loginSessionService } from "@/lib/firestore/loginSessionService"
@@ -176,20 +176,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       entityId = profile.companyIds[0]
     }
 
-    // No entity mapped — deny everything except dashboard
-    if (!entityId) {
+    // No entity and no role mapped — deny everything except dashboard
+    if (!entityId && !profile.roleId) {
       setAllowedRoutes(new Set(["/admin"]))
       setAccessLoading(false)
       return
     }
 
-    // Real-time listener on access_paths
-    // We fetch everything for this entity and filter by userType or userId on client
-    const q = query(
-      collection(db, "access_paths"),
-      where("entityId", "==", entityId),
-      where("status", "==", "active")
-    )
+    // Build query conditions
+    // If a user has a role, their routes should ONLY be determined by their role.
+    // If they have no role, their routes are determined by their entity (Company/Vendor).
+    let q;
+    if (profile.roleId) {
+      q = query(
+        collection(db, "access_paths"),
+        where("roleId", "==", profile.roleId),
+        where("status", "==", "active")
+      )
+    } else if (entityId) {
+      q = query(
+        collection(db, "access_paths"),
+        where("entityId", "==", entityId),
+        where("status", "==", "active")
+      )
+    } else {
+      // Fallback (should be caught by the earlier !entityId && !profile.roleId check)
+      setAllowedRoutes(new Set(["/admin"]))
+      setAccessLoading(false)
+      return
+    }
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const routes = new Set<string>()
@@ -198,11 +213,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       snapshot.docs.forEach((doc) => {
         const data = doc.data()
         
-        // Only apply if it matches this specific user OR their user type
+        // Match conditions: 
+        // 1. Matches user specifically
+        // 2. Matches role specifically
+        // 3. Matches user type globally (only if no role is defined)
         const matchesUser = data.userId === profile.id
-        const matchesType = data.userType === profile.userType && !data.userId
+        const matchesRole = profile.roleId ? (data.roleId === profile.roleId) : false
+        const matchesType = !profile.roleId && (data.userType === profile.userType && !data.userId && !data.roleId)
         
-        if (!matchesUser && !matchesType) return
+        console.log("DEBUG: access_paths doc:", data.id, "matchesRole:", matchesRole, "matchesType:", matchesType, "matchesUser:", matchesUser)
+
+        if (!matchesUser && !matchesType && !matchesRole) return
 
         if (data.allowedRoutes) {
           data.allowedRoutes.forEach((r: string) => routes.add(r))
@@ -217,6 +238,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       // Always allow dashboard
       routes.add("/admin")
+
+      console.log("DEBUG: Final allowed routes for profile:", profile.email, "roleId:", profile.roleId, "routes:", Array.from(routes))
 
       setAllowedRoutes(routes)
       setAccessLoading(false)  // Access is resolved
@@ -239,10 +262,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setAccessLoading(true) // Reset access loading when auth changes
 
         const profile = await resolveUserProfile(firebaseUser)
+        console.log("DEBUG: resolveUserProfile result:", profile)
         setUserProfile(profile)
 
         if (profile) {
           // Setup listener — this will set accessLoading=false when ready
+          console.log("DEBUG: Calling setupAccessListener")
           setupAccessListener(profile)
           
           // Start a new login session if not already started

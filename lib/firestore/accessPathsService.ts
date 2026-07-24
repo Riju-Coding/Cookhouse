@@ -119,6 +119,27 @@ export const accessPathsService = {
   },
 
   /**
+   * Real-time subscription for a specific role.
+   */
+  subscribeByRole: (
+    roleId: string,
+    callback: (paths: AccessPath[]) => void
+  ): Unsubscribe => {
+    const q = query(
+      accessPathsCollection,
+      where("roleId", "==", roleId),
+      where("status", "==", "active")
+    )
+    return onSnapshot(q, (snapshot) => {
+      const paths = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      })) as AccessPath[]
+      callback(paths)
+    })
+  },
+
+  /**
    * Adds a new access path document.
    */
   add: async (data: Omit<AccessPath, "id" | "createdAt" | "updatedAt">) => {

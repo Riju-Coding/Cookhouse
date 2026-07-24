@@ -11,6 +11,7 @@ import { toast } from "@/hooks/use-toast"
 
 // Also keep backward compat with old forms
 import { complianceFormsService, type ComplianceForm } from "@/lib/firestore/complianceFormsService"
+import { useAuth } from "@/hooks/use-auth"
 
 import {
   Plus, Pencil, Trash2, Ban, CheckCircle, ClipboardList, ListChecks,
@@ -80,6 +81,7 @@ const TABS = [
 type TabId = typeof TABS[number]['id']
 
 export default function ComplianceDashboardPage() {
+  const { userProfile, userType } = useAuth()
   const [activeTab, setActiveTab] = useState<TabId>('templates')
   
   // Templates
@@ -92,12 +94,16 @@ export default function ComplianceDashboardPage() {
   const [vendors, setVendors] = useState<any[]>([])
   const [companies, setCompanies] = useState<any[]>([])
   const [buildings, setBuildings] = useState<any[]>([])
+  const [cafeterias, setCafeterias] = useState<any[]>([])
   const [roles, setRoles] = useState<any[]>([])
   
   // Filters
   const [search, setSearch] = useState("")
   const [filterType, setFilterType] = useState<string>("all")
   const [filterVendor, setFilterVendor] = useState<string>("all")
+  const [filterCompany, setFilterCompany] = useState<string>("all")
+  const [filterBuilding, setFilterBuilding] = useState<string>("all")
+  const [filterCafeteria, setFilterCafeteria] = useState<string>("all")
 
   // Record Modal
   const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null)
@@ -109,7 +115,17 @@ export default function ComplianceDashboardPage() {
   const fetchAll = async () => {
     try {
       setLoading(true)
-      const [templatesRes, formsRes, recentRecords, pendingRecords, vSnap, cSnap, bSnap, rSnap] = await Promise.all([
+      let [
+        templatesRes,
+        formsRes,
+        recentRecords,
+        pendingRecords,
+        vSnap,
+        cSnap,
+        bSnap,
+        cafeSnap,
+        rSnap
+      ] = await Promise.all([
         complianceTemplatesService.getAll().catch(() => []),
         complianceFormsService.getAll().catch(() => []),
         complianceRecordsService.getRecent(50).catch(() => []),
@@ -117,6 +133,7 @@ export default function ComplianceDashboardPage() {
         getDocs(collection(db, 'vendors')),
         getDocs(collection(db, 'companies')),
         getDocs(collection(db, 'buildings')),
+        getDocs(collection(db, 'cafetarias')),
         getDocs(collection(db, 'roles')),
       ])
       setTemplates(templatesRes)
@@ -126,16 +143,36 @@ export default function ComplianceDashboardPage() {
       const allRecordsMap = new Map()
       pendingRecords.forEach(r => allRecordsMap.set(r.id, r))
       recentRecords.forEach(r => allRecordsMap.set(r.id, r))
-      const mergedRecords = Array.from(allRecordsMap.values()).sort((a, b) => {
+      let mergedRecords = Array.from(allRecordsMap.values()).sort((a, b) => {
         const timeA = a.date ? new Date(a.date).getTime() : (a.createdAt?.toMillis ? a.createdAt.toMillis() : 0);
         const timeB = b.date ? new Date(b.date).getTime() : (b.createdAt?.toMillis ? b.createdAt.toMillis() : 0);
         return timeB - timeA;
       })
+
+      let allCompanies = cSnap.docs.map(d => ({ id: d.id, ...d.data() }))
+
+      // --- DATA ISOLATION ---
+      // 1. Filter by Company IDs if assigned
+      if (userProfile?.companyIds?.length) {
+        allCompanies = allCompanies.filter(c => userProfile.companyIds.includes(c.id))
+        mergedRecords = mergedRecords.filter(r => 
+          (r.companyId && userProfile.companyIds.includes(r.companyId)) ||
+          (r.cafeteriaId && userProfile.cafeteriaIds?.includes(r.cafeteriaId))
+        )
+      }
+
+      // 2. Filter by Vendor ID if assigned
+      if (userProfile?.vendorId) {
+        allCompanies = allCompanies.filter(c => (c as any).vendorIds?.includes(userProfile.vendorId))
+        mergedRecords = mergedRecords.filter(r => r.vendorId === userProfile.vendorId)
+        templatesRes = templatesRes.filter(t => t.vendorId === userProfile.vendorId)
+      }
       
       setRecords(mergedRecords)
       setVendors(vSnap.docs.map(d => ({ id: d.id, ...d.data() })))
-      setCompanies(cSnap.docs.map(d => ({ id: d.id, ...d.data() })))
+      setCompanies(allCompanies)
       setBuildings(bSnap.docs.map(d => ({ id: d.id, ...d.data() })))
+      setCafeterias(cafeSnap.docs.map(d => ({ id: d.id, ...d.data() })))
       setRoles(rSnap.docs.map(d => ({ id: d.id, ...d.data() })))
     } catch (error) {
       console.error(error)
@@ -153,9 +190,12 @@ export default function ComplianceDashboardPage() {
       const matchesSearch = !search || t.name.toLowerCase().includes(search.toLowerCase())
       const matchesType = filterType === 'all' || t.type === filterType
       const matchesVendor = filterVendor === 'all' || t.vendorId === filterVendor
-      return matchesSearch && matchesType && matchesVendor
+      const matchesCompany = filterCompany === 'all' || t.companyId === filterCompany
+      const matchesBuilding = filterBuilding === 'all' || t.buildingId === filterBuilding
+      const matchesCafeteria = filterCafeteria === 'all' || t.cafetariaId === filterCafeteria
+      return matchesSearch && matchesType && matchesVendor && matchesCompany && matchesBuilding && matchesCafeteria
     })
-  }, [templates, search, filterType, filterVendor])
+  }, [templates, search, filterType, filterVendor, filterCompany, filterBuilding, filterCafeteria])
 
   // ─── Stats ────────────────────────────────────────────────────
   const stats = useMemo(() => ({
@@ -486,13 +526,13 @@ export default function ComplianceDashboardPage() {
       {activeTab === 'templates' && (
         <div className="space-y-4">
           {/* Filters */}
-          <div className="flex flex-wrap gap-3 items-center">
-            <div className="relative flex-1 max-w-xs">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-3 bg-gray-50 p-4 rounded-lg border">
+            <div className="relative">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-400" />
-              <Input placeholder="Search templates..." className="pl-9" value={search} onChange={e => setSearch(e.target.value)} />
+              <Input placeholder="Search templates..." className="pl-9 bg-white" value={search} onChange={e => setSearch(e.target.value)} />
             </div>
             <Select value={filterType} onValueChange={setFilterType}>
-              <SelectTrigger className="w-[180px]"><SelectValue placeholder="All Types" /></SelectTrigger>
+              <SelectTrigger className="bg-white"><SelectValue placeholder="All Types" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Types</SelectItem>
                 {Object.entries(TEMPLATE_TYPE_CONFIG).map(([key, cfg]) => (
@@ -501,19 +541,33 @@ export default function ComplianceDashboardPage() {
               </SelectContent>
             </Select>
             <Select value={filterVendor} onValueChange={setFilterVendor}>
-              <SelectTrigger className="w-[180px]"><SelectValue placeholder="All Vendors" /></SelectTrigger>
+              <SelectTrigger className="bg-white"><SelectValue placeholder="All Vendors" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Vendors</SelectItem>
                 {vendors.map(v => <SelectItem key={v.id} value={v.id}>{v.name}</SelectItem>)}
               </SelectContent>
             </Select>
+            <Select value={filterCompany} onValueChange={(v) => { setFilterCompany(v); setFilterBuilding("all"); setFilterCafeteria("all"); }}>
+              <SelectTrigger className="bg-white"><SelectValue placeholder="All Companies" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Companies</SelectItem>
+                {companies.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Select value={filterBuilding} onValueChange={(v) => { setFilterBuilding(v); setFilterCafeteria("all"); }} disabled={filterCompany === "all"}>
+              <SelectTrigger className="bg-white"><SelectValue placeholder="All Buildings" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Buildings</SelectItem>
+                {buildings.filter(b => b.companyId === filterCompany).map(b => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
           </div>
 
-          {/* Template Cards by Type */}
+          {/* Templates Table */}
           {loading ? (
             <div className="text-center py-12 text-gray-500">Loading templates...</div>
           ) : filteredTemplates.length === 0 ? (
-            <div className="text-center py-12 border-2 border-dashed rounded-lg">
+            <div className="text-center py-12 border-2 border-dashed rounded-lg bg-white">
               <ListChecks className="h-12 w-12 text-gray-300 mx-auto mb-3" />
               <p className="text-gray-500 font-medium">No templates found.</p>
               <p className="text-gray-400 text-sm mt-1">Create your first compliance template to get started.</p>
@@ -522,59 +576,70 @@ export default function ComplianceDashboardPage() {
               </Link>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-              {filteredTemplates.map(template => {
-                const cfg = TEMPLATE_TYPE_CONFIG[template.type] || TEMPLATE_TYPE_CONFIG.general_checklist
-                const Icon = cfg.icon
-                return (
-                  <Card key={template.id} className={`shadow-sm border-l-4 ${cfg.borderColor} transition-all hover:shadow-md ${template.status === 'inactive' ? 'opacity-60' : ''}`}>
-                    <CardHeader className="pb-2">
-                      <div className="flex items-start justify-between">
-                        <div className="flex items-center gap-2">
-                          <div className={`h-8 w-8 rounded-lg ${cfg.bgColor} flex items-center justify-center`}>
-                            <Icon className={`h-4 w-4 ${cfg.color}`} />
-                          </div>
-                          <div>
-                            <CardTitle className="text-sm">{template.name}</CardTitle>
-                            <CardDescription className="text-[10px]">{cfg.label}</CardDescription>
-                          </div>
-                        </div>
-                        <Badge variant={template.status === 'active' ? 'default' : 'secondary'} className="text-[10px]">
-                          {template.status}
-                        </Badge>
-                      </div>
-                    </CardHeader>
-                    <CardContent className="pb-3 space-y-2">
-                      <div className="flex flex-wrap gap-1.5 text-[10px]">
-                        <Badge variant="outline" className="gap-1">
-                          <Building2 className="h-2.5 w-2.5" />
-                          {getName(vendors, template.vendorId)}
-                        </Badge>
-                        {template.companyId && (
-                          <Badge variant="outline" className="gap-1">
-                            {getName(companies, template.companyId)}
+            <div className="rounded-md border bg-white shadow-sm overflow-hidden">
+              <Table>
+                <TableHeader className="bg-gray-50">
+                  <TableRow>
+                    <TableHead>Template Name</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Assignments</TableHead>
+                    <TableHead>Frequency</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredTemplates.map(template => {
+                    const cfg = TEMPLATE_TYPE_CONFIG[template.type] || TEMPLATE_TYPE_CONFIG.general_checklist
+                    const Icon = cfg.icon
+                    return (
+                      <TableRow key={template.id} className={template.status === 'inactive' ? 'opacity-60 bg-gray-50/50' : ''}>
+                        <TableCell>
+                          <div className="font-medium text-sm text-gray-900">{template.name}</div>
+                          <div className="text-[10px] text-gray-500">{cfg.description}</div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge className={`text-[10px] gap-1 ${cfg.bgColor} ${cfg.color} border ${cfg.borderColor}`}>
+                            <Icon className="h-3 w-3" />
+                            {cfg.label}
                           </Badge>
-                        )}
-                        <Badge variant="outline" className="capitalize">{template.frequency.replace('_', ' ')}</Badge>
-                      </div>
-                      <div className="flex items-center justify-end gap-1 pt-1 border-t">
-                        <Link href={`/admin/compliances/${template.id}`}>
-                          <Button variant="ghost" size="sm" className="h-7 text-xs text-blue-600 hover:text-blue-800">
-                            <Pencil className="h-3 w-3 mr-1" /> Edit
-                          </Button>
-                        </Link>
-                        <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => handleToggleTemplateStatus(template)}>
-                          {template.status === 'active' ? <Ban className="h-3 w-3 mr-1 text-orange-500" /> : <CheckCircle className="h-3 w-3 mr-1 text-green-500" />}
-                          {template.status === 'active' ? 'Disable' : 'Enable'}
-                        </Button>
-                        <Button variant="ghost" size="sm" className="h-7 text-xs text-red-600" onClick={() => handleDeleteTemplate(template.id)}>
-                          <Trash2 className="h-3 w-3" />
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
-                )
-              })}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex flex-wrap gap-1">
+                            {template.vendorId && <Badge variant="outline" className="text-[10px] gap-1"><Building2 className="h-2.5 w-2.5" />{getName(vendors, template.vendorId)}</Badge>}
+                            {template.companyId && <Badge variant="outline" className="text-[10px] bg-blue-50 text-blue-700">{getName(companies, template.companyId)}</Badge>}
+                            {template.buildingId && <Badge variant="outline" className="text-[10px] bg-green-50 text-green-700">{getName(buildings, template.buildingId)}</Badge>}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className="text-[10px] capitalize bg-gray-50">{template.frequency.replace('_', ' ')}</Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={template.status === 'active' ? 'default' : 'secondary'} className="text-[10px]">
+                            {template.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            <Link href={`/admin/compliances/${template.id}`}>
+                              <Button variant="ghost" size="sm" className="h-8 text-xs text-blue-600 hover:text-blue-800 hover:bg-blue-50 px-2">
+                                <Pencil className="h-3 w-3 mr-1" /> Edit
+                              </Button>
+                            </Link>
+                            <Button variant="ghost" size="sm" className="h-8 text-xs px-2" onClick={() => handleToggleTemplateStatus(template)}>
+                              {template.status === 'active' ? <Ban className="h-3 w-3 mr-1 text-orange-500" /> : <CheckCircle className="h-3 w-3 mr-1 text-green-500" />}
+                              {template.status === 'active' ? 'Disable' : 'Enable'}
+                            </Button>
+                            <Button variant="ghost" size="sm" className="h-8 text-xs text-red-600 hover:bg-red-50 px-2" onClick={() => handleDeleteTemplate(template.id)}>
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })}
+                </TableBody>
+              </Table>
             </div>
           )}
         </div>
