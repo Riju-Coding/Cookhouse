@@ -6,13 +6,105 @@ import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Download, Plus, Link as LinkIcon, Trash2, Building2, QrCode, Settings2, User, Mail, IdCard, CheckCircle, XCircle, Loader2 } from "lucide-react"
+import { Download, Plus, Link as LinkIcon, Trash2, Building2, QrCode, Settings2, User, Mail, IdCard, CheckCircle, XCircle, Loader2, Eye } from "lucide-react"
 import { qrLinksService, QRLink } from "@/lib/firestore/qrLinksService"
 import { companiesService, buildingsService, Company, Building } from "@/lib/firestore"
 import { cafeteriasService, Cafeteria } from "@/lib/firestore/cafeteriasService"
 import { Checkbox } from "@/components/ui/checkbox"
 import { toast } from "@/hooks/use-toast"
 import { useAuth } from "@/hooks/use-auth"
+import ReportPreview from "./ReportPreview"
+
+
+// --- Customization Form Helper ---
+function CustomizationFields({ data, onChange }: { data: any, onChange: (d: any) => void }) {
+  const toggleCategory = (cat: string) => {
+    const cats = data.issueCategories || []
+    if (cats.includes(cat)) {
+      onChange({ ...data, issueCategories: cats.filter((c: string) => c !== cat) })
+    } else {
+      onChange({ ...data, issueCategories: [...cats, cat] })
+    }
+  }
+
+  return (
+    <div className="pt-4 border-t space-y-4">
+      <h4 className="text-sm font-semibold">UI Customization</h4>
+      
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <Label className="text-xs text-gray-500">Main Header Text</Label>
+            <ToggleSwitch enabled={data.showHeader !== false} onChange={v => onChange({...data, showHeader: v})} />
+          </div>
+          <Input value={data.headerText} onChange={e => onChange({...data, headerText: e.target.value})} disabled={data.showHeader === false} />
+        </div>
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <Label className="text-xs text-gray-500">"Reporting issue at" Text</Label>
+            <ToggleSwitch enabled={data.showReportingIssueAt !== false} onChange={v => onChange({...data, showReportingIssueAt: v})} />
+          </div>
+          <Input value={data.reportingIssueAtText || "Reporting issue at"} onChange={e => onChange({...data, reportingIssueAtText: e.target.value})} disabled={data.showReportingIssueAt === false} />
+        </div>
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <Label className="text-xs text-gray-500">Submit Button Text</Label>
+          </div>
+          <Input value={data.submitButtonText} onChange={e => onChange({...data, submitButtonText: e.target.value})} />
+        </div>
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <Label className="text-xs text-gray-500">Food Feedback Header</Label>
+            <ToggleSwitch enabled={data.showFeedbackFormHeader !== false} onChange={v => onChange({...data, showFeedbackFormHeader: v})} />
+          </div>
+          <Input value={data.feedbackFormHeaderText} onChange={e => onChange({...data, feedbackFormHeaderText: e.target.value})} disabled={data.showFeedbackFormHeader === false} />
+        </div>
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <Label className="text-xs text-gray-500">Food Feedback Subheader</Label>
+            <ToggleSwitch enabled={data.showFeedbackFormSubHeader !== false} onChange={v => onChange({...data, showFeedbackFormSubHeader: v})} />
+          </div>
+          <Input value={data.feedbackFormSubHeaderText} onChange={e => onChange({...data, feedbackFormSubHeaderText: e.target.value})} disabled={data.showFeedbackFormSubHeader === false} />
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <Label className="text-xs text-gray-500">Allowed Categories</Label>
+        <div className="flex flex-wrap gap-2">
+          {COMPLAINT_CATEGORIES.map(cat => (
+            <div key={cat} className="flex items-center space-x-2 bg-gray-50 p-2 rounded border">
+              <Checkbox id={`cat-${cat}`} checked={(data.issueCategories || []).includes(cat)} onCheckedChange={() => toggleCategory(cat)} />
+              <label htmlFor={`cat-${cat}`} className="text-xs">{cat}</label>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        <div className="flex items-center justify-between bg-gray-50 p-2 rounded">
+          <span className="text-sm">Show Company Name</span>
+          <ToggleSwitch enabled={!!data.showCompanyName} onChange={v => onChange({...data, showCompanyName: v})} />
+        </div>
+        <div className="flex items-center justify-between bg-gray-50 p-2 rounded">
+          <span className="text-sm">Show Building Name</span>
+          <ToggleSwitch enabled={!!data.showBuildingName} onChange={v => onChange({...data, showBuildingName: v})} />
+        </div>
+        <div className="flex items-center justify-between bg-gray-50 p-2 rounded">
+          <span className="text-sm">Show Track Ticket Button</span>
+          <ToggleSwitch enabled={!!data.showTrackTicket} onChange={v => onChange({...data, showTrackTicket: v})} />
+        </div>
+        <div className="flex items-center justify-between bg-gray-50 p-2 rounded">
+          <span className="text-sm">Show Priority</span>
+          <ToggleSwitch enabled={data.showPriority !== false} onChange={v => onChange({...data, showPriority: v})} />
+        </div>
+        <div className="flex items-center justify-between bg-gray-50 p-2 rounded">
+          <span className="text-sm">Show Remarks Box</span>
+          <ToggleSwitch enabled={data.showRemarks !== false} onChange={v => onChange({...data, showRemarks: v})} />
+        </div>
+      </div>
+    </div>
+  )
+}
 
 // ─── Toggle Switch Component ────────────────────────────────────────────────
 function ToggleSwitch({ enabled, onChange, disabled }: { enabled: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
@@ -51,6 +143,32 @@ function FieldBadge({ enabled, label }: { enabled: boolean; label: string }) {
   )
 }
 
+
+const COMPLAINT_CATEGORIES = [
+  "Cleaning and Hygiene",
+  "Food Quality",
+  "Food Shortage",
+  "Staff"
+]
+
+const initialCustomization = {
+  headerText: "Facility Feedback",
+  showHeader: true,
+  showReportingIssueAt: true,
+  reportingIssueAtText: "Reporting issue at",
+  showFeedbackFormHeader: true,
+  showFeedbackFormSubHeader: true,
+  showCompanyName: true,
+  showBuildingName: true,
+  showTrackTicket: true,
+  showPriority: true,
+  showRemarks: true,
+  issueCategories: COMPLAINT_CATEGORIES,
+  submitButtonText: "Submit Feedback",
+  feedbackFormHeaderText: "Today's Meal Feedback",
+  feedbackFormSubHeaderText: "How was your meal? 🍽️"
+}
+
 export default function QRLinksPage() {
   const [links, setLinks] = useState<QRLink[]>([])
   const [loading, setLoading] = useState(true)
@@ -71,12 +189,19 @@ export default function QRLinksPage() {
   const [requireEmployeeId, setRequireEmployeeId] = useState(false)
   const [creating, setCreating] = useState(false)
 
+  const [customization, setCustomization] = useState(initialCustomization)
+  const [editCustomization, setEditCustomization] = useState(initialCustomization)
+
+
   // Edit Modal State
   const [editLink, setEditLink] = useState<QRLink | null>(null)
   const [editModalOpen, setEditModalOpen] = useState(false)
   const [editRequireName, setEditRequireName] = useState(false)
   const [editRequireEmail, setEditRequireEmail] = useState(false)
   const [editRequireEmployeeId, setEditRequireEmployeeId] = useState(false)
+  const [editSelectedCompanyId, setEditSelectedCompanyId] = useState<string>("")
+  const [editSelectedBuildingId, setEditSelectedBuildingId] = useState<string>("")
+  const [editSelectedCafeId, setEditSelectedCafeId] = useState<string>("")
   const [saving, setSaving] = useState(false)
 
   // Origin for full URLs
@@ -136,7 +261,8 @@ export default function QRLinksPage() {
         createdByName: user?.displayName || 'Admin',
         requireName,
         requireEmail,
-        requireEmployeeId
+        requireEmployeeId,
+        customization
       })
       toast({ title: "Success", description: "QR Link generated." })
       setModalOpen(false)
@@ -146,6 +272,7 @@ export default function QRLinksPage() {
       setRequireName(false)
       setRequireEmail(false)
       setRequireEmployeeId(false)
+      setCustomization(initialCustomization)
       fetchLinks()
     } catch (e) {
       toast({ title: "Error", description: "Failed to create link.", variant: "destructive" })
@@ -159,24 +286,43 @@ export default function QRLinksPage() {
     setEditRequireName(!!link.requireName)
     setEditRequireEmail(!!link.requireEmail)
     setEditRequireEmployeeId(!!link.requireEmployeeId)
+    setEditCustomization(link.customization || initialCustomization)
+    setEditSelectedCompanyId(link.companyId)
+    setEditSelectedBuildingId(link.buildingId)
+    setEditSelectedCafeId(link.cafeId)
     setEditModalOpen(true)
   }
 
   const handleSaveEdit = async () => {
     if (!editLink) return
+    if (!editSelectedCompanyId || !editSelectedBuildingId || !editSelectedCafeId) {
+      toast({ title: "Missing fields", description: "Please select Company, Building, and Cafe.", variant: "destructive" })
+      return
+    }
     setSaving(true)
     try {
+      const company = companies.find(c => c.id === editSelectedCompanyId)
+      const building = buildings.find(b => b.id === editSelectedBuildingId)
+      const cafe = cafeterias.find(c => c.id === editSelectedCafeId)
+
       await qrLinksService.update(editLink.id, {
+        companyId: company!.id,
+        companyName: company!.name,
+        buildingId: building!.id,
+        buildingName: building!.name,
+        cafeId: cafe!.id,
+        cafeName: cafe!.name,
         requireName: editRequireName,
         requireEmail: editRequireEmail,
-        requireEmployeeId: editRequireEmployeeId
+        requireEmployeeId: editRequireEmployeeId,
+        customization: editCustomization
       })
       toast({ title: "Saved!", description: "Field settings updated successfully." })
       setEditModalOpen(false)
       setEditLink(null)
       // Update local state immediately for instant feedback
       setLinks(prev => prev.map(l => l.id === editLink.id
-        ? { ...l, requireName: editRequireName, requireEmail: editRequireEmail, requireEmployeeId: editRequireEmployeeId }
+        ? { ...l, companyId: company!.id, companyName: company!.name, buildingId: building!.id, buildingName: building!.name, cafeId: cafe!.id, cafeName: cafe!.name, requireName: editRequireName, requireEmail: editRequireEmail, requireEmployeeId: editRequireEmployeeId, customization: editCustomization }
         : l
       ))
     } catch (e) {
@@ -257,6 +403,10 @@ export default function QRLinksPage() {
   const filteredBuildings = buildings.filter(b => b.companyId === selectedCompanyId)
   const filteredCafes = cafeterias.filter(c => c.buildingId === selectedBuildingId || c.companyId === selectedCompanyId)
 
+  const filteredEditBuildings = buildings.filter(b => b.companyId === editSelectedCompanyId)
+  const filteredEditCafes = cafeterias.filter(c => c.buildingId === editSelectedBuildingId || c.companyId === editSelectedCompanyId)
+
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -272,11 +422,15 @@ export default function QRLinksPage() {
               <Plus className="w-4 h-4" /> Generate New Link
             </Button>
           </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Generate New QR Link</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4 py-4">
+          <DialogContent className="!max-w-none !w-screen !h-screen !m-0 !p-0 !rounded-none border-0 overflow-hidden bg-gray-50">
+            <div className="flex h-full w-full">
+              {/* Left Side: Form Controls */}
+              <div className="w-1/2 border-r border-slate-200 bg-white overflow-y-auto custom-scrollbar flex flex-col">
+                <div className="p-6">
+                  <DialogHeader className="mb-6">
+                    <DialogTitle className="text-xl">Generate New QR Link</DialogTitle>
+                  </DialogHeader>
+                  <div className="space-y-4">
               <div className="space-y-2">
                 <Label>Company</Label>
                 <Select value={selectedCompanyId} onValueChange={setSelectedCompanyId}>
@@ -325,36 +479,77 @@ export default function QRLinksPage() {
                   </label>
                 </div>
               </div>
+              <CustomizationFields data={customization} onChange={setCustomization} />
             </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setModalOpen(false)}>Cancel</Button>
-              <Button onClick={handleCreate} disabled={creating || !selectedCompanyId || !selectedBuildingId || !selectedCafeId}>
-                {creating ? "Generating..." : "Generate"}
-              </Button>
-            </DialogFooter>
+          </div>
+          <div className="p-4 border-t border-slate-100 bg-slate-50 mt-auto sticky bottom-0 z-10 flex justify-end gap-2">
+                  <Button variant="outline" onClick={() => setModalOpen(false)}>Cancel</Button>
+                  <Button onClick={handleCreate} disabled={creating || !selectedCompanyId || !selectedBuildingId || !selectedCafeId}>
+                    {creating ? "Generating..." : "Generate"}
+                  </Button>
+                </div>
+              </div>
+              
+              {/* Right Side: Live Preview */}
+              <div className="w-1/2 bg-slate-50 flex items-center justify-center p-6 overflow-hidden relative">
+                 <div className="absolute top-4 left-4 flex items-center gap-2 bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-xs font-bold shadow-sm">
+                   <Eye className="w-3 h-3" /> Live Preview
+                 </div>
+                 <ReportPreview 
+                   customization={customization}
+                   companyName={companies.find(c => c.id === selectedCompanyId)?.name}
+                   buildingName={buildings.find(b => b.id === selectedBuildingId)?.name}
+                   cafeName={cafeterias.find(c => c.id === selectedCafeId)?.name}
+                 />
+              </div>
+            </div>
           </DialogContent>
         </Dialog>
       </div>
 
       {/* ── Edit Fields Modal ─────────────────────────────────────────────── */}
       <Dialog open={editModalOpen} onOpenChange={(o) => { if (!o) setEditLink(null); setEditModalOpen(o) }}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-lg">
-              <Settings2 className="w-5 h-5 text-blue-600" />
-              Edit Form Fields
-            </DialogTitle>
-          </DialogHeader>
-
+        <DialogContent className="!max-w-none !w-screen !h-screen !m-0 !p-0 !rounded-none border-0 overflow-hidden bg-gray-50">
           {editLink && (
-            <div className="py-4 space-y-6">
-              {/* Link context */}
-              <div className="bg-slate-50 rounded-xl p-4 border border-slate-100 space-y-1">
-                <p className="font-bold text-slate-800 text-base">{editLink.cafeName}</p>
-                <p className="text-sm text-slate-500 flex items-center gap-1.5">
-                  <Building2 className="w-3.5 h-3.5" />
-                  {editLink.companyName} · {editLink.buildingName}
-                </p>
+            <div className="flex h-full w-full">
+              {/* Left Side: Form Controls */}
+              <div className="w-1/2 border-r border-slate-200 bg-white overflow-y-auto custom-scrollbar flex flex-col">
+                <div className="p-6">
+                  <DialogHeader className="mb-6">
+                    <DialogTitle className="flex items-center gap-2 text-xl">
+                      <Settings2 className="w-5 h-5 text-blue-600" />
+                      Edit Form Fields
+                    </DialogTitle>
+                  </DialogHeader>
+                  <div className="space-y-6">
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label>Company</Label>
+                  <Select value={editSelectedCompanyId} onValueChange={setEditSelectedCompanyId}>
+                    <SelectTrigger><SelectValue placeholder="Select Company" /></SelectTrigger>
+                    <SelectContent>
+                      {companies.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Building</Label>
+                  <Select value={editSelectedBuildingId} onValueChange={setEditSelectedBuildingId} disabled={!editSelectedCompanyId}>
+                    <SelectTrigger><SelectValue placeholder="Select Building" /></SelectTrigger>
+                    <SelectContent>
+                      {filteredEditBuildings.map(b => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Cafe / Location</Label>
+                  <Select value={editSelectedCafeId} onValueChange={setEditSelectedCafeId} disabled={!editSelectedBuildingId}>
+                    <SelectTrigger><SelectValue placeholder="Select Cafe" /></SelectTrigger>
+                    <SelectContent>
+                      {filteredEditCafes.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
 
               {/* Toggle fields */}
@@ -403,15 +598,31 @@ export default function QRLinksPage() {
                   <ToggleSwitch enabled={editRequireEmployeeId} onChange={setEditRequireEmployeeId} />
                 </div>
               </div>
+              <CustomizationFields data={editCustomization} onChange={setEditCustomization} />
+            </div>
+          </div>
+          <div className="p-4 border-t border-slate-100 bg-slate-50 mt-auto sticky bottom-0 z-10 flex justify-end gap-2">
+                  <Button variant="outline" onClick={() => setEditModalOpen(false)} disabled={saving}>Cancel</Button>
+                  <Button onClick={handleSaveEdit} disabled={saving} className="gap-2 bg-blue-600 hover:bg-blue-700">
+                    {saving ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving...</> : "Save Changes"}
+                  </Button>
+                </div>
+              </div>
+              
+              {/* Right Side: Live Preview */}
+              <div className="w-1/2 bg-slate-50 flex items-center justify-center p-6 overflow-hidden relative">
+                 <div className="absolute top-4 left-4 flex items-center gap-2 bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-xs font-bold shadow-sm">
+                   <Eye className="w-3 h-3" /> Live Preview
+                 </div>
+                 <ReportPreview 
+                   customization={editCustomization}
+                   companyName={companies.find(c => c.id === editSelectedCompanyId)?.name}
+                   buildingName={buildings.find(b => b.id === editSelectedBuildingId)?.name}
+                   cafeName={cafeterias.find(c => c.id === editSelectedCafeId)?.name}
+                 />
+              </div>
             </div>
           )}
-
-          <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setEditModalOpen(false)} disabled={saving}>Cancel</Button>
-            <Button onClick={handleSaveEdit} disabled={saving} className="gap-2 bg-blue-600 hover:bg-blue-700">
-              {saving ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving...</> : "Save Changes"}
-            </Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
 

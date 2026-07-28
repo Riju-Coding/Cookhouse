@@ -31,6 +31,7 @@ export default function PublicReportPage({ params }: { params: { id: string } })
   const [successTicketId, setSuccessTicketId] = useState<string | null>(null)
 
   // Form State
+  const activeCategories = linkInfo?.customization?.issueCategories || COMPLAINT_CATEGORIES
   const [name, setName] = useState("")
   const [contact, setContact] = useState("")
   const [employeeId, setEmployeeId] = useState("")
@@ -95,6 +96,9 @@ export default function PublicReportPage({ params }: { params: { id: string } })
           setError(true)
         } else {
           setLinkInfo(data)
+          if (data.customization?.issueCategories?.length === 1) {
+            setCategory(data.customization.issueCategories[0])
+          }
         }
       } catch (e) {
         setError(true)
@@ -160,8 +164,18 @@ export default function PublicReportPage({ params }: { params: { id: string } })
           })
         })
         
+        
         setServices(activeServices)
         setSubServices(activeSubServices)
+        
+        if (activeServices.length === 1) {
+            setSelectedServiceId(activeServices[0].id)
+            const subForService = activeSubServices.filter((s: any) => s.serviceId === activeServices[0].id)
+            if (subForService.length === 1) {
+                setSelectedSubServiceId(subForService[0].id)
+            }
+        }
+
 
         const q = query(
           collection(db, "companyMenus"),
@@ -197,6 +211,19 @@ export default function PublicReportPage({ params }: { params: { id: string } })
 
     fetchTodayMenu()
   }, [category, linkInfo, menuLoaded])
+
+  // Auto-select sub-service if there is only one for the selected service
+  useEffect(() => {
+    if (selectedServiceId && subServices.length > 0) {
+      const subForService = subServices.filter(s => s.serviceId === selectedServiceId)
+      if (subForService.length === 1) {
+        setSelectedSubServiceId(subForService[0].id)
+      } else if (!subForService.find(s => s.id === selectedSubServiceId)) {
+        // If current subService doesn't belong to the newly selected service, clear it
+        setSelectedSubServiceId("")
+      }
+    }
+  }, [selectedServiceId, subServices])
 
   // Update todayMenuItems when selected service/subservice changes
   useEffect(() => {
@@ -379,7 +406,7 @@ ${description}
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center py-20 text-gray-500">
+      <div className="flex flex-col items-center justify-center py-20 text-gray-500 p-4 sm:p-6 md:p-8">
         <Loader2 className="w-8 h-8 animate-spin mb-4" />
         <p>Loading form...</p>
       </div>
@@ -388,6 +415,7 @@ ${description}
 
   if (error || !linkInfo) {
     return (
+      <div className="p-4 sm:p-6 md:p-8">
       <div className="bg-white p-6 rounded-lg shadow-sm text-center border">
         <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4">
           <Ticket className="w-8 h-8" />
@@ -395,11 +423,13 @@ ${description}
         <h2 className="text-xl font-bold text-gray-900 mb-2">Invalid or Expired Link</h2>
         <p className="text-gray-500">The QR code you scanned is no longer valid or could not be found.</p>
       </div>
+      </div>
     )
   }
 
   if (successTicketId) {
     return (
+      <div className="p-4 sm:p-6 md:p-8">
       <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-100 text-center">
         <div className="w-20 h-20 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-6">
           <CheckCircle2 className="w-10 h-10" />
@@ -429,10 +459,30 @@ ${description}
           <Button className="w-full h-12 text-lg">Track Ticket Status</Button>
         </Link>
       </div>
+      </div>
     )
   }
 
   return (
+    <>
+
+      {linkInfo.customization?.showHeader !== false && (
+      <header className="w-full bg-white/70 backdrop-blur-xl border-b border-slate-200/50 shadow-[0_4px_30px_rgba(0,0,0,0.03)] sticky top-0 z-50 flex items-center justify-between px-6 py-4 transition-all duration-300">
+        <div className="flex items-center gap-3">
+          <div className="bg-gradient-to-tr from-blue-600 to-indigo-500 p-2 rounded-xl shadow-lg shadow-blue-500/20">
+            <ChefHat className="w-5 h-5 text-white" />
+          </div>
+          <div>
+            <h1 className="text-lg font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-slate-800 to-slate-600 tracking-tight">
+              {linkInfo.customization?.headerText || "Facility Feedback"}
+            </h1>
+            <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest">Guest Services</p>
+          </div>
+        </div>
+      </header>
+      )}
+      <div className="p-4 sm:p-6 md:p-8">
+
     <div className="bg-white/80 backdrop-blur-xl rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-white/60 overflow-hidden">
       
       {/* Location Details Header */}
@@ -447,20 +497,24 @@ ${description}
               <MapPin className="w-6 h-6 text-blue-600" />
             </div>
             <div className="space-y-1">
-              <p className="text-xs font-bold text-blue-600 uppercase tracking-wider">Reporting issue at</p>
+              {linkInfo.customization?.showReportingIssueAt !== false && (
+                <p className="text-xs font-bold text-blue-600 uppercase tracking-wider">{linkInfo.customization?.reportingIssueAtText || "Reporting issue at"}</p>
+              )}
               <h2 className="text-xl sm:text-2xl font-black text-slate-800 tracking-tight leading-tight">{linkInfo.cafeName}</h2>
               <div className="flex flex-wrap items-center gap-1.5 text-xs font-semibold text-slate-500">
-                <span className="bg-slate-100 px-2 py-0.5 rounded-md">{linkInfo.buildingName}</span>
-                <span className="text-slate-300">•</span>
-                <span>{linkInfo.companyName}</span>
+                {linkInfo.customization?.showBuildingName !== false && <span className="bg-slate-100 px-2 py-0.5 rounded-md">{linkInfo.buildingName}</span>}
+                {(linkInfo.customization?.showBuildingName !== false && linkInfo.customization?.showCompanyName !== false) && <span className="text-slate-300">•</span>}
+                {linkInfo.customization?.showCompanyName !== false && <span>{linkInfo.companyName}</span>}
               </div>
             </div>
           </div>
+          {linkInfo.customization?.showTrackTicket !== false && (
           <Link href="/report/track" className="shrink-0 w-full sm:w-auto">
             <Button variant="outline" size="sm" className="w-full sm:w-auto rounded-xl border-slate-200 hover:bg-slate-50 hover:text-blue-600 font-semibold shadow-sm transition-all text-xs h-9">
               Track Ticket
             </Button>
           </Link>
+          )}
         </div>
       </div>
 
@@ -507,6 +561,7 @@ ${description}
           )}
         </div>
 
+        {activeCategories.length > 1 && (
         <div className="space-y-2.5">
           <Label className="text-sm font-bold text-slate-700 flex items-center gap-2">
             Issue Category <span className="text-red-500">*</span>
@@ -516,10 +571,11 @@ ${description}
               <SelectValue placeholder="Select the type of issue" />
             </SelectTrigger>
             <SelectContent className="rounded-xl overflow-hidden shadow-xl border-slate-100">
-              {COMPLAINT_CATEGORIES.map(c => <SelectItem key={c} value={c} className="py-2.5 cursor-pointer font-medium">{c}</SelectItem>)}
+              {activeCategories.map((c: string) => <SelectItem key={c} value={c} className="py-2.5 cursor-pointer font-medium">{c}</SelectItem>)}
             </SelectContent>
           </Select>
         </div>
+        )}
 
         {category === "Staff" && (
           <div className="space-y-2.5 animate-in slide-in-from-top-2 fade-in duration-300">
@@ -545,6 +601,7 @@ ${description}
           </div>
         )}
 
+        {linkInfo.customization?.showPriority !== false && (
         <div className="space-y-2.5">
           <Label className="text-sm font-bold text-slate-700">Urgency / Priority</Label>
           <Select value={priority} onValueChange={(val: TicketPriority) => setPriority(val)}>
@@ -559,7 +616,9 @@ ${description}
             </SelectContent>
           </Select>
         </div>
+        )}
 
+        {linkInfo.customization?.showRemarks !== false && (
         <div className="space-y-2.5">
           <Label className="text-sm font-bold text-slate-700 flex items-center gap-2">
             {(category === "Food Quality" || category === "Food Shortage") ? "General Remarks (Optional)" : "Description *"}
@@ -572,6 +631,7 @@ ${description}
             onChange={e => setDescription(e.target.value)}
           />
         </div>
+        )}
 
         {(category === "Food Quality" || category === "Food Shortage") && (
           <div className="rounded-[2rem] overflow-hidden border border-violet-100 shadow-[0_8px_40px_rgba(139,92,246,0.08)]">
@@ -580,14 +640,20 @@ ${description}
             <div className={`bg-gradient-to-br ${category === "Food Quality" ? "from-violet-600 via-purple-600 to-indigo-600" : "from-orange-500 via-amber-500 to-yellow-500"} p-6 sm:p-8 relative overflow-hidden`}>
               <div className="absolute inset-0 opacity-20" style={{backgroundImage: "radial-gradient(circle at 20% 50%, white 1px, transparent 1px), radial-gradient(circle at 80% 20%, white 1px, transparent 1px)", backgroundSize: "30px 30px"}} />
               <div className="relative z-10">
-                <div className="inline-flex items-center gap-2 bg-white/20 backdrop-blur-sm px-3 py-1 rounded-full mb-3">
-                  <ChefHat className="w-3.5 h-3.5 text-white" />
-                  <span className="text-[11px] font-black text-white uppercase tracking-widest">{category === "Food Quality" ? "Today's Meal Feedback" : "Today's Menu"}</span>
-                </div>
-                <h3 className="text-2xl font-black text-white tracking-tight">{category === "Food Quality" ? "How was your meal? 🍽️" : "What items were short? 📉"}</h3>
-                <p className={`text-white/80 text-sm font-medium mt-1`}>
-                  {category === "Food Quality" ? "Rate each dish honestly — your feedback helps us improve!" : "Select the items below that were missing or ran out."}
-                </p>
+                {linkInfo.customization?.showFeedbackFormHeader !== false && (
+                  <>
+                    <div className="inline-flex items-center gap-2 bg-white/20 backdrop-blur-sm px-3 py-1 rounded-full mb-3">
+                      <ChefHat className="w-3.5 h-3.5 text-white" />
+                      <span className="text-[11px] font-black text-white uppercase tracking-widest">{category === "Food Quality" ? (linkInfo.customization?.feedbackFormHeaderText || "Today's Meal Feedback") : "Today's Menu"}</span>
+                    </div>
+                    <h3 className="text-2xl font-black text-white tracking-tight">{category === "Food Quality" ? "How was your meal? 🍽️" : "What items were short? 📉"}</h3>
+                  </>
+                )}
+                {linkInfo.customization?.showFeedbackFormSubHeader !== false && (
+                  <p className={`text-white/80 text-sm font-medium mt-1`}>
+                    {category === "Food Quality" ? (linkInfo.customization?.feedbackFormSubHeaderText || "Rate each dish honestly — your feedback helps us improve!") : "Select the items below that were missing or ran out."}
+                  </p>
+                )}
               </div>
             </div>
 
@@ -817,10 +883,12 @@ ${description}
           {submitting ? (
             <><Loader2 className="w-6 h-6 mr-2 animate-spin" /> {uploadingPhotos ? "Uploading Photos..." : "Submitting Complaint..."}</>
           ) : (
-            "Submit Complaint"
+            linkInfo.customization?.submitButtonText || "Submit Complaint"
           )}
         </Button>
       </form>
     </div>
+    </div>
+    </>
   )
 }

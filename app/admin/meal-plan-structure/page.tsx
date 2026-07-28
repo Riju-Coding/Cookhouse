@@ -1412,7 +1412,7 @@ export default function MealPlanStructurePage() {
             >
               {copyLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Copy className="h-4 w-4 mr-2" />}
               Confirm Copy
-            </Button>}}
+            </Button>}
           </DialogFooter>
         </DialogContent>
       </Dialog>

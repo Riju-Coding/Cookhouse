@@ -1,6 +1,17 @@
 import { collection, doc, addDoc, getDocs, deleteDoc, updateDoc, Timestamp, query, orderBy, getDoc } from 'firebase/firestore'
 import { db } from '../firebase'
 
+export interface QRLinkCustomization {
+  headerText?: string;
+  showCompanyName?: boolean;
+  showBuildingName?: boolean;
+  showTrackTicket?: boolean;
+  issueCategories?: string[]; 
+  submitButtonText?: string;
+  feedbackFormHeaderText?: string;
+  feedbackFormSubHeaderText?: string;
+}
+
 export interface QRLink {
   id: string
   companyId: string
@@ -15,6 +26,7 @@ export interface QRLink {
   requireName?: boolean
   requireEmail?: boolean
   requireEmployeeId?: boolean
+  customization?: QRLinkCustomization
 }
 
 const QR_LINKS_COLLECTION = 'qr_links'
@@ -43,7 +55,7 @@ export const qrLinksService = {
     return null
   },
 
-  async update(id: string, data: Partial<Pick<QRLink, 'requireName' | 'requireEmail' | 'requireEmployeeId'>>): Promise<void> {
+  async update(id: string, data: Partial<QRLink>): Promise<void> {
     await updateDoc(doc(db, QR_LINKS_COLLECTION, id), data)
   },
 

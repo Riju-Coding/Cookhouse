@@ -67,7 +67,12 @@ function TrackTicketContent() {
   }
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border p-4 sm:p-6 space-y-6">
+    <>
+      <div className="bg-slate-800 text-white p-4 shadow-md sticky top-0 z-50 flex items-center justify-center relative">
+        <h1 className="text-lg font-bold">Track Ticket</h1>
+      </div>
+      <div className="w-full max-w-2xl mx-auto space-y-6 p-4">
+      <div className="bg-white rounded-xl shadow-sm border p-4 sm:p-6 space-y-6">
       <div className="text-center space-y-2 mb-6">
         <h2 className="text-xl font-bold text-gray-900">Track Your Ticket</h2>
         <p className="text-sm text-gray-500">Enter your Ticket ID below to check its current status.</p>
@@ -161,6 +166,8 @@ function TrackTicketContent() {
         </div>
       )}
     </div>
+    </div>
+    </>
   )
 }
 
