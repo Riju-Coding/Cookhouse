@@ -302,8 +302,14 @@ export default function PublicReportPage({ params }: { params: { id: string } })
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!category || !description) {
-      toast({ title: "Required Fields", description: "Category and description are required.", variant: "destructive" })
+    if (!category) {
+      toast({ title: "Required Fields", description: "Category is required.", variant: "destructive" })
+      return
+    }
+    
+    // Description is required ONLY for general categories (not Food Quality or Food Shortage)
+    if (category !== "Food Quality" && category !== "Food Shortage" && !description) {
+      toast({ title: "Required Fields", description: "Description is required for this issue category.", variant: "destructive" })
       return
     }
 
