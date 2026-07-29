@@ -10,6 +10,7 @@ import {
   type Vendor // Added this
 } from "@/lib/firestore"
 import { toast } from "@/hooks/use-toast"
+import { usersService, type User } from "@/lib/firestore/usersService"
 
 // Icons
 import { 
@@ -87,6 +88,7 @@ const initialBuildingState = {
 export default function CompaniesPage() {
   const [data, setData] = useState<CompanyWithBuildings[]>([])
   const [vendors, setVendors] = useState<Vendor[]>([]) // Store available vendors
+  const [users, setUsers] = useState<User[]>([])
   const [loading, setLoading] = useState(true)
   const [expandedCompanyIds, setExpandedCompanyIds] = useState<Set<string>>(new Set())
   
@@ -116,13 +118,15 @@ export default function CompaniesPage() {
   const fetchData = async () => {
     try {
       setLoading(true)
-      const [companiesRes, buildingsRes, vendorsRes] = await Promise.all([
+      const [companiesRes, buildingsRes, vendorsRes, usersRes] = await Promise.all([
         companiesService.getAll(),
         buildingsService.getAll(),
-        vendorsService.getAll() // Fetch vendors
+        vendorsService.getAll(), // Fetch vendors
+        usersService.getAll() // Fetch users
       ])
 
       setVendors(vendorsRes as Vendor[])
+      setUsers(usersRes as User[])
 
       const mergedData = companiesRes.map(company => ({
         ...company,
@@ -330,6 +334,7 @@ export default function CompaniesPage() {
               <TableHead className="w-[30px]"></TableHead>
               <TableHead>Company Name</TableHead>
               <TableHead>Code</TableHead>
+              <TableHead>Company Users</TableHead>
               <TableHead>Assigned Vendors</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="text-right">Actions</TableHead>
@@ -337,9 +342,9 @@ export default function CompaniesPage() {
           </TableHeader>
           <TableBody>
             {loading ? (
-               <TableRow><TableCell colSpan={7} className="h-24 text-center">Loading data...</TableCell></TableRow>
+               <TableRow><TableCell colSpan={8} className="h-24 text-center">Loading data...</TableCell></TableRow>
             ) : data.length === 0 ? (
-                <TableRow><TableCell colSpan={7} className="h-24 text-center">No companies found.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={8} className="h-24 text-center">No companies found.</TableCell></TableRow>
             ) : (
               data.map((company) => {
                 const isExpanded = expandedCompanyIds.has(company.id)
@@ -361,6 +366,15 @@ export default function CompaniesPage() {
                         <div className="text-xs text-gray-500">{company.buildings.length} Buildings</div>
                       </TableCell>
                       <TableCell>{company.code}</TableCell>
+                      <TableCell>
+                        <div className="flex flex-col gap-1">
+                            {users.filter(u => u.userType === 'company_user' && u.companyIds?.includes(company.id)).length > 0 ? (
+                                users.filter(u => u.userType === 'company_user' && u.companyIds?.includes(company.id)).map(u => <span key={u.id} className="text-xs text-gray-700 bg-gray-100 px-2 py-1 rounded-md">{u.email}</span>)
+                            ) : (
+                                <span className="text-xs text-gray-400 italic">Not assigned</span>
+                            )}
+                        </div>
+                      </TableCell>
                       <TableCell>
                         <div className="flex flex-wrap gap-1">
                             {assignedVendors.length > 0 ? (
@@ -391,7 +405,7 @@ export default function CompaniesPage() {
 
                     {isExpanded && (
                       <TableRow className="bg-gray-50/50">
-                        <TableCell colSpan={7} className="p-4 sm:pl-20">
+                        <TableCell colSpan={8} className="p-4 sm:pl-20">
                             <Card className="border-gray-200 shadow-sm">
                                 <CardContent className="p-0">
                                     <div className="flex items-center justify-between border-b p-4 bg-white rounded-t-lg">

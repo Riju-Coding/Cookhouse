@@ -766,7 +766,7 @@ ${description}
                       { label: "Loved it",      short: "Loved it",    emoji: "😍", bg: "from-pink-500 to-rose-500",     activeBg: "bg-gradient-to-r from-pink-500 to-rose-500",     activeTxt: "text-white", ring: "ring-pink-400"   },
                       { label: "Good",           short: "Good",        emoji: "😊", bg: "from-emerald-400 to-teal-500",  activeBg: "bg-gradient-to-r from-emerald-400 to-teal-500",  activeTxt: "text-white", ring: "ring-emerald-400" },
                       { label: "It's okay",      short: "Okay",        emoji: "😐", bg: "from-amber-400 to-orange-400",  activeBg: "bg-gradient-to-r from-amber-400 to-orange-400",  activeTxt: "text-white", ring: "ring-amber-400"   },
-                      { label: "Not Likeable",   short: "Nope",        emoji: "😤", bg: "from-slate-400 to-slate-500",   activeBg: "bg-gradient-to-r from-slate-500 to-slate-600",   activeTxt: "text-white", ring: "ring-slate-400"   },
+                      { label: "Not Likeable",   short: "Needs Improvement", emoji: "👎", bg: "from-slate-400 to-slate-500",   activeBg: "bg-gradient-to-r from-slate-500 to-slate-600",   activeTxt: "text-white", ring: "ring-slate-400"   },
                     ]
                     return (
                       <div

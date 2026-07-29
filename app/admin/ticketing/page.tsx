@@ -26,7 +26,12 @@ export default function TicketingDashboard() {
   const [loading, setLoading] = useState(true)
 
   // Filters State
+    const [exportModalOpen, setExportModalOpen] = useState(false)
+  const [exportTimeframe, setExportTimeframe] = useState("Today")
+  const [exportStartDate, setExportStartDate] = useState("")
+  const [exportEndDate, setExportEndDate] = useState("")
   const [searchQuery, setSearchQuery] = useState("")
+  
   const [statusFilter, setStatusFilter] = useState("All")
   const [companyFilter, setCompanyFilter] = useState("All")
   const [categoryFilter, setCategoryFilter] = useState("All")
@@ -95,7 +100,9 @@ export default function TicketingDashboard() {
       const cat = t.category || "Uncategorized"
       if (categoryFilter !== "All" && cat !== categoryFilter) return false
       
-      if (employeeIdFilter && !t.creatorId.toLowerCase().includes(employeeIdFilter.toLowerCase())) return false
+            if (employeeIdFilter && !t.creatorId.toLowerCase().includes(employeeIdFilter.toLowerCase())) return false
+      
+      
       
       return true
     })
@@ -123,24 +130,134 @@ export default function TicketingDashboard() {
   }, [filteredTickets])
 
   const handleExport = () => {
-    const exportData = filteredTickets.map(t => ({
-      "Ticket ID": t.id,
-      "Title": t.title,
-      "Description": t.description,
-      "Company": t.companyName,
-      "Category": t.category || "Uncategorized",
-      "Employee Name": t.creatorName,
-      "Employee ID": t.creatorId,
-      "Priority": t.priority,
-      "Status": t.status,
-      "Submitted At": t.createdAt.toDate().toLocaleString(),
-      "SLA Breach At": t.slaBreachAt.toDate().toLocaleString(),
-      "Is Breached": (t.slaBreachAt.toMillis() < Date.now() && t.status !== 'Resolved' && t.status !== 'Closed') ? "Yes" : "No"
-    }))
+    // Filter the current filteredTickets based on the exportTimeframe
+    let finalTickets = filteredTickets;
+    const now = new Date();
+    
+    if (exportTimeframe === "Today") {
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      finalTickets = filteredTickets.filter(t => t.createdAt.toDate() >= today);
+    } else if (exportTimeframe === "This Month") {
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      finalTickets = filteredTickets.filter(t => t.createdAt.toDate() >= startOfMonth);
+    } else if (exportTimeframe === "Custom") {
+      if (exportStartDate) {
+        const start = new Date(exportStartDate);
+        start.setHours(0, 0, 0, 0);
+        finalTickets = finalTickets.filter(t => t.createdAt.toDate() >= start);
+      }
+      if (exportEndDate) {
+        const end = new Date(exportEndDate);
+        end.setHours(23, 59, 59, 999);
+        finalTickets = finalTickets.filter(t => t.createdAt.toDate() <= end);
+      }
+    }
+
+    const exportData: any[] = []
+    const merges: any[] = []
+    let currentRowIndex = 1 // Row 0 is the header row
+
+    finalTickets.forEach(t => {
+      let items: any[] = []
+      
+      if (t.category === "Food Quality") {
+        const desc = t.description || ""
+        const itemRegex = /Item:\s*(.+)\nRating:\s*(.+)(?:\nRemark:\s*(.*))?/g
+        let match
+        while ((match = itemRegex.exec(desc)) !== null) {
+          items.push({
+            name: match[1].trim(),
+            rating: match[2].trim(),
+            remark: match[3] ? match[3].trim() : ""
+          })
+        }
+      }
+
+      if (items.length === 0) {
+        items.push({ name: "N/A", rating: "N/A", remark: "N/A" })
+      }
+
+      const rowCount = items.length
+      
+      let generalDesc = t.description || ""
+      if (t.category === "Food Quality") {
+        const parts = generalDesc.split("--- Meal Feedback")
+        const firstPart = parts[0]
+        const match = firstPart.match(/Complaint:\s*([\s\S]*)/)
+        generalDesc = match ? match[1].trim() : firstPart.trim()
+      }
+
+      const baseRow: any = {
+        "Ticket ID": t.id,
+        "Employee ID": t.creatorId === "public_user" ? ((t.description || "").match(/Employee ID:\s*([^\n]+)/)?.[1]?.trim() || "N/A") : t.creatorId,
+        "Employee Name": t.creatorName,
+        "Company": t.companyName,
+        "Category": t.category || "Uncategorized",
+        "Priority": t.priority,
+        "Status": t.status,
+        "Submitted At": t.createdAt.toDate().toLocaleString(),
+        "Is Breached": (t.slaBreachAt.toMillis() < Date.now() && t.status !== 'Resolved' && t.status !== 'Closed') ? "Yes" : "No",
+        "General Description": generalDesc,
+      }
+
+      items.forEach(item => {
+        exportData.push({
+          ...baseRow,
+          "Food Item": item.name,
+          "Item Rating": item.rating,
+          "Item Remark": item.remark
+        })
+      })
+
+      if (rowCount > 1) {
+        // We have 10 base columns (from Ticket ID up to General Description). Index 0 to 9.
+        for (let col = 0; col <= 9; col++) {
+          merges.push({
+            s: { r: currentRowIndex, c: col },
+            e: { r: currentRowIndex + rowCount - 1, c: col }
+          })
+        }
+      }
+
+      currentRowIndex += rowCount
+    })
     
     const ws = xlsx.utils.json_to_sheet(exportData)
+    if (merges.length > 0) {
+      ws['!merges'] = merges
+    }
+    
     const wb = xlsx.utils.book_new()
     xlsx.utils.book_append_sheet(wb, ws, "Tickets")
+    
+    // Add summary sheet
+    let totalLoved = 0;
+    let totalGood = 0;
+    let totalOkay = 0;
+    let totalNeedsImprovement = 0;
+    
+    finalTickets.forEach(t => {
+      if (t.category === "Food Quality") {
+        const desc = t.description || ""
+        totalLoved += (desc.match(/Rating: Loved it/gi) || []).length;
+        totalGood += (desc.match(/Rating: Good/gi) || []).length;
+        totalOkay += (desc.match(/Rating: Okay/gi) || []).length;
+        totalNeedsImprovement += (desc.match(/Rating: (Nope|Needs Improvement)/gi) || []).length;
+      }
+    })
+    
+    const totalRatings = totalLoved + totalGood + totalOkay + totalNeedsImprovement;
+    
+    const summaryData = [
+      { "Rating Type": "Loved It", "Count": totalLoved, "Percentage": totalRatings > 0 ? ((totalLoved / totalRatings) * 100).toFixed(2) + "%" : "0%" },
+      { "Rating Type": "Good", "Count": totalGood, "Percentage": totalRatings > 0 ? ((totalGood / totalRatings) * 100).toFixed(2) + "%" : "0%" },
+      { "Rating Type": "Okay", "Count": totalOkay, "Percentage": totalRatings > 0 ? ((totalOkay / totalRatings) * 100).toFixed(2) + "%" : "0%" },
+      { "Rating Type": "Needs Improvement", "Count": totalNeedsImprovement, "Percentage": totalRatings > 0 ? ((totalNeedsImprovement / totalRatings) * 100).toFixed(2) + "%" : "0%" },
+      { "Rating Type": "Total Reviews", "Count": totalRatings, "Percentage": "100%" }
+    ]
+    
+    const wsSummary = xlsx.utils.json_to_sheet(summaryData)
+    xlsx.utils.book_append_sheet(wb, wsSummary, "Summary")
     xlsx.writeFile(wb, `Tickets_Export_${new Date().toISOString().split('T')[0]}.xlsx`)
   }
 
@@ -229,7 +346,7 @@ export default function TicketingDashboard() {
             {isCompanyAdmin ? "View and track your company's complaints." : "Manage SLA-based tickets and rewards."}
           </p>
         </div>
-        <Button variant="outline" className="gap-2" onClick={handleExport}>
+        <Button variant="outline" className="gap-2" onClick={() => setExportModalOpen(true)}>
           <Download className="w-4 h-4" /> Export XLSX
         </Button>
       </div>
@@ -275,6 +392,7 @@ export default function TicketingDashboard() {
       <Card className="border shadow-sm">
         <CardContent className="p-4">
           <div className="flex flex-col md:flex-row gap-4 items-end">
+            
             <div className="flex-1 w-full space-y-1.5">
               <label className="text-xs font-semibold text-gray-500 uppercase">Search</label>
               <div className="relative">
@@ -626,6 +744,53 @@ export default function TicketingDashboard() {
               </Button>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+    
+      {/* Export Options Modal */}
+      <Dialog open={exportModalOpen} onOpenChange={setExportModalOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Export Tickets</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Select Timeframe</label>
+              <Select value={exportTimeframe} onValueChange={setExportTimeframe}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select timeframe" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="All">All Time (No Filter)</SelectItem>
+                  <SelectItem value="Today">Today</SelectItem>
+                  <SelectItem value="This Month">This Month</SelectItem>
+                  <SelectItem value="Custom">Custom Date Range</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            
+            {exportTimeframe === "Custom" && (
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Start Date</label>
+                  <Input type="date" value={exportStartDate} onChange={(e) => setExportStartDate(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">End Date</label>
+                  <Input type="date" value={exportEndDate} onChange={(e) => setExportEndDate(e.target.value)} />
+                </div>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setExportModalOpen(false)}>Cancel</Button>
+            <Button onClick={() => {
+              handleExport();
+              setExportModalOpen(false);
+            }}>
+              Download Excel
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

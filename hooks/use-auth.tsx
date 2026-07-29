@@ -4,7 +4,6 @@ import { useState, useEffect, createContext, useContext, useCallback, useRef, ty
 import { type User as FirebaseUser, signInWithEmailAndPassword, signOut as firebaseSignOut, onAuthStateChanged } from "firebase/auth"
 import { collection, query, where, getDocs, onSnapshot, or, type Unsubscribe } from "firebase/firestore"
 import { auth, db } from "@/lib/firebase"
-import { resolveUserProfile } from "@/lib/firestore/usersService"
 import { loginSessionService } from "@/lib/firestore/loginSessionService"
 import { useDesktopAgent } from "./useDesktopAgent"
 
@@ -184,23 +183,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     // Build query conditions
-    // If a user has a role, their routes should ONLY be determined by their role.
-    // If they have no role, their routes are determined by their entity (Company/Vendor).
+    // Prioritize entityId (Company/Vendor) for access paths over roleId.
+    // In the UI, company access paths are assigned to the company, not the role.
     let q;
-    if (profile.roleId) {
-      q = query(
-        collection(db, "access_paths"),
-        where("roleId", "==", profile.roleId),
-        where("status", "==", "active")
-      )
-    } else if (entityId) {
+    if (entityId) {
       q = query(
         collection(db, "access_paths"),
         where("entityId", "==", entityId),
         where("status", "==", "active")
       )
+    } else if (profile.roleId) {
+      q = query(
+        collection(db, "access_paths"),
+        where("roleId", "==", profile.roleId),
+        where("status", "==", "active")
+      )
     } else {
-      // Fallback (should be caught by the earlier !entityId && !profile.roleId check)
+      // Fallback
       setAllowedRoutes(new Set(["/admin"]))
       setAccessLoading(false)
       return
@@ -219,7 +218,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // 3. Matches user type globally (only if no role is defined)
         const matchesUser = data.userId === profile.id
         const matchesRole = profile.roleId ? (data.roleId === profile.roleId) : false
-        const matchesType = !profile.roleId && (data.userType === profile.userType && !data.userId && !data.roleId)
+        // Allow type match (e.g. company_wide access) even if they have a role
+        const matchesType = (data.userType === profile.userType && !data.userId && !data.roleId)
         
         console.log("DEBUG: access_paths doc:", data.id, "matchesRole:", matchesRole, "matchesType:", matchesType, "matchesUser:", matchesUser)
 
