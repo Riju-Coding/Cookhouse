@@ -6,8 +6,9 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { 
-  Eye, Search, Loader2, ArrowLeft, Edit, Trash2, ChevronRight, X, Building2, MousePointer2 
+  Eye, Search, Loader2, ArrowLeft, Edit, Trash2, ChevronRight, X, Building2, MousePointer2, Database 
 } from 'lucide-react'
+import { ScrollArea } from "@/components/ui/scroll-area"
 import {
   Dialog, DialogContent, DialogTitle,
 } from "@/components/ui/dialog"
@@ -20,8 +21,8 @@ import Link from "next/link"
 import { useSearchParams, useRouter, usePathname } from 'next/navigation'
 import { MenuViewModal } from "@/components/menu-view-modal"
 import { MenuEditModal } from "@/components/menu-edit-modal"
-import type { MenuItem } from "@/lib/types"
-import { menuItemsService } from "@/lib/services"
+import type { MenuItem, Service, SubService } from "@/lib/types"
+import { menuItemsService, servicesService, subServicesService } from "@/lib/services"
 import React from "react" 
 import { useEntityScope } from "@/hooks/use-entity-scope"
 interface CompanyMenu {
@@ -51,12 +52,13 @@ export default function CompanyMenusPage() {
   // URL se states nikalna (TL ki back navigation requirement ke liye)
   const combinedMenuIdParam = searchParams.get("combinedMenuId")
   const selectedMenuId = searchParams.get("mid") || ""
-  const rightView = (searchParams.get("v") as 'preview' | 'view' | 'edit') || 'preview'
+  const rightView = (searchParams.get("v") as 'preview' | 'view' | 'edit' | 'debug') || 'preview'
 
   const [menus, setMenus] = useState<CompanyMenu[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState("")
   const [modalSearchTerm, setModalSearchTerm] = useState("")
+
 
   const [detailsModalOpen, setDetailsModalOpen] = useState(false)
   const [selectedGroup, setSelectedGroup] = useState<MenuGroup | null>(null)
@@ -69,11 +71,14 @@ export default function CompanyMenusPage() {
   const [menuItems, setMenuItems] = useState<MenuItem[]>([])
   const [menuItemsLoading, setMenuItemsLoading] = useState(false)
 
+  const [services, setServices] = useState<Service[]>([])
+  const [subServices, setSubServices] = useState<SubService[]>([])
+
   useEffect(() => { loadCompanyMenus() }, [combinedMenuIdParam, entityId, entityType])
   useEffect(() => { preloadMenuItems() }, [])
 
   // Navigation update function (Browser history stack maintain karne ke liye)
-  const navigateTo = (view: 'preview' | 'view' | 'edit', mid?: string) => {
+  const navigateTo = (view: 'preview' | 'view' | 'edit' | 'debug', mid?: string) => {
     const params = new URLSearchParams(searchParams.toString())
     params.set("v", view)
     if (mid) params.set("mid", mid)
@@ -84,8 +89,14 @@ export default function CompanyMenusPage() {
     if (menuItems.length > 0 || menuItemsLoading) return
     try {
       setMenuItemsLoading(true)
-      const items = await menuItemsService.getAll()
+      const [items, srvs, subs] = await Promise.all([
+         menuItemsService.getAll(),
+         servicesService.getAll(),
+         subServicesService.getAll()
+      ])
       setMenuItems(items)
+      setServices(srvs)
+      setSubServices(subs)
     } catch (error) { console.error(error) } finally { setMenuItemsLoading(false) }
   }, [menuItems.length, menuItemsLoading])
 
@@ -348,7 +359,7 @@ export default function CompanyMenusPage() {
                             </p>
                           </div>
 
-                          <div className="grid grid-cols-2 gap-6">
+                          <div className="grid grid-cols-3 gap-6">
                             <button onClick={() => navigateTo('view')} className="group flex flex-col items-center justify-center p-10 bg-white border-2 border-slate-100 rounded-[2rem] hover:border-blue-600 hover:shadow-lg transition-all">
                                 <div className="h-16 w-16 bg-blue-50 rounded-2xl flex items-center justify-center mb-4 group-hover:bg-blue-600 transition-colors">
                                   <Eye className="h-8 w-8 text-blue-600 group-hover:text-white transition-colors" />
@@ -363,6 +374,14 @@ export default function CompanyMenusPage() {
                                 </div>
                                 <span className="text-xl font-bold text-slate-800">Edit Menu</span>
                                 <span className="text-slate-400 text-[10px] mt-1">Update prices</span>
+                            </button>
+
+                            <button onClick={() => navigateTo('debug')} className="group flex flex-col items-center justify-center p-10 bg-white border-2 border-slate-100 rounded-[2rem] hover:border-orange-600 hover:shadow-lg transition-all">
+                                <div className="h-16 w-16 bg-orange-50 rounded-2xl flex items-center justify-center mb-4 group-hover:bg-orange-600 transition-colors">
+                                  <Database className="h-8 w-8 text-orange-600 group-hover:text-white transition-colors" />
+                                </div>
+                                <span className="text-xl font-bold text-slate-800">Raw DB</span>
+                                <span className="text-slate-400 text-[10px] mt-1">Debug DB State</span>
                             </button>
                           </div>
                         </div>
@@ -391,6 +410,108 @@ export default function CompanyMenusPage() {
                          <MenuEditModal isOpen={true} onClose={() => router.back()} menuId={selectedMenuId} menuType="company" onSave={loadCompanyMenus} preloadedMenuItems={menuItems} />
                       </div>
                     )}
+
+                    {rightView === 'debug' && (
+                      <div className="flex-1 overflow-auto p-8 animate-in fade-in zoom-in-95 duration-200 bg-slate-50">
+                         <div className="mb-6 flex justify-between items-center">
+                            <Button variant="outline" size="sm" onClick={() => router.back()} className="text-slate-700 font-bold">
+                               <ArrowLeft className="h-4 w-4 mr-2" /> Back to Preview
+                            </Button>
+                            <h3 className="text-xl font-black text-slate-900 tracking-tight flex items-center gap-2">
+                               <Database className="h-5 w-5 text-orange-600" />
+                               Raw Database State
+                            </h3>
+                         </div>
+                         <div className="bg-white rounded-2xl border shadow-sm p-6">
+                            {(() => {
+                                const debugData = menus.find(m => m.id === selectedMenuId)
+                                if (!debugData) return <p>No data loaded.</p>
+                                
+                                const items: { [date: string]: { [service: string]: { [subService: string]: Set<string> } } } = {}
+                                const md = (debugData as any).menuData || {}
+                                Object.keys(md).forEach(date => {
+                                    if (!items[date]) items[date] = {}
+                                    Object.keys(md[date]).forEach((serviceId: string) => {
+                                        if (!items[date][serviceId]) items[date][serviceId] = {}
+                                        Object.keys(md[date][serviceId]).forEach((subServiceId: string) => {
+                                            if (!items[date][serviceId][subServiceId]) items[date][serviceId][subServiceId] = new Set()
+                                            
+                                            const ssData = md[date][serviceId][subServiceId]
+                                            Object.values(ssData).forEach((mp: any) => {
+                                                Object.values(mp).forEach((cell: any) => {
+                                                    if (cell && cell.menuItemIds) {
+                                                        cell.menuItemIds.forEach((id: string) => items[date][serviceId][subServiceId].add(id))
+                                                    }
+                                                })
+                                            })
+                                        })
+                                    })
+                                })
+                                
+                                return (
+                                    <div className="space-y-6">
+                                      <div className="p-4 bg-orange-50/50 rounded-xl border border-orange-100 text-sm grid grid-cols-2 gap-4">
+                                        <div>
+                                            <span className="block text-xs text-slate-400 font-bold uppercase mb-1">Company</span>
+                                            <span className="font-semibold text-slate-800">{debugData.companyName}</span>
+                                        </div>
+                                        <div>
+                                            <span className="block text-xs text-slate-400 font-bold uppercase mb-1">Building</span>
+                                            <span className="font-semibold text-slate-800">{debugData.buildingName}</span>
+                                        </div>
+                                        <div>
+                                            <span className="block text-xs text-slate-400 font-bold uppercase mb-1">Menu ID</span>
+                                            <span className="font-mono text-xs text-slate-600 bg-white px-2 py-1 rounded border">{debugData.id}</span>
+                                        </div>
+                                        <div>
+                                            <span className="block text-xs text-slate-400 font-bold uppercase mb-1">Combined Menu ID</span>
+                                            <span className="font-mono text-xs text-slate-600 bg-white px-2 py-1 rounded border">{debugData.combinedMenuId}</span>
+                                        </div>
+                                      </div>
+                                      
+                                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                      {Object.keys(items).sort().map(date => (
+                                          <div key={date} className="border p-4 rounded-xl bg-slate-50 shadow-sm flex flex-col">
+                                             <h4 className="font-bold border-b border-slate-200 pb-2 mb-3 text-slate-700 text-lg">{date}</h4>
+                                             <div className="flex-1 overflow-y-auto max-h-[500px] custom-scrollbar pr-2 space-y-4">
+                                                {Object.keys(items[date]).map(serviceId => {
+                                                    const srvName = services.find(s => s.id === serviceId)?.name || serviceId
+                                                    return (
+                                                    <div key={serviceId} className="space-y-2">
+                                                        <h5 className="font-bold text-blue-700 text-sm bg-blue-50 px-2 py-1 rounded">Service: {srvName}</h5>
+                                                        {Object.keys(items[date][serviceId]).map(subServiceId => {
+                                                            const ssName = subServices.find(ss => ss.id === subServiceId)?.name || subServiceId
+                                                            return (
+                                                            <div key={subServiceId} className="ml-2 pl-2 border-l-2 border-slate-200">
+                                                                <h6 className="font-semibold text-slate-600 text-xs mb-2">Sub-Service: {ssName}</h6>
+                                                                <ul className="text-xs space-y-2">
+                                                                    {Array.from(items[date][serviceId][subServiceId]).map(id => {
+                                                                        const itemName = menuItems.find(mi => mi.id === id)?.name || "Unknown Item"
+                                                                        return (
+                                                                            <li key={id} className="flex flex-col border-b border-slate-200 pb-1.5 last:border-0">
+                                                                               <span className="font-semibold text-slate-800">{itemName}</span>
+                                                                               <span className="text-[9px] text-slate-400 font-mono mt-0.5">{id}</span>
+                                                                            </li>
+                                                                        )
+                                                                    })}
+                                                                    {items[date][serviceId][subServiceId].size === 0 && (
+                                                                        <li className="text-slate-400 italic">No items found</li>
+                                                                    )}
+                                                                </ul>
+                                                            </div>
+                                                        )})}
+                                                    </div>
+                                                )})}
+                                             </div>
+                                          </div>
+                                      ))}
+                                      </div>
+                                    </div>
+                                )
+                            })()}
+                         </div>
+                      </div>
+                    )}
                  </div>
                )}
             </div>
@@ -407,6 +528,7 @@ export default function CompanyMenusPage() {
           </div>
         </DialogContent>
       </Dialog>
+
 
       {/* Delete Confirmation Alert */}
       <AlertDialog open={deleteAlertOpen} onOpenChange={setDeleteAlertOpen}>

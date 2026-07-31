@@ -2885,14 +2885,8 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
         const smpCount = c.mealPlans?.reduce((acc: number, mp: any) => acc + (mp.subMealPlans?.length || 0), 0) || 0;
         if (smpCount < 2) return;
 
-        // Generate signature to group structurally identical choices together across companies
-        const sortedMealPlans = [...(c.mealPlans || [])].sort((a: any, b: any) => a.mealPlanId.localeCompare(b.mealPlanId));
-        const smpSignature = sortedMealPlans.map((mp: any) => {
-          const sortedSmps = [...(mp.subMealPlans || [])].sort((a: any, b: any) => a.subMealPlanId.localeCompare(b.subMealPlanId));
-          return `${mp.mealPlanId}:${sortedSmps.map((smp: any) => smp.subMealPlanId).join(',')}`
-        }).join('|');
-        
-        const signature = `${c.serviceId || ''}-${c.subServiceId || ''}-${(c.choiceDay || '').toLowerCase()}-${Number(c.quantity) || 1}-${smpSignature}`;
+        // Generate signature to group structurally identical choices together across companies (Relaxed to ignore SMP differences)
+        const signature = `${c.serviceId || ''}-${c.subServiceId || ''}-${(c.choiceDay || '').toLowerCase()}-${Number(c.quantity) || 1}`;
 
         if (!uniqueChoices.has(signature)) {
           uniqueChoices.set(signature, { ...c, choiceId: signature })
@@ -4085,6 +4079,8 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
               await companyMenusService.add({ ...companyMenuData, combinedMenuId, status: "active" });
             }
             count++;
+          } else {
+            console.warn(`Skipping company menu generation for ${company.name} (${building.name}): Missing active structure or meal plan assignments.`)
           }
         }
       }
@@ -4175,16 +4171,10 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
                            );
                     if (isExplicitlyChosen) return true;
 
-                    // Check if this item belongs to ANY choice (it's a choice item for another company)
-                    const isAChoiceItem = itemCustom && Array.isArray(itemCustom) &&
-                      itemCustom.some((a: any) => a.isFromChoice);
-
                     // ═══ PRIORITY 3: Base (non-choice) item — use default structure ═══
-                    if (!isAChoiceItem) {
-                      return isDefaultPath;
-                    }
-
-                    // Item is a choice item for another company — exclude from this company
+                    // If a cell is governed by a choice for this company, 
+                    // ANY item in this cell that is not explicitly chosen must be EXCLUDED.
+                    // This prevents unselected choice options from leaking in as base items.
                     return false;
                   }
 
@@ -4507,13 +4497,15 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
       // ═══ Process choices: apply selections to menuData ═══
       if (!isDraft && Object.keys(choiceSelectionsData).length > 0) {
         const updatedMenuData = JSON.parse(JSON.stringify(menuData))
+        const clearedChoiceMarks = new Set<string>()
+        const clearedCompanyCells = new Set<string>()
 
         // Group selections by companyId-buildingId
         // Keys in SelectionMap are "companyId-buildingId-choiceId"
         const companyBuildingMap: Record<string, { companyId: string; buildingId: string; selections: Array<{ choiceId: string; items: any[] }> }> = {}
 
         for (const [selKey, selItems] of Object.entries(choiceSelectionsData)) {
-          if (!selItems || selItems.length === 0) continue
+          if (!selItems) continue
           const parts = selKey.split('-')
           // Key format: companyId-buildingId-choiceId
           const companyId = parts[0]
@@ -4573,34 +4565,44 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
                   
                   // Preserve existing base items that are NOT governed by any choice
                   if (!cell.itemChoiceMarks) cell.itemChoiceMarks = {}
-                  const existingBaseItems = (cell.menuItemIds || []).filter((id: string) => {
-                    return !cell.itemChoiceMarks[id]
-                  })
-
-                  // Clear old choice marks for THIS specific choiceId (re-selection scenario)
-                  Object.keys(cell.itemChoiceMarks).forEach((key: string) => {
-                    if (cell.itemChoiceMarks[key] === sel.choiceId) delete cell.itemChoiceMarks[key]
-                  })
+                  
+                  const clearKey = `${cellKey}-${sel.choiceId}`
+                  if (!clearedChoiceMarks.has(clearKey)) {
+                    // First time seeing this choiceId for this cell in this save
+                    // Remove all old items that were strictly tied to this choice
+                    const itemsToRemove = Object.keys(cell.itemChoiceMarks).filter(id => cell.itemChoiceMarks[id] === sel.choiceId)
+                    cell.menuItemIds = (cell.menuItemIds || []).filter((id: string) => !itemsToRemove.includes(id))
+                    itemsToRemove.forEach((id: string) => delete cell.itemChoiceMarks[id])
+                    clearedChoiceMarks.add(clearKey)
+                  }
 
                   const choiceItemIds = selectedForSmp.map((it: any) => it.selectedItemId)
 
-                  // Merge: base items + newly chosen items (deduplicated)
-                  const mergedIds = [...new Set([...existingBaseItems, ...choiceItemIds])]
-                  cell.menuItemIds = mergedIds
-
-                  // Mark new choice items
-                  selectedForSmp.forEach((it: any) => {
-                    cell.itemChoiceMarks[it.selectedItemId] = sel.choiceId
+                  // Append newly chosen items that aren't already there
+                  choiceItemIds.forEach((id: string) => {
+                    if (!cell.menuItemIds.includes(id)) {
+                      cell.menuItemIds.push(id)
+                    }
+                    cell.itemChoiceMarks[id] = sel.choiceId
                   })
 
                   // Set per-company customAssignments with isFromChoice markers
                   if (!cell.customAssignments) cell.customAssignments = {}
+                  
+                  const companyCellKey = `${cellKey}-${cbData.companyId}-${cbData.buildingId}`
+                  if (!clearedCompanyCells.has(companyCellKey)) {
+                    // 1. Remove all stale isFromChoice entries for this company/building across ALL items
+                    Object.keys(cell.customAssignments).forEach((itemId: string) => {
+                      cell.customAssignments[itemId] = cell.customAssignments[itemId].filter(
+                        (a: any) => !(a.companyId === cbData.companyId && a.buildingId === cbData.buildingId && a.isFromChoice)
+                      )
+                    })
+                    clearedCompanyCells.add(companyCellKey)
+                  }
+
+                  // 2. Add the fresh isFromChoice entries for the currently selected items
                   choiceItemIds.forEach((itemId: string) => {
                     if (!cell.customAssignments[itemId]) cell.customAssignments[itemId] = []
-                    // Remove stale isFromChoice entries for this company/building before re-adding
-                    cell.customAssignments[itemId] = cell.customAssignments[itemId].filter(
-                      (a: any) => !(a.companyId === cbData.companyId && a.buildingId === cbData.buildingId && a.isFromChoice)
-                    )
                     cell.customAssignments[itemId].push({
                       companyId: cbData.companyId,
                       buildingId: cbData.buildingId,

@@ -740,47 +740,62 @@ export function BuildingMenuGrid({
     const cbChoiceKey = `${companyId}-${buildingId}`
     const cellHasChoiceForThisCompany = !!choiceMeta[cbChoiceKey]
 
-    const filteredItemIds = cell.menuItemIds.filter((itemId: string) => {
+    const itemsData = cell.menuItemIds.map((itemId: string) => {
       const itemCustom = customAssignments[itemId]
+      let isIncluded = false;
+      let debugReason = "";
 
       // ═══ PRIORITY 1: Manual (non-choice) custom assignments ═══
       // These come from the ItemCompanyAssignmentModal and ALWAYS take priority
       const manualAssignments = (itemCustom || []).filter((a: any) => !a.isFromChoice)
       if (manualAssignments.length > 0) {
-        return manualAssignments.some((a: any) =>
-          a.companyId === companyId && a.buildingId === buildingId
-        )
-      }
-
-      // ═══ PRIORITY 2: Choice-based assignments ═══
-      if (cellHasChoiceForThisCompany) {
+        if (manualAssignments.some((a: any) => a.companyId === companyId && a.buildingId === buildingId)) {
+          isIncluded = true;
+          debugReason = "Included: Manual assignment (Priority 1)";
+        } else {
+          isIncluded = false;
+          debugReason = "Excluded: Manual assignment for another company (Priority 1)";
+        }
+      } else if (cellHasChoiceForThisCompany) {
+        // ═══ PRIORITY 2: Choice-based assignments ═══
         const isExplicitlyChosen = itemCustom && Array.isArray(itemCustom) && 
                itemCustom.some((a: any) => 
                  a.companyId === companyId && 
                  a.buildingId === buildingId &&
                  a.isFromChoice === true
                )
-        if (isExplicitlyChosen) return true
+        if (isExplicitlyChosen) {
+          isIncluded = true;
+          debugReason = "Included: Explicitly chosen (Priority 2)";
+        } else {
+          // Check if this item belongs to ANY choice (it's a choice item for another company)
+          const isAChoiceItem = itemCustom && Array.isArray(itemCustom) &&
+            itemCustom.some((a: any) => a.isFromChoice)
 
-        // Check if this item belongs to ANY choice (it's a choice item for another company)
-        const isAChoiceItem = itemCustom && Array.isArray(itemCustom) &&
-          itemCustom.some((a: any) => a.isFromChoice)
-
-        // ═══ PRIORITY 3: Base (non-choice) item — use default structure ═══
-        if (!isAChoiceItem) {
-          return isDefaultPath
+          // ═══ PRIORITY 3: Base (non-choice) item — use default structure ═══
+          if (!isAChoiceItem) {
+            isIncluded = isDefaultPath;
+            debugReason = isIncluded ? "Included: Base item in default structure (Priority 3)" : "Excluded: Not in default structure (Priority 3)";
+          } else {
+            // Item is a choice item for another company — exclude from this company
+            isIncluded = false;
+            debugReason = "Excluded: Choice item for another company (Priority 2)";
+          }
         }
-
-        // Item is a choice item for another company — exclude from this company
-        return false
+      } else {
+        // ═══ No choice governs this cell — fallback to default structure ═══
+        isIncluded = isDefaultPath;
+        debugReason = isIncluded ? "Included: Default structure (Fallback)" : "Excluded: Not in default structure (Fallback)";
       }
-
-      // ═══ No choice governs this cell — fallback to default structure ═══
-      return isDefaultPath
+      return { itemId, isIncluded, debugReason };
     })
 
-    return filteredItemIds
-      .map((id: string) => menuItemMap.get(id))
+    return itemsData
+      .map((data: any) => {
+        const menuItem = menuItemMap.get(data.itemId);
+        if (!menuItem) return null;
+        return { ...menuItem, _isIncluded: data.isIncluded, _debugReason: data.debugReason };
+      })
       .filter(Boolean)
   }
 
@@ -967,18 +982,38 @@ export function BuildingMenuGrid({
 
   /* ── Per-choice selection status (selected count vs limit) ── */
   const choiceSelectionStatus = useMemo(() => {
-    const status: Record<string, { selected: number; limit: number; isAtLimit: boolean }> = {}
+    const status: Record<string, { selected: number; limit: number; isAtLimit: boolean; manualCount: number }> = {}
     building.choices.forEach((c: any) => {
       const key = `${building.companyId}-${building.buildingId}-${c.choiceId}`
-      const selected = (selections[key] || []).length
+      const selectedArr = selections[key] || []
+      
+      let manualCount = 0;
+      const d = dateRange.find((date: any) => date.day.toLowerCase() === c.choiceDay?.toLowerCase());
+      if (d) {
+        serviceGroups.forEach(group => {
+           if ((!c.serviceId || c.serviceId === group.serviceId) && (!c.subServiceId || c.subServiceId === group.subServiceId)) {
+             const displayItems = getAllItemsForChoice(d.date, c, group)
+             const manualAssignments = displayItems.filter((i: any) => i._debugReason === "Included: Manual assignment (Priority 1)");
+             
+             manualAssignments.forEach((item: any) => {
+               if (!selectedArr.some((s: any) => s.selectedItemId === item.id)) {
+                 manualCount++;
+               }
+             });
+           }
+        })
+      }
+
+      const totalSelected = selectedArr.length + manualCount
       status[c.choiceId] = {
-        selected,
+        selected: totalSelected,
         limit: c.quantity,
-        isAtLimit: selected >= c.quantity,
+        isAtLimit: totalSelected >= c.quantity,
+        manualCount
       }
     })
     return status
-  }, [building, selections])
+  }, [building, selections, dateRange, serviceGroups, getAllItemsForChoice])
 
   /* ── Count choices in this building ── */
   const choiceDayCount = useMemo(() => {
@@ -1588,6 +1623,34 @@ export function BuildingMenuGrid({
                                           selectedItemsForChoice = selections[firstKey] || [];
                                         }
                                       }
+
+                                      // ═══ INJECT MANUAL ASSIGNMENTS (PRIORITY 1) AS AUTO-SELECTED ═══
+                                      const manualOverrides: any[] = [];
+                                      displayItems.forEach((item: any) => {
+                                        if (item._debugReason === "Included: Manual assignment (Priority 1)") {
+                                          if (!selectedItemsForChoice.some((s: any) => s.selectedItemId === item.id)) {
+                                            // Find the SMP row for this item to map it
+                                            let matchedRow = merged.rows.find(r => smpAssignmentMap.get(r.subMealPlanId)?.choiceId === choice.choiceId) || merged.rows[0];
+                                            for (const r of merged.rows) {
+                                              const cellItems = getCellItems(d.date, group.serviceId, group.subServiceId, r.mealPlanId, r.subMealPlanId);
+                                              if (cellItems.some((ci: any) => ci.id === item.id)) {
+                                                matchedRow = r;
+                                                break;
+                                              }
+                                            }
+                                            manualOverrides.push({
+                                              mealPlanId: matchedRow.mealPlanId,
+                                              mealPlanName: matchedRow.mealPlanName,
+                                              subMealPlanId: matchedRow.subMealPlanId,
+                                              subMealPlanName: matchedRow.subMealPlanName,
+                                              selectedItemId: item.id,
+                                              selectedItemName: item.name,
+                                              isManualOverride: true,
+                                            });
+                                          }
+                                        }
+                                      });
+                                      selectedItemsForChoice = [...selectedItemsForChoice, ...manualOverrides];
           
                                       const dayChoicesAll = building.choices.filter((c: any) => c.choiceDay?.toLowerCase() === d.day.toLowerCase())
                                       const choiceIndex = dayChoicesAll.findIndex((c: any) => c.choiceId === choice.choiceId)
@@ -1703,20 +1766,24 @@ export function BuildingMenuGrid({
                                               }
       
                                               const isSelectedHere = selectedItemsForChoice.some((s:any) => s.selectedItemId === item.id)
+                                              const isManualOverride = selectedItemsForChoice.find((s:any) => s.selectedItemId === item.id)?.isManualOverride;
                                               // Use effectiveAtLimit (excluding phantoms) instead of raw isChoiceAtLimit
-                                              const isDisabled = !isSelectedHere && effectiveAtLimit
+                                              const isDisabled = (!isSelectedHere && effectiveAtLimit) || isManualOverride
       
                                               return (
                                                 <div key={item.id} className="flex items-start gap-1">
                                                   {isSelectedHere && <span className="text-gray-400 font-normal mt-1.5 text-[10px] ml-1">|-</span>}
                                                   <label
+                                                    title={item._debugReason}
                                                     className={`
                                                       flex-1 flex items-start gap-2 px-2 py-1.5 rounded text-[11px] transition-all border
-                                                      ${isDisabled
-                                                        ? 'opacity-60 cursor-not-allowed bg-gray-200 border-gray-300'
-                                                        : isSelectedHere
-                                                          ? 'shadow-sm border-transparent'
-                                                          : 'bg-white border-gray-200 cursor-pointer hover:border-gray-300 hover:bg-gray-50'}
+                                                      ${!item._isIncluded 
+                                                        ? 'opacity-40 cursor-not-allowed bg-red-50 border-red-200 grayscale pointer-events-none' 
+                                                        : isDisabled && !isManualOverride
+                                                          ? 'opacity-60 cursor-not-allowed bg-gray-200 border-gray-300'
+                                                          : isSelectedHere
+                                                            ? 'shadow-sm border-transparent'
+                                                            : 'bg-white border-gray-200 cursor-pointer hover:border-gray-300 hover:bg-gray-50'}
                                                     `}
                                                     style={isSelectedHere && cc ? { backgroundColor: cc.selectedBg } : {}}
                                                   >
@@ -1724,18 +1791,28 @@ export function BuildingMenuGrid({
                                                       type="checkbox"
                                                       className="mt-0.5 rounded border-gray-300 w-3 h-3 cursor-pointer disabled:cursor-not-allowed shrink-0"
                                                       checked={isSelectedHere}
-                                                      disabled={isDisabled}
+                                                      disabled={isDisabled || !item._isIncluded}
                                                       onChange={() => {
-                                                        if (!isDisabled) {
+                                                        if (!isDisabled && item._isIncluded) {
                                                           toggleSelection(choice.choiceId, itemRow, item)
                                                         }
                                                       }}
                                                       style={cc && isSelectedHere ? { accentColor: cc.primary } : {}}
                                                     />
                                                     <div className="flex flex-col leading-tight pt-[1px] w-full">
-                                                      <span className={`${isSelectedHere ? 'font-bold' : 'font-medium'} ${isDisabled ? 'text-gray-500' : 'text-gray-700'}`}>
+                                                      <span className={`${isSelectedHere ? 'font-bold' : 'font-medium'} ${(isDisabled && !isManualOverride) || !item._isIncluded ? 'text-gray-500' : 'text-gray-700'}`}>
                                                         {item.name}
                                                       </span>
+                                                      {isManualOverride && (
+                                                        <span className="text-[9px] text-blue-500 font-bold leading-tight mt-0.5">
+                                                          Custom Assigned (Override)
+                                                        </span>
+                                                      )}
+                                                      {!item._isIncluded && !isManualOverride && (
+                                                        <span className="text-[9px] text-red-500 font-medium leading-tight mt-0.5">
+                                                          {item._debugReason}
+                                                        </span>
+                                                      )}
                                                     </div>
                                                   </label>
                                                 </div>
