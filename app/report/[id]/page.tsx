@@ -440,30 +440,8 @@ ${description}
         <div className="w-20 h-20 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-6">
           <CheckCircle2 className="w-10 h-10" />
         </div>
-        <h2 className="text-2xl font-bold text-gray-900 mb-3">Complaint Received</h2>
-        <p className="text-gray-600 mb-6">Thank you for reporting this issue. Our facility team has been notified.</p>
-        
-        <div className="bg-gray-50 p-4 rounded-lg mb-8 border border-gray-100 flex items-center justify-between">
-          <div className="text-left">
-            <p className="text-sm text-gray-500 mb-1">Your Tracking ID</p>
-            <p className="font-mono text-xl font-bold text-blue-600">{successTicketId}</p>
-          </div>
-          <Button 
-            variant="outline" 
-            size="sm" 
-            onClick={() => {
-              navigator.clipboard.writeText(successTicketId)
-              toast({ title: "Copied!", description: "Ticket ID copied to clipboard." })
-            }}
-            className="flex items-center gap-2"
-          >
-            <Copy className="w-4 h-4" /> Copy
-          </Button>
-        </div>
-
-        <Link href={`/report/track?id=${successTicketId}`}>
-          <Button className="w-full h-12 text-lg">Track Ticket Status</Button>
-        </Link>
+        <h2 className="text-2xl font-bold text-gray-900 mb-3">Feedback Received</h2>
+        <p className="text-gray-600 mb-6">Thank you for your feedback. Our team has been notified.</p>
       </div>
       </div>
     )
