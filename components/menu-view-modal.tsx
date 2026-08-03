@@ -12,24 +12,6 @@ import { Input } from "@/components/ui/input"
 import { Loader2, Download, X, History, Edit, Search, ArrowRight, CheckCircle2, AlertCircle, Building2 } from 'lucide-react'
 
 
-declare module "@/lib/types" {
-  export interface MenuUpdation {
-    id: string;
-    menuId: string;
-    totalChanges: number;
-    changedCells: Array<{
-      date: string; serviceId: string; subServiceId: string; mealPlanId: string; subMealPlanId: string;
-      changes: Array<{
-        action: 'added' | 'removed' | 'replaced'; itemId: string; replacedWith?: string;
-      }>;
-    }>;
-    createdAt: Date; 
-    updationNumber?: number;
-    // This will be populated dynamically for combined menus
-    affectedCompanies?: Array<{ companyName: string; buildingName: string }>;
-  }
-}
-
 import type { MenuUpdation } from "@/lib/types"
 
 interface MenuViewModalProps {

@@ -83,6 +83,7 @@ export interface MenuUpdation {
   createdAt: Date
   createdBy?: string
   notes?: string
+  affectedCompanies?: Array<{ companyName: string; buildingName: string }>
 }
 
 export interface MenuPlanningRule {

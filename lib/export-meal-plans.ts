@@ -118,7 +118,7 @@ export async function exportAllMealPlanStructures(
             hierarchyRows.push(subServiceRow)
 
             // Add Meal Plans under this Sub-Service
-            subServiceData.mealPlans.forEach((mealPlanData, mealPlanId) => {
+            subServiceData.mealPlans.forEach((mealPlanData: any, mealPlanId: any) => {
               const mealPlanName = options.getMealPlanName(mealPlanId)
 
               // Add Meal Plan row with day-wise meal plan assignments
@@ -138,7 +138,7 @@ export async function exportAllMealPlanStructures(
               hierarchyRows.push(mealPlanRow)
 
               // Add Sub-Meal Plans under this Meal Plan
-              mealPlanData.subMealPlans.forEach((subMealPlanId) => {
+              mealPlanData.subMealPlans.forEach((subMealPlanId: any) => {
                 const subMealPlanName = options.getSubMealPlanName(subMealPlanId)
 
                 // Add Sub-Meal Plan row

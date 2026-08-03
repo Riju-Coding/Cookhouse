@@ -96,7 +96,7 @@ export function wouldExceedFrequency(
   if (!smpInfo) return false
 
   const max = smpInfo.maxFrequency ?? 7
-  return max && currentCount >= max
+  return currentCount >= max
 }
 
 /**

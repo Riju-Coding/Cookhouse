@@ -198,6 +198,7 @@ export default function TicketingDashboard() {
         "Submitted At": t.createdAt.toDate().toLocaleString(),
         "Is Breached": (t.slaBreachAt.toMillis() < Date.now() && t.status !== 'Resolved' && t.status !== 'Closed') ? "Yes" : "No",
         "General Description": generalDesc,
+        "Attached Images": Array.isArray(t.photos) && t.photos.length > 0 ? t.photos.join(", ") : "None",
       }
 
       items.forEach(item => {
@@ -210,8 +211,8 @@ export default function TicketingDashboard() {
       })
 
       if (rowCount > 1) {
-        // We have 10 base columns (from Ticket ID up to General Description). Index 0 to 9.
-        for (let col = 0; col <= 9; col++) {
+        // We have 11 base columns (from Ticket ID up to Attached Images). Index 0 to 10.
+        for (let col = 0; col <= 10; col++) {
           merges.push({
             s: { r: currentRowIndex, c: col },
             e: { r: currentRowIndex + rowCount - 1, c: col }

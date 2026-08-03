@@ -30,7 +30,7 @@ interface StructureAssignment {
   status?: string
 }
 
-interface MealPlanStructureAssignment {
+export interface MealPlanStructureAssignment {
   id: string
   companyId: string
   buildingId: string
@@ -90,7 +90,7 @@ async function batchFetch<T>(collectionName: string, filters?: Array<{ field: st
     const snapshot = await getDocs(q as any)
     const data = snapshot.docs.map((doc) => ({
       id: doc.id,
-      ...doc.data(),
+      ...(doc.data() as any),
     })) as T[]
 
     setCache(cacheKey, data)
