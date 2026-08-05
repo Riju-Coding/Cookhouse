@@ -53,6 +53,7 @@
     "firebase": "latest",
     "firebase-admin": "^13.6.0",
     "geist": "latest",
+    "googleapis": "^174.0.0",
     "html2canvas": "^1.4.1",
     "input-otp": "latest",
     "jspdf": "^2.5.1",

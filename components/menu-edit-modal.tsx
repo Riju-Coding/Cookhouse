@@ -4268,6 +4268,10 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
                     return false; // Cell is overridden by manual assignments
                   }
 
+                  if (sourceCell.isFromChoice) {
+                    return false; // This cell is a Choice Cell globally. If the company had no choices, it should receive no items.
+                  }
+
                   return isDefaultPath;
                 });
 

@@ -21,6 +21,7 @@ export interface Ticket {
   assigneeName?: string
   slaBreachAt: Timestamp
   category?: string
+  buildingName?: string
 }
 
 export interface TicketComment {
@@ -57,6 +58,32 @@ export const ticketService = {
       updatedAt: now,
       slaBreachAt
     })
+    
+    // Sync to Google Sheets asynchronously (fire-and-forget)
+    try {
+      fetch('/api/tickets/sync-to-sheets', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          ticketId: docRef.id,
+          date: now.toDate().toISOString(),
+          priority: data.priority,
+          category: data.category || '',
+          status: 'Open',
+          companyName: data.companyName,
+          buildingName: data.buildingName || '',
+          creatorName: data.creatorName,
+          title: data.title,
+          description: data.description,
+          photos: data.photos || []
+        }),
+      }).catch(err => console.error('Failed to sync ticket to sheets:', err));
+    } catch (err) {
+      console.error('Error initiating sync to sheets:', err);
+    }
+
     return docRef.id
   },
 

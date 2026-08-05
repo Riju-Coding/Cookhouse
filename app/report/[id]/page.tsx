@@ -391,6 +391,7 @@ ${description}
         creatorName: name || "Public Guest",
         companyId: linkInfo!.companyId,
         companyName: linkInfo!.companyName,
+        buildingName: linkInfo!.buildingName || '',
         priority: priority,
         photos: photoUrls,
         category: category
