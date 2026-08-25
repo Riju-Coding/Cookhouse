@@ -85,6 +85,7 @@ export default function VendorManagementPage() {
 
   // Dialog States
   const [isModalOpen, setIsModalOpen] = useState(false)
+  const [activeTab, setActiveTab] = useState("general")
   const [formData, setFormData] = useState(initialVendorState)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
@@ -114,6 +115,7 @@ export default function VendorManagementPage() {
   const handleOpenAdd = () => {
     setEditingId(null)
     setFormData(initialVendorState)
+    setActiveTab("general")
     setIsModalOpen(true)
   }
 
@@ -129,7 +131,13 @@ export default function VendorManagementPage() {
       hqRadius: vendor.hqRadius || 100,
       hqAddress: vendor.hqAddress || "",
     } as any)
+    setActiveTab("general")
     setIsModalOpen(true)
+  }
+
+  const handleSetLocation = (vendor: Vendor) => {
+    handleEdit(vendor)
+    setActiveTab("hq")
   }
 
   const handleSave = async () => {
@@ -239,16 +247,17 @@ export default function VendorManagementPage() {
                       <Badge variant={vendor.status === 'active' ? 'default' : 'secondary'}>{vendor.status}</Badge>
                     </TableCell>
                     <TableCell className="text-right">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                          <Button variant="ghost" className="h-8 w-8 p-0"><MoreHorizontal className="h-4 w-4" /></Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => handleEdit(vendor)}><Pencil className="mr-2 h-4 w-4" /> Edit</DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem className="text-red-600" onClick={() => handleDelete(vendor.id)}><Trash2 className="mr-2 h-4 w-4" /> Delete</DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                      <div className="flex justify-end gap-1">
+                        <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); handleEdit(vendor) }} title="Edit">
+                          <Pencil className="h-4 w-4 text-blue-600" />
+                        </Button>
+                        <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); handleSetLocation(vendor) }} title="Set HQ Location">
+                          <MapPin className="h-4 w-4 text-green-600" />
+                        </Button>
+                        <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); handleDelete(vendor.id) }} title="Delete">
+                          <Trash2 className="h-4 w-4 text-red-600" />
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
 
@@ -304,7 +313,7 @@ export default function VendorManagementPage() {
             <DialogTitle>{editingId ? "Edit Vendor" : "New Vendor Registration"}</DialogTitle>
           </DialogHeader>
 
-          <Tabs defaultValue="general" className="w-full">
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
             <TabsList className="grid w-full grid-cols-4">
               <TabsTrigger value="general">Contact Info</TabsTrigger>
               <TabsTrigger value="business">Business</TabsTrigger>

@@ -15,6 +15,7 @@ import { ref, uploadBytes, getDownloadURL } from "firebase/storage"
 import { collection, query, where, getDocs } from "firebase/firestore"
 import { menuItemsService, servicesService, subServicesService, mealPlanStructureAssignmentsService } from "@/lib/services"
 import Link from "next/link"
+import Image from "next/image"
 
 const COMPLAINT_CATEGORIES = [
   "Cleaning and Hygiene",
@@ -826,8 +827,7 @@ ${description}
             <div className="grid grid-cols-3 sm:grid-cols-4 gap-4 mb-4">
               {photos.map((photo, idx) => (
                 <div key={idx} className="relative group aspect-square rounded-2xl border-2 border-slate-100 shadow-sm bg-slate-50 overflow-hidden transform transition-all duration-300 hover:scale-105 hover:shadow-md hover:border-blue-200">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={URL.createObjectURL(photo)} alt="Preview" className="w-full h-full object-cover" />
+                  <Image src={URL.createObjectURL(photo)} alt="Preview" fill className="w-full h-full object-cover" />
                   <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
                   <button 
                     type="button"

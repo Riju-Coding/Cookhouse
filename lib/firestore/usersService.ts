@@ -23,6 +23,9 @@ export interface User {
   roleId: string;
   roleKey: string;
   vendorId: string;
+  canApproveRequests?: boolean; // NEW
+  canRequestChanges?: boolean; // NEW
+  allowHoAttendance?: boolean; // NEW
   companyIds: string[];
   buildingIds: string[];  // NEW
   cafeteriaIds: string[]; // NEW

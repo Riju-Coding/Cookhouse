@@ -38,6 +38,8 @@ import { ShiftsAndBreaksTab } from "@/components/attendance/shifts-breaks-tab"
 import { PoliciesTab } from "@/components/attendance/policies-tab"
 import { LiveMonitorTab } from "@/components/attendance/live-monitor-tab"
 
+import * as XLSX from "xlsx"
+
 // ── Dynamic imports for Google Maps (avoid SSR) ──────────────────────────────
 const GoogleMapPicker = dynamic(() => import("@/components/google-map-picker"), {
   ssr: false,
@@ -465,6 +467,7 @@ export default function AttendanceAdminPage() {
   // Location modal
   const [locationModalOpen, setLocationModalOpen] = useState(false)
   const [editCafeteria, setEditCafeteria] = useState<Cafeteria | null>(null)
+  const [locationFilter, setLocationFilter] = useState("all")
 
   const fetchAll = useCallback(async () => {
     setLoading(true)
@@ -610,7 +613,30 @@ export default function AttendanceAdminPage() {
     const a = document.createElement("a")
     a.href = url
     a.download = `attendance_${new Date().toISOString().split("T")[0]}.csv`
+    document.body.appendChild(a)
     a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
+  // Export Locations XLSX
+  const exportLocationsXlsx = () => {
+    const data = enrichedCafeterias.map(cafe => ({
+      Company: cafe.companyName || "N/A",
+      Building: cafe.buildingName || "N/A",
+      Cafeteria: cafe.name,
+      Status: cafe.latitude != null && cafe.longitude != null ? "Set" : "Not Set",
+      Latitude: cafe.latitude || "",
+      Longitude: cafe.longitude || "",
+      Radius: cafe.radius || "",
+      Address: cafe.address || ""
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Locations");
+    XLSX.writeFile(wb, "Cafeteria_Locations.xlsx");
+    toast({ title: "Export Successful", description: "Locations exported to XLSX" })
   }
 
   return (
@@ -989,19 +1015,33 @@ export default function AttendanceAdminPage() {
         <div className="space-y-4">
           <div className="flex justify-between items-center">
             <p className="text-sm text-gray-500">
-              {geoEnabledCount} of {cafeterias.length} cafeterias have locations
-              set
+              {geoEnabledCount} of {cafeterias.length} cafeterias have locations set
             </p>
-            <Button
-              size="sm"
-              className="bg-green-600 hover:bg-green-700"
-              onClick={() => {
-                setEditCafeteria(null)
-                setLocationModalOpen(true)
-              }}
-            >
-              <MapPin className="h-4 w-4 mr-1" /> Set Location
-            </Button>
+            <div className="flex items-center gap-4">
+              <Button size="sm" variant="outline" onClick={exportLocationsXlsx}>
+                <Download className="h-4 w-4 mr-1" /> Export XLSX
+              </Button>
+              <Select value={locationFilter} onValueChange={setLocationFilter}>
+                <SelectTrigger className="w-[150px]">
+                  <SelectValue placeholder="Filter..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Locations</SelectItem>
+                  <SelectItem value="set">Location Set</SelectItem>
+                  <SelectItem value="not_set">Location Not Set</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button
+                size="sm"
+                className="bg-green-600 hover:bg-green-700"
+                onClick={() => {
+                  setEditCafeteria(null)
+                  setLocationModalOpen(true)
+                }}
+              >
+                <MapPin className="h-4 w-4 mr-1" /> Set Location
+              </Button>
+            </div>
           </div>
 
           {/* Map Overview */}
@@ -1014,113 +1054,77 @@ export default function AttendanceAdminPage() {
             }}
           />
 
-          {/* Cafeteria Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-            {enrichedCafeterias.map((cafe) => {
-              const hasGeo =
-                cafe.latitude != null && cafe.longitude != null
-              return (
-                <Card
-                  key={cafe.id}
-                  className={`shadow-sm border-l-4 ${
-                    hasGeo
-                      ? "border-l-green-500"
-                      : "border-l-amber-400 opacity-80"
-                  }`}
-                >
-                  <CardHeader className="pb-2">
-                    <div className="flex items-start justify-between">
-                      <div className="flex items-center gap-2">
-                        <div
-                          className={`h-8 w-8 rounded-lg ${
-                            hasGeo ? "bg-green-50" : "bg-amber-50"
-                          } flex items-center justify-center`}
-                        >
-                          <UtensilsCrossed
-                            className={`h-4 w-4 ${
-                              hasGeo ? "text-green-600" : "text-amber-500"
-                            }`}
-                          />
-                        </div>
-                        <div>
-                          <CardTitle className="text-sm">
-                            {cafe.name}
-                          </CardTitle>
-                          <CardDescription className="text-[10px]">
-                            {cafe.companyName} · {cafe.buildingName}
-                          </CardDescription>
-                        </div>
-                      </div>
-                      <Badge
-                        variant={hasGeo ? "default" : "outline"}
-                        className={`text-[10px] ${
-                          hasGeo
-                            ? ""
-                            : "border-amber-300 text-amber-600"
-                        }`}
-                      >
-                        {hasGeo ? "📍 Located" : "⚠️ No Location"}
-                      </Badge>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="pb-3 space-y-2">
-                    {hasGeo ? (
-                      <div className="text-xs text-gray-500 space-y-1">
-                        <p>
-                          📍 {cafe.latitude!.toFixed(5)},{" "}
-                          {cafe.longitude!.toFixed(5)}
-                        </p>
-                        <p>
-                          ⭕ Radius:{" "}
-                          {fmtDist(cafe.radius ?? 100)}
-                        </p>
-                        {cafe.shiftStart && (
-                          <p>
-                            ⏰ Shift: {cafe.shiftStart} –{" "}
-                            {cafe.shiftEnd}
-                          </p>
-                        )}
-                        {cafe.address && (
-                          <p className="text-gray-400 truncate">
-                            🏢 {cafe.address}
-                          </p>
-                        )}
-                      </div>
-                    ) : (
-                      <p className="text-xs text-amber-600">
-                        No geo-fence set. Click &quot;Set Location&quot; to
-                        enable attendance tracking.
-                      </p>
-                    )}
-                    <div className="flex items-center gap-1 pt-1 border-t">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 text-xs text-blue-600"
-                        onClick={() => {
-                          setEditCafeteria(cafe)
-                          setLocationModalOpen(true)
-                        }}
-                      >
-                        <Edit2 className="h-3 w-3 mr-1" />
-                        {hasGeo ? "Edit Location" : "Set Location"}
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              )
-            })}
-            {cafeterias.length === 0 && !loading && (
-              <div className="col-span-3 text-center py-12 border-2 border-dashed rounded-lg">
-                <UtensilsCrossed className="h-12 w-12 text-gray-300 mx-auto mb-3" />
-                <p className="text-gray-500 font-medium">
-                  No cafeterias found
-                </p>
-                <p className="text-gray-400 text-sm">
-                  Add cafeterias in Structure Management first
-                </p>
-              </div>
-            )}
+          {/* Cafeteria Table */}
+          <div className="rounded-md border bg-white shadow-sm overflow-hidden">
+            <Table>
+              <TableHeader className="bg-gray-50">
+                <TableRow>
+                  <TableHead>Cafeteria</TableHead>
+                  <TableHead>Location Details</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {enrichedCafeterias
+                  .filter((cafe) => {
+                    const hasGeo = cafe.latitude != null && cafe.longitude != null;
+                    if (locationFilter === "set") return hasGeo;
+                    if (locationFilter === "not_set") return !hasGeo;
+                    return true;
+                  })
+                  .map((cafe) => {
+                    const hasGeo = cafe.latitude != null && cafe.longitude != null;
+                    return (
+                      <TableRow key={cafe.id}>
+                        <TableCell>
+                          <div className="font-semibold text-blue-600">{cafe.name}</div>
+                          <div className="text-xs text-gray-500">{cafe.companyName} · {cafe.buildingName}</div>
+                        </TableCell>
+                        <TableCell>
+                          {hasGeo ? (
+                            <div className="text-xs text-gray-500">
+                              <p>📍 {cafe.latitude!.toFixed(5)}, {cafe.longitude!.toFixed(5)}</p>
+                              <p>⭕ Radius: {fmtDist(cafe.radius ?? 100)}</p>
+                              {cafe.address && <p className="text-gray-400 truncate w-48" title={cafe.address}>🏢 {cafe.address}</p>}
+                            </div>
+                          ) : (
+                            <span className="text-xs text-amber-600">No geo-fence set</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <Badge
+                            variant={hasGeo ? "default" : "secondary"}
+                            className={hasGeo ? "bg-green-100 text-green-800 hover:bg-green-200" : "bg-amber-100 text-amber-800 hover:bg-amber-200"}
+                          >
+                            {hasGeo ? "📍 Located" : "⚠️ Not Set"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 text-blue-600"
+                            onClick={() => {
+                              setEditCafeteria(cafe)
+                              setLocationModalOpen(true)
+                            }}
+                          >
+                            {hasGeo ? <Edit2 className="h-4 w-4" /> : <MapPin className="h-4 w-4" />}
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                {enrichedCafeterias.length === 0 && !loading && (
+                  <TableRow>
+                    <TableCell colSpan={4} className="text-center py-8 text-gray-500">
+                      No cafeterias found matching the filter
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
           </div>
         </div>
       )}

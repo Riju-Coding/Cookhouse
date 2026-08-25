@@ -58,6 +58,7 @@ import { collection, addDoc, updateDoc, doc, onSnapshot, query, where } from "fi
 import { db } from "@/lib/firebase"
 import { Input } from "@/components/ui/input"
 import { useAuth } from "@/hooks/use-auth"
+import { approvalRequestsService } from "@/lib/firestore/approvalRequestsService"
 
 // --- Types ---
 
@@ -116,7 +117,7 @@ interface BaseService {
 // --- Main Component ---
 
 export default function MealPlanStructurePage() {
-  const { userProfile, userType, isSuperAdmin } = useAuth()
+  const { userProfile, userType, isSuperAdmin, hasPermission } = useAuth()
   const [companies, setCompanies] = useState<Company[]>([])
   const [buildings, setBuildings] = useState<Building[]>([])
   const [services, setServices] = useState<Service[]>([])
@@ -141,6 +142,7 @@ export default function MealPlanStructurePage() {
   const [copyLoading, setCopyLoading] = useState(false)
 
   const [loading, setLoading] = useState(false)
+  const [hasPendingApproval, setHasPendingApproval] = useState(false)
   const [isDataLoading, setIsDataLoading] = useState(true)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isExporting, setIsExporting] = useState(false)
@@ -167,6 +169,15 @@ export default function MealPlanStructurePage() {
 
   const [copyMpTarget, setCopyMpTarget] = useState<{sourceDay: string, serviceId: string, subServiceId: string, mealPlanId: string} | null>(null)
   const [copyMpSelectedDays, setCopyMpSelectedDays] = useState<string[]>([])
+
+  useEffect(() => {
+    if (currentAssignmentId) {
+      approvalRequestsService.hasPendingChanges(currentAssignmentId, 'MEAL_PLAN_STRUCTURE').then(setHasPendingApproval)
+    } else {
+      setHasPendingApproval(false)
+    }
+  }, [currentAssignmentId])
+
 
   // Compute global sub meal plan frequencies to maintain consistency across the week
   const globalFrequencies = useMemo(() => {
@@ -894,20 +905,38 @@ export default function MealPlanStructurePage() {
         status: "active",
       }
 
-      if (currentAssignmentId) {
-        await updateDoc(doc(db, "mealPlanStructureAssignments", currentAssignmentId), {
-          ...structureData,
-          updatedAt: new Date(),
-        })
+      if (userType === 'company_user' || hasPermission('CAN_REQUEST_CHANGES')) {
+        const payload = {
+          targetType: "MEAL_PLAN_STRUCTURE" as const,
+          targetId: currentAssignmentId || `new_${selectedCompany}_${selectedBuilding}`,
+          companyId: selectedCompany,
+          buildingId: selectedBuilding,
+          requestedByUserId: userProfile?.id || '',
+          requestedByUserName: userProfile?.name || 'Company User',
+          mealPlanStructurePayload: {
+            originalAssignmentId: currentAssignmentId,
+            proposedWeekStructure: weeklyStructure
+          }
+        };
+        await approvalRequestsService.add(payload);
+        setHasPendingApproval(true);
+        toast({ title: "Request Submitted", description: "Changes sent to vendor for approval." });
       } else {
-        await addDoc(collection(db, "mealPlanStructureAssignments"), {
-          ...structureData,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        })
-      }
+        if (currentAssignmentId) {
+          await updateDoc(doc(db, "mealPlanStructureAssignments", currentAssignmentId), {
+            ...structureData,
+            updatedAt: new Date(),
+          })
+        } else {
+          await addDoc(collection(db, "mealPlanStructureAssignments"), {
+            ...structureData,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          })
+        }
 
-      toast({ title: "Success", description: "Structure saved successfully" })
+        toast({ title: "Success", description: "Structure saved successfully" })
+      }
       setIsModalOpen(false)
       setClipboard(null)
     } catch (error) {
@@ -2197,7 +2226,7 @@ export default function MealPlanStructurePage() {
               <Button variant="outline" onClick={() => setIsModalOpen(false)}>
                 Cancel
               </Button>
-              {isSuperAdmin && <Button onClick={handleSaveStructure} disabled={loading} className="min-w-[120px]">
+              {(isSuperAdmin || userType === 'company_user' || hasPermission('CAN_REQUEST_CHANGES') || hasPermission('CAN_DIRECT_EDIT')) && <Button onClick={handleSaveStructure} disabled={loading || hasPendingApproval} className="min-w-[120px]">
                 {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
                 Save Changes
               </Button>}

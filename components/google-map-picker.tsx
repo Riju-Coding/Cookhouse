@@ -106,8 +106,8 @@ function MapSearchBox({
         setSearchQuery(addr);
       } else {
         // They typed something and pressed enter without selecting from dropdown
-        // Let's see if it's a URL
-        handleInputAsUrl(searchQuery);
+        // Let's see if it's a URL or coordinates
+        handleSpecialInput(searchQuery);
       }
     });
 
@@ -118,8 +118,34 @@ function MapSearchBox({
     };
   }, [autocomplete, onPlaceSelect, searchQuery]);
 
-  const handleInputAsUrl = async (val: string) => {
+  const handleSpecialInput = async (val: string) => {
     const text = val.trim();
+    
+    // 1. Check for raw Lat, Lng coordinates
+    const latLngMatch = text.match(/^\s*(-?\d+(\.\d+)?)\s*,\s*(-?\d+(\.\d+)?)\s*$/);
+    if (latLngMatch) {
+      const lat = parseFloat(latLngMatch[1]);
+      const lng = parseFloat(latLngMatch[3]);
+      
+      let finalAddr = `Coordinates: ${lat}, ${lng}`;
+      if (geocodingLib) {
+        const geocoder = new geocodingLib.Geocoder();
+        try {
+          const geoRes = await geocoder.geocode({ location: { lat, lng } });
+          if (geoRes.results.length > 0) {
+            finalAddr = geoRes.results[0].formatted_address;
+          }
+        } catch (e) {
+           console.error("Reverse geocoding failed", e);
+        }
+      }
+      onPlaceSelect(lat, lng, finalAddr);
+      setSearchQuery(finalAddr);
+      toast({ title: "Coordinates Placed", description: "Direct coordinates matched!" });
+      return;
+    }
+
+    // 2. Check for URL
     if (!text.startsWith("http://") && !text.startsWith("https://")) return;
     
     setResolvingLink(true);
@@ -130,7 +156,6 @@ function MapSearchBox({
       const data = await res.json();
       
       if (data.success && data.lat && data.lng) {
-        // Successfully extracted coordinates! Now we reverse geocode it to get the address
         let finalAddr = text;
         if (geocodingLib) {
           const geocoder = new geocodingLib.Geocoder();
@@ -160,10 +185,10 @@ function MapSearchBox({
   // Intercept pastes
   const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
     const pastedText = e.clipboardData.getData("text");
-    if (pastedText.startsWith("http://") || pastedText.startsWith("https://")) {
+    if (pastedText.startsWith("http://") || pastedText.startsWith("https://") || /^\s*-?\d+(\.\d+)?\s*,\s*-?\d+(\.\d+)?\s*$/.test(pastedText)) {
       e.preventDefault();
       setSearchQuery(pastedText);
-      handleInputAsUrl(pastedText);
+      handleSpecialInput(pastedText);
     }
   }
 
@@ -183,7 +208,7 @@ function MapSearchBox({
           onChange={(e) => setSearchQuery(e.target.value)}
           onPaste={handlePaste}
           onKeyDown={(e) => {
-            if (e.key === 'Enter') handleInputAsUrl(searchQuery);
+            if (e.key === 'Enter') handleSpecialInput(searchQuery);
           }}
         />
         {/* Force high z-index for Google Maps Places Autocomplete dropdown */}
@@ -237,6 +262,21 @@ export default function GoogleMapPicker({
   const [gettingLocation, setGettingLocation] = useState(false)
   const [address, setAddress] = useState(initialAddress)
 
+  const [latInput, setLatInput] = useState(initialLat ? String(initialLat) : "")
+  const [lngInput, setLngInput] = useState(initialLng ? String(initialLng) : "")
+
+  const [cameraProps, setCameraProps] = useState({
+    center: initialLat && initialLng ? { lat: initialLat, lng: initialLng } : DEFAULT_CENTER,
+    zoom: initialLat && initialLng ? 16 : DEFAULT_ZOOM
+  })
+
+  const updateMarkerAndInputs = (lat: number, lng: number) => {
+    setMarkerPos({ lat, lng })
+    setLatInput(lat.toFixed(6))
+    setLngInput(lng.toFixed(6))
+    setCameraProps(prev => ({ ...prev, center: { lat, lng }, zoom: Math.max(prev.zoom, 15) }))
+  }
+
   // Reverse-geocode on marker position change
   const reverseGeocode = useCallback(
     async (lat: number, lng: number) => {
@@ -265,7 +305,7 @@ export default function GoogleMapPicker({
       const lat = e.detail?.latLng?.lat
       const lng = e.detail?.latLng?.lng
       if (lat != null && lng != null) {
-        setMarkerPos({ lat, lng })
+        updateMarkerAndInputs(lat, lng)
         reverseGeocode(lat, lng)
       }
     },
@@ -287,7 +327,7 @@ export default function GoogleMapPicker({
       (position) => {
         const lat = position.coords.latitude
         const lng = position.coords.longitude
-        setMarkerPos({ lat, lng })
+        updateMarkerAndInputs(lat, lng)
         reverseGeocode(lat, lng)
         setGettingLocation(false)
       },
@@ -306,7 +346,7 @@ export default function GoogleMapPicker({
   // Handle search result
   const handlePlaceSelect = useCallback(
     (lat: number, lng: number, addr: string) => {
-      setMarkerPos({ lat, lng })
+      updateMarkerAndInputs(lat, lng)
       setAddress(addr)
       onLocationChange({ lat, lng, address: addr })
     },
@@ -314,9 +354,6 @@ export default function GoogleMapPicker({
   )
 
   const RADIUS_PRESETS = [50, 100, 150, 200, 300, 500, 1000]
-
-  const mapCenter = markerPos ?? DEFAULT_CENTER
-  const mapZoom = markerPos ? 16 : DEFAULT_ZOOM
 
   return (
     <>
@@ -349,10 +386,8 @@ export default function GoogleMapPicker({
           style={{ height }}
         >
           <Map
-            defaultCenter={mapCenter}
-            defaultZoom={mapZoom}
-            center={mapCenter}
-            zoom={mapZoom}
+            {...cameraProps}
+            onCameraChanged={(ev) => setCameraProps(ev.detail)}
             mapId={MAP_ID}
             onClick={handleMapClick}
             gestureHandling="greedy"
@@ -372,7 +407,7 @@ export default function GoogleMapPicker({
                     const lat = e.latLng?.lat()
                     const lng = e.latLng?.lng()
                     if (lat != null && lng != null) {
-                      setMarkerPos({ lat, lng })
+                      updateMarkerAndInputs(lat, lng)
                       reverseGeocode(lat, lng)
                     }
                   }}
@@ -402,16 +437,34 @@ export default function GoogleMapPicker({
           <div className="space-y-1">
             <Label className="text-xs text-gray-500">Latitude</Label>
             <Input
-              value={markerPos.lat.toFixed(6)}
-              readOnly
+              value={latInput}
+              onChange={(e) => {
+                const val = e.target.value;
+                setLatInput(val);
+                const parsed = parseFloat(val);
+                if (!isNaN(parsed) && parsed >= -90 && parsed <= 90) {
+                   setMarkerPos({ lat: parsed, lng: markerPos.lng });
+                   setCameraProps(prev => ({ ...prev, center: { lat: parsed, lng: markerPos.lng } }));
+                   reverseGeocode(parsed, markerPos.lng);
+                }
+              }}
               className="bg-gray-50 text-sm font-mono"
             />
           </div>
           <div className="space-y-1">
             <Label className="text-xs text-gray-500">Longitude</Label>
             <Input
-              value={markerPos.lng.toFixed(6)}
-              readOnly
+              value={lngInput}
+              onChange={(e) => {
+                const val = e.target.value;
+                setLngInput(val);
+                const parsed = parseFloat(val);
+                if (!isNaN(parsed) && parsed >= -180 && parsed <= 180) {
+                   setMarkerPos({ lat: markerPos.lat, lng: parsed });
+                   setCameraProps(prev => ({ ...prev, center: { lat: markerPos.lat, lng: parsed } }));
+                   reverseGeocode(markerPos.lat, parsed);
+                }
+              }}
               className="bg-gray-50 text-sm font-mono"
             />
           </div>

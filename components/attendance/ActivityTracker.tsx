@@ -6,6 +6,7 @@ import { usePermissionTracker } from "@/hooks/usePermissionTracker";
 import { useState, useRef, useCallback, useEffect } from "react";
 import { Camera, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import Image from "next/image"
 
 export function ActivityTracker() {
   const { loginSessionId } = useAuth();
@@ -129,7 +130,7 @@ function SelfieModal({ onSubmit }: { onSubmit: (base64: string) => Promise<void>
               <canvas ref={canvasRef} className="hidden" />
             </>
           ) : (
-            <img src={capturedImage} alt="Captured selfie" className="w-full h-full object-cover" />
+            <Image src={capturedImage} alt="Captured selfie" fill className="w-full h-full object-cover" />
           )}
         </div>
 

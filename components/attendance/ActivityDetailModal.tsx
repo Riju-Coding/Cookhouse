@@ -5,6 +5,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { MonitorPlay, MousePointer2, Keyboard, LayoutGrid, Clock, CalendarDays, Maximize2 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
+import Image from "next/image"
 
 interface ActivityDetailModalProps {
   isOpen: boolean
@@ -94,12 +95,7 @@ export function ActivityDetailModal({ isOpen, onClose, session }: ActivityDetail
                         </span>
                       </div>
                       <div className="relative aspect-video bg-gray-100 rounded overflow-hidden">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img 
-                          src={shot.image} 
-                          alt="Screenshot" 
-                          className="object-cover w-full h-full"
-                        />
+                        <Image src={shot.image} alt="Screenshot" fill className="object-cover w-full h-full" />
                       </div>
                     </div>
                   ))}

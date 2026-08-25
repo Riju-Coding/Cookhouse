@@ -10,6 +10,7 @@ import { complianceRecordsService, type ComplianceRecord, type ComplianceRecordS
 import { Loader2, CheckCircle2, AlertTriangle, XCircle, FileText, MapPin, Truck, Thermometer, User } from "lucide-react"
 import { toast } from "@/hooks/use-toast"
 import { auth } from "@/lib/firebase"
+import Image from "next/image"
 
 interface ComplianceRecordModalProps {
   isOpen: boolean
@@ -193,7 +194,7 @@ export function ComplianceRecordModal({ isOpen, onClose, recordId, onStatusChang
                         <p className="font-medium capitalize">{String(ans.answer || ans.value || '—')}</p>
                         {ans.photoUrl && (
                           <div className="mt-2">
-                            <img src={ans.photoUrl} alt="Answer attachment" className="h-24 w-24 object-cover rounded-md border" />
+                            <Image src={ans.photoUrl} alt="Answer attachment" width={96} height={96} className="object-cover rounded-md border" />
                           </div>
                         )}
                       </div>

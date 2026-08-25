@@ -22,6 +22,7 @@ import {
   Settings,
   FileText,
   Building,
+  FileSignature,
   ChevronDown,
   ChevronRight,
   Calendar,
@@ -35,6 +36,8 @@ import {
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
+import { collection, query, where, onSnapshot } from "firebase/firestore"
+import { db } from "@/lib/firebase"
 import { ActivityTracker } from "@/components/attendance/ActivityTracker"
 import { SessionTimeTracker } from "@/components/attendance/SessionTimeTracker"
 
@@ -62,7 +65,8 @@ const navigation = [
   { name: "Services", href: "/admin/services", icon: Settings, category: "services" },
   { name: "Sub Services", href: "/admin/sub-services", icon: Grid3X3, category: "services" },
   { name: "Companies", href: "/admin/companies", icon: Building2, category: "organization" },
-  { name: "Buildings", href: "/admin/buildings", icon: Building, category: "organization" },
+  { name: "Buildings", href: "/admin/buildings", icon: Building,
+  FileSignature, category: "organization" },
   { name: "Compliances", href: "/admin/compliances", icon: FileText, category: "organization" },
   { name: "KAM Notebook", href: "/admin/kam-notebook", icon: FileText, category: "organization" },
   { name: "Tickets & Rewards", href: "/admin/ticketing", icon: Ticket, category: "organization" },
@@ -71,7 +75,8 @@ const navigation = [
   { name: "Combined Menu Creation", href: "/admin/combined-menu", icon: Building2, category: "menu-management" },
   { name: "Combined Menu Management", href: "/admin/combined-menu-management", icon: Building2, category: "menu-management" },
   { name: "Menu Tracker", href: "/admin/updations", icon: Building2, category: "menu-management" },
-  { name: "Company Wise Menu", href: "/admin/company-menus", icon: Building, category: "menu-management" },
+  { name: "Company Wise Menu", href: "/admin/company-menus", icon: Building,
+  FileSignature, category: "menu-management" },
   { name: "Presentation", href: "/admin/presentation", icon: MonitorUp, category: "menu-management" },
   { name: "Corporate Deck (PDF)", href: "/admin/corporate-deck", icon: FileText, category: "menu-management" },
   { name: "Menu Planning Rules", href: "/admin/menu-planning-rules", icon: Settings, category: "menu-management" },
@@ -81,6 +86,7 @@ const navigation = [
   { name: "Structure Management", href: "/admin/structure-management", icon: Settings, category: "organization" },
   { name: "Meal Plan Structure", href: "/admin/meal-plan-structure", icon: FileText, category: "organization" },
   { name: "Vendors Management", href: "/admin/vendors", icon: FileText, category: "vendors" },
+  { name: "Approvals Inbox", href: "/admin/approvals", icon: FileSignature, category: "vendors" },
   { name: "Attendance Management", href: "/admin/attendance", icon: MapPin, category: "attendance" },
   { name: "Admin Activity", href: "/admin/attendance-dashboard", icon: Activity, category: "attendance" },
   { name: "Task Manager", href: "/admin/task-manager", icon: Code, category: "tasks" },
@@ -113,6 +119,35 @@ export function AdminLayout({ children }: AdminLayoutProps) {
   const sidebarScrollRef = useRef<HTMLElement>(null)
   const sidebarScrollPositionRef = useRef(0)
   const { user, loading, userProfile, isSuperAdmin, hasRouteAccess, allowedRoutes, signOut } = useAuth()
+
+  const [pendingApprovalsCount, setPendingApprovalsCount] = useState(0)
+
+  useEffect(() => {
+    if (!userProfile) return
+    let unsubscribe = () => {}
+
+    if (userProfile.userType === 'vendor_staff' && userProfile.vendorId) {
+      const q = query(
+        collection(db, 'approval_requests'),
+        where('vendorId', '==', userProfile.vendorId),
+        where('status', '==', 'PENDING')
+      )
+      unsubscribe = onSnapshot(q, (snapshot) => {
+        setPendingApprovalsCount(snapshot.size)
+      })
+    } else if (isSuperAdmin) {
+      const q = query(
+        collection(db, 'approval_requests'),
+        where('status', '==', 'PENDING')
+      )
+      unsubscribe = onSnapshot(q, (snapshot) => {
+        setPendingApprovalsCount(snapshot.size)
+      })
+    }
+    
+    return () => unsubscribe()
+  }, [userProfile, isSuperAdmin])
+
   const pathname = usePathname()
 
   useEffect(() => {

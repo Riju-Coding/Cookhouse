@@ -10,6 +10,7 @@ import { complianceTemplatesService, type ComplianceTemplate } from "@/lib/fires
 import { toast } from "@/hooks/use-toast"
 import dynamic from "next/dynamic"
 import { ComplianceBuilder } from "@/components/compliances/ComplianceBuilder"
+import { useAuth } from "@/hooks/use-auth"
 
 // Icons
 import { UserPlus, Users, Pencil, Trash2, Search, Filter, Mail, Phone, MapPin, Building, Lock, CheckCircle, Clock, Plus, Ban, FileText, Store, FileCheck } from "lucide-react"
@@ -27,6 +28,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { OrganizationHierarchyView } from "@/components/users/OrganizationHierarchyView"
 import { KAMHierarchyView } from "@/components/users/KAMHierarchyView"
+import { HierarchicalUsersView } from "@/components/users/HierarchicalUsersView"
 
 // ── Dynamic imports for Google Maps (avoid SSR) ──────────────────────────────
 const GoogleMapPicker = dynamic(() => import("@/components/google-map-picker"), {
@@ -43,6 +45,9 @@ const initialUserState: Omit<User, "id" | "createdAt" | "updatedAt"> = {
   roleKey: "",
   vendorId: "",
   companyIds: [],
+  canApproveRequests: false,
+  canRequestChanges: false,
+  allowHoAttendance: false,
   buildingIds: [],
   cafeteriaIds: [],
   assignedShifts: [],
@@ -51,6 +56,7 @@ const initialUserState: Omit<User, "id" | "createdAt" | "updatedAt"> = {
 }
 
 export default function UserManagementPage() {
+  const { userProfile, isSuperAdmin, hasPermission } = useAuth()
   const [data, setData] = useState<User[]>([])
   
   const [roles, setRoles] = useState<any[]>([])
@@ -76,8 +82,10 @@ export default function UserManagementPage() {
   const [complianceModalCompanyId, setComplianceModalCompanyId] = useState<string>("")
 
   useEffect(() => {
-    fetchInitialData()
-  }, [])
+    if (userProfile) {
+      fetchInitialData()
+    }
+  }, [userProfile?.id, isSuperAdmin])
 
   const fetchInitialData = async () => {
     try {
@@ -93,10 +101,34 @@ export default function UserManagementPage() {
         complianceTemplatesService.getAll()
       ])
 
-      setData(usersRes)
+      let allUsers = usersRes;
+      let allCompanies = companiesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+      let allVendors = vendorsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+      if (!isSuperAdmin && userProfile) {
+        if (userProfile.userType === 'company_user') {
+          const myCompanyIds = userProfile.companyIds || [];
+          allUsers = allUsers.filter(u => 
+            (u.companyIds || []).some(cid => myCompanyIds.includes(cid)) || 
+            (u.userType === 'vendor_staff' && (u.companyIds || []).some(cid => myCompanyIds.includes(cid)))
+          );
+          allCompanies = allCompanies.filter(c => myCompanyIds.includes(c.id));
+        } else if (userProfile.userType === 'vendor_staff') {
+          const myVendorId = userProfile.vendorId;
+          const myCompanyIds = userProfile.companyIds || [];
+          allUsers = allUsers.filter(u => 
+            u.vendorId === myVendorId || 
+            (u.userType === 'company_user' && (u.companyIds || []).some(cid => myCompanyIds.includes(cid)))
+          );
+          allVendors = allVendors.filter(v => v.id === myVendorId);
+          allCompanies = allCompanies.filter(c => myCompanyIds.includes(c.id));
+        }
+      }
+
+      setData(allUsers)
       setRoles(rolesSnap.docs.map(d => ({ id: d.id, ...d.data() })))
-      setVendors(vendorsSnap.docs.map(d => ({ id: d.id, ...d.data() })))
-      setCompanies(companiesSnap.docs.map(d => ({ id: d.id, ...d.data() })))
+      setVendors(allVendors)
+      setCompanies(allCompanies)
       setBuildings(buildingsSnap.docs.map(d => ({ id: d.id, ...d.data() })))
       setCafeterias(cafeteriasSnap.docs.map(d => ({ id: d.id, ...d.data() })))
       setGlobalShifts(globalShiftsRes)
@@ -113,10 +145,31 @@ export default function UserManagementPage() {
     return data.filter(u => u.id !== editingId);
   }, [data, editingId]);
 
+  const [searchQuery, setSearchQuery] = useState("")
+  const [selectedCompanyId, setSelectedCompanyId] = useState("all")
+
   const filteredData = useMemo(() => {
-    if (filterTab === "all") return data;
-    return data.filter(u => u.userType === filterTab);
-  }, [data, filterTab]);
+    let result = data;
+    
+    if (filterTab !== "all") {
+      result = result.filter(u => u.userType === filterTab);
+    }
+    
+    if (selectedCompanyId !== "all") {
+      result = result.filter(u => u.companyIds?.includes(selectedCompanyId));
+    }
+    
+    if (searchQuery.trim() !== "") {
+      const q = searchQuery.toLowerCase();
+      result = result.filter(u => 
+        u.name.toLowerCase().includes(q) || 
+        u.email.toLowerCase().includes(q) ||
+        (u.phone && u.phone.includes(q))
+      );
+    }
+    
+    return result;
+  }, [data, filterTab, searchQuery, selectedCompanyId]);
 
   const handleRoleChange = (roleId: string) => {
     const selectedRole = roles.find(r => r.id === roleId);
@@ -174,6 +227,25 @@ export default function UserManagementPage() {
         assignedShifts: (prev.assignedShifts || []).filter(s => s.cafeteriaId !== cafeteriaId)
       }
     })
+  }
+
+  const handleSelectAllAssignments = () => {
+    setFormData(prev => ({
+      ...prev,
+      companyIds: companies.map(c => c.id),
+      buildingIds: buildings.map(b => b.id),
+      cafeteriaIds: cafeterias.map(c => c.id)
+    }));
+  }
+
+  const handleDeselectAllAssignments = () => {
+    setFormData(prev => ({
+      ...prev,
+      companyIds: [],
+      buildingIds: [],
+      cafeteriaIds: [],
+      assignedShifts: prev.assignedShifts?.filter(s => s.cafeteriaId === 'global') || []
+    }));
   }
 
   const handleQuickCreateCafe = async (companyId: string, buildingId: string) => {
@@ -389,6 +461,9 @@ export default function UserManagementPage() {
       assignedShifts: user.assignedShifts || [],
       managerId: user.managerId || "none",
       status: user.status || 'active',
+      canApproveRequests: !!user.canApproveRequests,
+      canRequestChanges: !!user.canRequestChanges,
+      allowHoAttendance: !!user.allowHoAttendance,
     })
     setIsModalOpen(true)
   }
@@ -468,32 +543,69 @@ export default function UserManagementPage() {
           </h1>
           <p className="text-gray-600">Manage system users, assign roles, and assign locations.</p>
         </div>
-        <Button onClick={handleOpenAdd}>
-          <Plus className="mr-2 h-4 w-4" /> Create User
-        </Button>
+        {(isSuperAdmin || hasPermission('CAN_EDIT_USERS') || userProfile?.userType === 'company_user' || userProfile?.userType === 'vendor_staff') && (
+          <Button onClick={handleOpenAdd}>
+            <Plus className="mr-2 h-4 w-4" /> Create User
+          </Button>
+        )}
       </div>
 
-      <Tabs defaultValue="list" className="w-full">
+      <Tabs defaultValue="hierarchy_view" className="w-full">
         <div className="mb-4">
           <TabsList>
-            <TabsTrigger value="list">Users List</TabsTrigger>
+            <TabsTrigger value="hierarchy_view">Hierarchical View</TabsTrigger>
+            <TabsTrigger value="list">Flat List</TabsTrigger>
             <TabsTrigger value="hierarchy">Organization Overview</TabsTrigger>
             <TabsTrigger value="kam_hierarchy">KAM Overview</TabsTrigger>
           </TabsList>
         </div>
 
+        <TabsContent value="hierarchy_view" className="mt-0">
+          <HierarchicalUsersView 
+            users={filteredData} 
+            companies={companies} 
+            vendors={vendors} 
+            buildings={buildings} 
+            cafeterias={cafeterias} 
+          />
+        </TabsContent>
+
         <TabsContent value="list" className="mt-0">
           <div className="rounded-md border bg-white shadow-sm overflow-hidden flex flex-col h-full">
-            <div className="border-b p-2">
+            <div className="border-b p-2 flex flex-wrap items-center justify-between gap-3">
               <Tabs defaultValue="all" onValueChange={(v) => setFilterTab(v)}>
                 <TabsList>
                   <TabsTrigger value="all">All Users</TabsTrigger>
-                  <TabsTrigger value="employee">Employees</TabsTrigger>
+                  {isSuperAdmin && <TabsTrigger value="employee">Employees</TabsTrigger>}
                   <TabsTrigger value="company_user">Company Users</TabsTrigger>
                   <TabsTrigger value="vendor_staff">Vendor Staff</TabsTrigger>
-                  <TabsTrigger value="super_admin">Super Admins</TabsTrigger>
+                  {isSuperAdmin && <TabsTrigger value="super_admin">Super Admins</TabsTrigger>}
                 </TabsList>
               </Tabs>
+              <div className="flex items-center gap-2 flex-1 max-w-md">
+                <div className="relative flex-1">
+                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-500" />
+                  <Input 
+                    placeholder="Search by name, email, or phone..." 
+                    className="pl-9 bg-gray-50/50"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                  />
+                </div>
+                <div className="w-[200px]">
+                  <Select value={selectedCompanyId} onValueChange={setSelectedCompanyId}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="All Companies" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Companies</SelectItem>
+                      {companies.map(c => (
+                        <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
             </div>
             <Table>
           <TableHeader className="bg-gray-50">
@@ -592,7 +704,10 @@ export default function UserManagementPage() {
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 py-4 overflow-y-auto pr-2">
             
-            {/* --- BASIC INFO --- */}
+            {/* --- SECTION 1: BASIC IDENTITY --- */}
+            <div className="col-span-1 md:col-span-2 border-b pb-2">
+              <h3 className="text-lg font-semibold text-gray-800">1. Basic Identity</h3>
+            </div>
             <div className="space-y-2">
               <Label>Full Name *</Label>
               <Input value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} placeholder="Rahul Sharma" />
@@ -606,16 +721,31 @@ export default function UserManagementPage() {
               <Input value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} placeholder="9876543210" />
             </div>
             <div className="space-y-2">
+               <Label>User Status</Label>
+               <div className="flex items-center space-x-2 h-10 border rounded px-3 bg-gray-50">
+                 <Switch
+                   checked={formData.status === 'active'}
+                   onCheckedChange={(checked) => setFormData({...formData, status: checked ? 'active' : 'inactive'})}
+                 />
+                 <span className="text-sm font-medium">{formData.status === 'active' ? 'Active' : 'Inactive'}</span>
+               </div>
+            </div>
+
+            {/* --- SECTION 2: SYSTEM ROLE --- */}
+            <div className="col-span-1 md:col-span-2 border-b pb-2 mt-2">
+              <h3 className="text-lg font-semibold text-gray-800">2. System Role</h3>
+            </div>
+            <div className="space-y-2">
               <Label>User Type *</Label>
               <Select value={formData.userType || 'super_admin'} onValueChange={(val: any) => setFormData({...formData, userType: val})}>
                 <SelectTrigger>
                   <SelectValue placeholder="Select user type" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="super_admin">Super Admin</SelectItem>
+                  {isSuperAdmin && <SelectItem value="super_admin">Super Admin</SelectItem>}
                   <SelectItem value="vendor_staff">Vendor Staff</SelectItem>
                   <SelectItem value="company_user">Company User</SelectItem>
-                  <SelectItem value="employee">Employee</SelectItem>
+                  {isSuperAdmin && <SelectItem value="employee">Employee</SelectItem>}
                 </SelectContent>
               </Select>
             </div>
@@ -627,6 +757,11 @@ export default function UserManagementPage() {
                   {roles.map(r => <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>)}
                 </SelectContent>
               </Select>
+            </div>
+
+            {/* --- SECTION 3: ASSIGNMENTS --- */}
+            <div className="col-span-1 md:col-span-2 border-b pb-2 mt-2">
+              <h3 className="text-lg font-semibold text-gray-800">3. Assignments</h3>
             </div>
 
             {/* --- COMPANY ASSIGNMENT (For Company Admin / User) --- */}
@@ -682,8 +817,20 @@ export default function UserManagementPage() {
             {formData.userType !== 'employee' && formData.userType !== 'company_user' ? (
             <div className="col-span-2 space-y-3 mt-4 border rounded-lg p-4 bg-gray-50/50">
               <div>
-                <Label className="text-blue-700 font-semibold text-base">Location & Shift Assignments</Label>
-                <p className="text-xs text-gray-500">Select a company, building, and cafeteria to assign working shifts to this user.</p>
+                <div className="flex items-center justify-between mb-2">
+                  <div>
+                    <Label className="text-blue-700 font-semibold text-base">Location & Shift Assignments</Label>
+                    <p className="text-xs text-gray-500">Select a company, building, and cafeteria to assign working shifts to this user.</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button type="button" size="sm" variant="outline" onClick={handleSelectAllAssignments} className="h-7 text-xs">
+                      Select All
+                    </Button>
+                    <Button type="button" size="sm" variant="outline" onClick={handleDeselectAllAssignments} className="h-7 text-xs">
+                      Clear All
+                    </Button>
+                  </div>
+                </div>
               </div>
               
               <div className="space-y-3 border border-gray-200 bg-white rounded-md p-3 max-h-64 overflow-y-auto">
@@ -1075,6 +1222,40 @@ export default function UserManagementPage() {
             {formData.userType === 'vendor_staff' && (
               <div className="col-span-2 space-y-4 mt-4 border rounded-lg p-4 bg-orange-50/30 border-orange-100">
                 <div>
+                  
+                <div className="mb-4 p-4 bg-white border border-orange-200 rounded-md flex items-center justify-between">
+                  <div>
+                    <Label className="text-orange-900 font-medium">Can Approve Client Requests</Label>
+                    <p className="text-xs text-gray-500">Allow this vendor staff to approve or reject Meal Plan and Menu changes requested by Companies.</p>
+                  </div>
+                  <Switch 
+                    checked={!!formData.canApproveRequests}
+                    onCheckedChange={(checked) => setFormData({ ...formData, canApproveRequests: checked })}
+                  />
+                </div>
+
+                <div className="mb-6 p-4 bg-white border border-orange-200 rounded-md flex items-center justify-between">
+                  <div>
+                    <Label className="text-orange-900 font-medium">Can Request Menu Changes</Label>
+                    <p className="text-xs text-gray-500">Allow this vendor staff to propose changes to live Company menus and submit them as Approval Requests.</p>
+                  </div>
+                  <Switch 
+                    checked={!!formData.canRequestChanges}
+                    onCheckedChange={(checked) => setFormData({ ...formData, canRequestChanges: checked })}
+                  />
+                </div>
+
+                <div className="mb-6 p-4 bg-white border border-blue-200 rounded-md flex items-center justify-between">
+                  <div>
+                    <Label className="text-blue-900 font-medium">Allow HO Attendance</Label>
+                    <p className="text-xs text-gray-500">Allow this vendor staff to check in and out from the Vendor Head Office location.</p>
+                  </div>
+                  <Switch 
+                    checked={!!formData.allowHoAttendance}
+                    onCheckedChange={(checked) => setFormData({ ...formData, allowHoAttendance: checked })}
+                  />
+                </div>
+
                   <Label className="text-orange-700 font-semibold text-base block mb-1">Compliance Documents</Label>
                   <p className="text-xs text-gray-500 mb-4">Track Police Verification and Medical Certificates. Expiry warnings will show on the Company dashboard.</p>
                   
@@ -1194,16 +1375,7 @@ export default function UserManagementPage() {
               </div>
             )}
 
-            <div className="col-span-2 flex items-center justify-between rounded-lg border p-3 mt-2">
-              <div className="space-y-0.5">
-                  <Label>User Status</Label>
-                  <p className="text-xs text-gray-500">Inactive users cannot log into the system.</p>
-              </div>
-              <Switch
-                checked={formData.status === 'active'}
-                onCheckedChange={(checked) => setFormData({...formData, status: checked ? 'active' : 'inactive'})}
-              />
-            </div>
+
 
           </div>
           

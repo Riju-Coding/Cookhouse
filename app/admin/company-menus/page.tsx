@@ -67,14 +67,19 @@ export default function CompanyMenusPage() {
   const [groupToDelete, setGroupToDelete] = useState<MenuGroup | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
 
-  const { isSuperAdmin, entityId, entityType, assignedCompanyIds, filterByScope } = useEntityScope()
+  const { isSuperAdmin, entityId, entityType, assignedCompanyIds, filterByScope, loading: scopeLoading } = useEntityScope()
   const [menuItems, setMenuItems] = useState<MenuItem[]>([])
   const [menuItemsLoading, setMenuItemsLoading] = useState(false)
 
   const [services, setServices] = useState<Service[]>([])
   const [subServices, setSubServices] = useState<SubService[]>([])
 
-  useEffect(() => { loadCompanyMenus() }, [combinedMenuIdParam, entityId, entityType])
+  useEffect(() => { 
+    if (!scopeLoading) {
+      console.log("DEBUG [CompanyMenus]: Loading menus. entityType:", entityType, "entityId:", entityId, "assignedCompanyIds:", assignedCompanyIds);
+      loadCompanyMenus() 
+    }
+  }, [combinedMenuIdParam, entityId, entityType, scopeLoading, assignedCompanyIds])
   useEffect(() => { preloadMenuItems() }, [])
 
   // Navigation update function (Browser history stack maintain karne ke liye)
@@ -126,9 +131,11 @@ export default function CompanyMenusPage() {
       const snapshot = await getDocs(q)
       
       let menusData = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }) as CompanyMenu)
+      console.log("DEBUG [CompanyMenus]: Fetched from DB length:", menusData.length, "Data:", menusData);
       
       // Client side secondary filter for safety
       menusData = filterByScope(menusData)
+      console.log("DEBUG [CompanyMenus]: After filterByScope length:", menusData.length);
       
       menusData.sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime())
       setMenus(menusData)

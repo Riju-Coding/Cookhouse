@@ -27,6 +27,14 @@ export function useEntityScope() {
         return
       }
 
+      // If the vendor staff (KAM/Supervisor) is explicitly assigned to specific companies, restrict to those.
+      if (userProfile && userProfile.companyIds && userProfile.companyIds.length > 0) {
+        setAssignedCompanyIds(userProfile.companyIds)
+        setLoading(false)
+        return
+      }
+
+      // Otherwise (Vendor Admin), fetch all companies assigned to the vendor
       try {
         const q = query(
           collection(db, "companies"),
@@ -43,15 +51,26 @@ export function useEntityScope() {
     }
 
     fetchAssignedCompanies()
-  }, [entityType, entityId])
+  }, [entityType, entityId, userProfile])
 
   // 3. Helper: Filter data based on scope
   const filterByScope = <T extends any>(data: T[], vendorIdField = "vendorId", companyIdField = "companyId"): T[] => {
     if (isSuperAdmin) return data
 
     if (entityType === "vendor_staff") {
-      // Vendors see only their own created items OR unassigned items
-      return data.filter((item: any) => item[vendorIdField] === entityId || !item[vendorIdField])
+      return data.filter((item: any) => {
+        // 1. Check vendor ownership (if the record supports it)
+        const isMyVendorData = item[vendorIdField] === entityId || !item[vendorIdField]
+        
+        // 2. If the record belongs to a company, strictly ensure the vendor is assigned to that company
+        if (item[companyIdField]) {
+          const isAssigned = assignedCompanyIds.includes(item[companyIdField])
+          console.log(`DEBUG [ScopeFilter]: Checking record companyId: ${item[companyIdField]} against assignedCompanyIds:`, assignedCompanyIds, `Result: ${isAssigned}`);
+          return isMyVendorData && isAssigned;
+        }
+        
+        return isMyVendorData
+      })
     }
 
     if (entityType === "company_user") {

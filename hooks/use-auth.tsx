@@ -19,6 +19,7 @@ export interface UserProfile {
   userType: UserType
   roleId: string
   roleKey: string
+  permissions?: Record<string, boolean>
   vendorId: string
   companyIds: string[]
   buildingIds: string[]
@@ -58,6 +59,7 @@ interface AuthContextType {
   signIn: (email: string, password: string) => Promise<SignInResult>
   signOut: () => Promise<void>
   hasRouteAccess: (path: string) => boolean
+  hasPermission: (permissionKey: string) => boolean
   isSuperAdmin: boolean
   loginSessionId: string | null
   loginSessionError: string | null
@@ -107,6 +109,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const userDoc = querySnapshot.docs[0]
       const data = userDoc.data()
 
+      let permissions: Record<string, boolean> = {};
+
+      if (data.roleId) {
+        try {
+          const { doc, getDoc } = await import("firebase/firestore");
+          const roleDoc = await getDoc(doc(db, "roles", data.roleId));
+          if (roleDoc.exists()) {
+             permissions = roleDoc.data().permissions || {};
+          }
+        } catch (e) {
+          console.error("Failed to fetch role permissions", e);
+        }
+      }
+
+      // Explicit user-level overrides
+      if (data.canRequestChanges === true) {
+        permissions['CAN_REQUEST_CHANGES'] = true;
+      }
+
       return {
         id: userDoc.id,
         name: data.name || "",
@@ -115,6 +136,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         userType: data.userType || (data.email === SUPER_ADMIN_EMAIL ? "super_admin" : "company_user"),
         roleId: data.roleId || "",
         roleKey: data.roleKey || "",
+        permissions,
         vendorId: data.vendorId || "",
         companyIds: data.companyIds || [],
         buildingIds: data.buildingIds || [],
@@ -183,27 +205,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     // Build query conditions
-    // Prioritize entityId (Company/Vendor) for access paths over roleId.
-    // In the UI, company access paths are assigned to the company, not the role.
-    let q;
-    if (entityId) {
-      q = query(
-        collection(db, "access_paths"),
-        where("entityId", "==", entityId),
-        where("status", "==", "active")
-      )
-    } else if (profile.roleId) {
-      q = query(
-        collection(db, "access_paths"),
-        where("roleId", "==", profile.roleId),
-        where("status", "==", "active")
-      )
-    } else {
-      // Fallback
-      setAllowedRoutes(new Set(["/admin"]))
-      setAccessLoading(false)
-      return
-    }
+    // To avoid complex composite index requirements from Firestore OR queries,
+    // we fetch all active paths and rely on our robust client-side filtering in onSnapshot.
+    const q = query(
+      collection(db, "access_paths"),
+      where("status", "==", "active")
+    )
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const routes = new Set<string>()
@@ -218,11 +225,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // 3. Matches user type globally (only if no role is defined)
         const matchesUser = data.userId === profile.id
         const matchesRole = profile.roleId ? (data.roleId === profile.roleId) : false
-        // Allow type match (e.g. company_wide access) even if they have a role
-        const matchesType = (data.userType === profile.userType && !data.userId && !data.roleId)
+        // If the user has a specific role, they should NOT inherit generic userType paths.
+        const matchesType = !profile.roleId && (data.userType === profile.userType && !data.userId && !data.roleId)
+        const matchesEntity = data.entityId ? data.entityId === entityId : true;
         
-        console.log("DEBUG: access_paths doc:", data.id, "matchesRole:", matchesRole, "matchesType:", matchesType, "matchesUser:", matchesUser)
+        console.log("DEBUG: access_paths doc:", data.id, "matchesRole:", matchesRole, "matchesType:", matchesType, "matchesUser:", matchesUser, "matchesEntity:", matchesEntity)
 
+        if (!matchesEntity) return;
         if (!matchesUser && !matchesType && !matchesRole) return
 
         if (data.allowedRoutes) {
@@ -340,6 +349,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [resolveUserProfile, setupAccessListener])
 
   // ─── Route access check ───────────────────────────────────────────────────────
+  
+  const hasPermission = useCallback((permissionKey: string): boolean => {
+    if (isSuperAdmin) return true; // Super admins can do everything
+    if (!userProfile || !userProfile.permissions) return false;
+    return !!userProfile.permissions[permissionKey];
+  }, [userProfile, isSuperAdmin])
+
   const hasRouteAccess = useCallback(
     (path: string): boolean => {
       // Still loading — deny (loading UI shown by RouteGuard/ProtectedRoute)
@@ -440,6 +456,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         signIn,
         signOut,
         hasRouteAccess,
+        hasPermission,
         isSuperAdmin,
         loginSessionId,
         loginSessionError,

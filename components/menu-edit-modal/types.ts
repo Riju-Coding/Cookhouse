@@ -63,6 +63,10 @@ export interface MenuEditModalProps {
   menuType: "combined" | "company"
   onSave?: () => void
   preloadedMenuItems?: MenuItem[]
+  mode?: "create" | "edit"
+  createStartDate?: string
+  createEndDate?: string
+  preFilledChanges?: any[]
 }
 
 export interface MenuData {

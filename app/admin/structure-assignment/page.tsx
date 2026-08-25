@@ -39,6 +39,8 @@ import {
 import type { Service, SubService } from "@/lib/types"
 import { toast } from "@/hooks/use-toast"
 import { useEntityScope } from "@/hooks/use-entity-scope"
+import { approvalRequestsService } from "@/lib/firestore/approvalRequestsService"
+import { useAuth } from "@/hooks/use-auth"
 
 import { addDoc, updateDoc, doc, collection, getDocs, query, where } from "firebase/firestore"
 import { db } from "@/lib/firebase"
@@ -75,6 +77,17 @@ export default function StructureAssignmentPage() {
   const [subServices, setSubServices] = useState<SubService[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [hasPendingApproval, setHasPendingApproval] = useState(false)
+  const { userProfile, userType, isSuperAdmin, hasPermission } = useAuth()
+
+  useEffect(() => {
+    if (existingStructure?.id) {
+      approvalRequestsService.hasPendingChanges(existingStructure.id, 'STRUCTURAL_ASSIGNMENT').then(setHasPendingApproval)
+    } else {
+      setHasPendingApproval(false)
+    }
+  }, [existingStructure?.id])
+
   const [existingStructure, setExistingStructure] = useState<any | null>(null)
 
   const [selectedCompany, setSelectedCompany] = useState<string>("")
@@ -87,7 +100,7 @@ export default function StructureAssignmentPage() {
   const [buildingSearch, setBuildingSearch] = useState("")
 
   // State for Bulk Copy
-  const { isSuperAdmin, entityId, entityType, assignedCompanyIds, filterByScope } = useEntityScope()
+  const { isSuperAdmin: scopeIsSuperAdmin, entityId, entityType, assignedCompanyIds, filterByScope } = useEntityScope()
   const [isCopyDialogOpen, setIsCopyDialogOpen] = useState(false)
   const [selectedTargetBuildings, setSelectedTargetBuildings] = useState<string[]>([])
 
@@ -315,14 +328,32 @@ export default function StructureAssignmentPage() {
         updatedAt: new Date()
       }
 
-      if (existingStructure?.id) {
-        await updateDoc(doc(db, "structureAssignments", existingStructure.id), structureData)
-        toast({ title: "Success", description: "Structure updated successfully!" })
+      if (userType === 'company_user' || hasPermission('CAN_REQUEST_CHANGES')) {
+        const payload = {
+          targetType: "STRUCTURAL_ASSIGNMENT" as const,
+          targetId: existingStructure?.id || `new_${selectedCompany}_${selectedBuilding}`,
+          companyId: selectedCompany,
+          buildingId: selectedBuilding,
+          requestedByUserId: userProfile?.id || '',
+          requestedByUserName: userProfile?.name || 'Company User',
+          structuralAssignmentPayload: {
+            originalAssignmentId: existingStructure?.id || null,
+            proposedWeekStructure: structureToSave
+          }
+        };
+        await approvalRequestsService.add(payload);
+        setHasPendingApproval(true);
+        toast({ title: "Request Submitted", description: "Changes sent to vendor for approval." });
       } else {
-        await addDoc(collection(db, "structureAssignments"), { ...structureData, createdAt: new Date() })
-        toast({ title: "Success", description: "Structure saved successfully!" })
+        if (existingStructure?.id) {
+          await updateDoc(doc(db, "structureAssignments", existingStructure.id), structureData)
+          toast({ title: "Success", description: "Structure updated successfully!" })
+        } else {
+          await addDoc(collection(db, "structureAssignments"), { ...structureData, createdAt: new Date() })
+          toast({ title: "Success", description: "Structure saved successfully!" })
+        }
+        await loadExistingStructure()
       }
-      await loadExistingStructure()
     } catch (error) {
       toast({ title: "Error", description: "Failed to save structure", variant: "destructive" })
     } finally {
@@ -670,7 +701,7 @@ export default function StructureAssignmentPage() {
                 </DialogContent>
               </Dialog>
 
-              <Button onClick={handleSaveStructure} className="min-w-[200px]" disabled={saving}>
+              <Button onClick={handleSaveStructure} className="min-w-[200px]" disabled={saving || hasPendingApproval}>
                 {saving ? "Saving..." : existingStructure ? "Update Current Schedule" : "Save Schedule"}
               </Button>
             </div>

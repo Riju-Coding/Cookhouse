@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { FileText, MapPin, Clock, CheckCircle, Bell, Image as ImageIcon } from "lucide-react"
+import Image from "next/image"
 
 export default function KAMNotebookPage() {
   const [logs, setLogs] = useState<VisitLog[]>([])
@@ -84,7 +85,7 @@ export default function KAMNotebookPage() {
                     <div className="mt-4 flex gap-2 overflow-x-auto pb-2">
                       {log.photos.map((photo, i) => (
                         <div key={i} className="relative w-32 h-32 rounded-md overflow-hidden flex-shrink-0 border bg-gray-100">
-                          <img src={photo} alt="Visit proof" className="object-cover w-full h-full" />
+                          <Image src={photo} alt="Visit proof" fill className="object-cover" />
                         </div>
                       ))}
                     </div>

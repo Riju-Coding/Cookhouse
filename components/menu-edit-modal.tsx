@@ -10,6 +10,7 @@ import { createPortal } from 'react-dom' // <--- ADD THIS IMPORT
 import { useAuth } from "@/hooks/use-auth"
 import { useMenuPresence } from "@/hooks/use-menu-presence"
 import { useLiveMenuEdits } from "@/hooks/use-live-menu-edits"
+import { approvalRequestsService } from "@/lib/firestore/approvalRequestsService"
 import {
   Loader2,
   Save,
@@ -28,7 +29,12 @@ import {
   Minus,
   ArrowRightLeft,
   FileArchive,
-  Zap
+  Zap,
+  Eye,
+  EyeOff,
+  FileEdit,
+  ShieldCheck,
+  Send
 } from 'lucide-react'
 import { toast } from "@/hooks/use-toast"
 import type { Service, MealPlan, SubMealPlan, MenuItem, SubService } from "@/lib/types"
@@ -113,6 +119,7 @@ interface UpdationRecord {
   appliedToAllBuildings?: boolean
   appliedBuildingIds?: string[]
   otherBuildingsCount?: number
+  preFilledChanges?: any[]
 }
 
 // --- Local Services Definition (To prevent import errors) ---
@@ -1588,6 +1595,7 @@ interface MenuEditModalProps {
   createStartDate?: string
   /** End date for create mode (YYYY-MM-DD) */
   createEndDate?: string
+  preFilledChanges?: any[]
 }
 
 interface MenuData {
@@ -1647,7 +1655,9 @@ const MenuGridCell = memo(function MenuGridCell({
   originalMenuData,
   menuType = "combined",
   selectedChoiceItems = {},
-  activeEditorNames = [] // <--- ADDED
+  activeEditorNames = [], // <--- ADDED
+  showUpdateLogs = true,
+  isRequestMode = false
 }: any) {
   const [isOpen, setIsOpen] = useState(false)
 
@@ -1904,6 +1914,10 @@ const MenuGridCell = memo(function MenuGridCell({
 
   // 1. Logic to calculate which items to show (Current + Strikethrough)
   const itemsToRender = useMemo(() => {
+    if (!showUpdateLogs) {
+      return selectedMenuItemIds;
+    }
+
     // Items currently saved in the menu data
     const activeIds = new Set(selectedMenuItemIds);
 
@@ -1966,10 +1980,10 @@ const MenuGridCell = memo(function MenuGridCell({
     });
 
     return sorted;
-  }, [selectedMenuItemIds, currentLiveChanges, originalMenuData, cellUpdations, date, service.id, subServiceId, mealPlan.id, subMealPlan.id]);
+  }, [selectedMenuItemIds, currentLiveChanges, originalMenuData, cellUpdations, date, service.id, subServiceId, mealPlan.id, subMealPlan.id, showUpdateLogs]);
 
-  // 2. Red State Logic: Cell turns red if it is currently EMPTY but has a session history
-  const isRedState = selectedMenuItemIds.length === 0 && currentLiveChanges.length > 0;
+  // 2. Red State Logic: Cell turns red if it is currently EMPTY but has a session history (only when logs are shown)
+  const isRedState = showUpdateLogs && selectedMenuItemIds.length === 0 && currentLiveChanges.length > 0;
 
   const hasUpdations = cellUpdations && cellUpdations.length > 0;
   const hasTimeline = currentLiveChanges.length > 0 || hasUpdations;
@@ -1989,6 +2003,7 @@ const MenuGridCell = memo(function MenuGridCell({
       className={`border border-gray-300 p-2 align-top min-w-[200px] transition-all duration-150 relative 
             ${isActive ? "ring-2 ring-blue-500 bg-white z-[60]" : isUnassigned ? "bg-gray-100/80 border-dashed" : "bg-white hover:bg-gray-50"} 
             ${activeEditorNames.length > 0 ? "ring-2 ring-amber-500 ring-inset relative !z-[55]" : ""}
+            ${isRequestMode && currentLiveChanges.length > 0 && !isActive ? "ring-1 ring-amber-400 bg-amber-50/40" : ""}
             ${isDragHover ? "ring-2 ring-blue-300 bg-blue-50" : ""}
             ${cellLogs.length > 0 && !isActive ? "bg-red-50" : ""} 
             ${isRedState ? "bg-red-50 !border-red-300 shadow-inner" : ""}
@@ -2145,13 +2160,13 @@ const MenuGridCell = memo(function MenuGridCell({
                 >
                   <div className="flex items-center gap-2 truncate">
                     {/* --- Live Action Label (Added or Removed in session) --- */}
-                    {liveAction && (
+                    {showUpdateLogs && liveAction && (
                       <span className={`px-1 py-0 rounded-[2px] text-[8px] font-black uppercase flex-shrink-0 border ${liveActionBg}`}>
                         {liveAction}
                       </span>
                     )}
                     {/* --- Legacy Removed Tag --- */}
-                    {isCutState && !liveAction && (
+                    {showUpdateLogs && isCutState && !liveAction && (
                       <span className="bg-red-500 text-white px-1 py-0 rounded-[2px] text-[8px] font-black uppercase flex-shrink-0">
                         Removed
                       </span>
@@ -2192,7 +2207,7 @@ const MenuGridCell = memo(function MenuGridCell({
                           </button>
                         )}
                         {/* Building Icon for Removed Items */}
-                        {isRemovedInSession && removedCompanies.length > 0 && (
+                        {showUpdateLogs && isRemovedInSession && removedCompanies.length > 0 && (
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
@@ -2223,7 +2238,7 @@ const MenuGridCell = memo(function MenuGridCell({
             );
           })}
           {/* Then show items that were removed in live session */}
-          {currentLiveChanges
+          {showUpdateLogs && currentLiveChanges
             .filter(c => c.action === "removed" && c.oldItemId)
             .map((change) => {
               const itemId = change.oldItemId;
@@ -2251,11 +2266,21 @@ const MenuGridCell = memo(function MenuGridCell({
                 </div>
               );
             })}
+
+          {/* Pending Changes Badge for Request Mode when logs are hidden */}
+          {isRequestMode && currentLiveChanges.length > 0 && !showUpdateLogs && (
+            <div className="mt-1.5 pt-1 border-t border-amber-200 flex items-center justify-between text-[9px] font-semibold text-amber-700">
+              <span className="flex items-center gap-1">
+                <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+                Pending Request ({currentLiveChanges.length} edit{currentLiveChanges.length !== 1 ? 's' : ''})
+              </span>
+            </div>
+          )}
         </div>
 
         {/* ===== ENHANCED UPDATE TIMELINE ===== */}
         {/* ===== REDESIGNED UPDATION TIMELINE (in chronological order: OG first, then U-records, then live changes) ===== */}
-        {hasTimeline && (
+        {showUpdateLogs && hasTimeline && (
           <div className="mt-4 space-y-2 border-t pt-3 ml-1">
 
             {/* === TIMELINE ENTRIES IN CHRONOLOGICAL ORDER (oldest to newest) === */}
@@ -2771,10 +2796,24 @@ const LoadingProgress = ImportedLoadingProgress
 // })
 
 // --- Main Modal Component ---
-export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, preloadedMenuItems, mode = "edit", createStartDate, createEndDate }: MenuEditModalProps) {
+export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, preloadedMenuItems, mode = "edit", createStartDate, createEndDate, preFilledChanges }: MenuEditModalProps) {
   const isCreateMode = mode === "create";
-  const { user } = useAuth();
+  const { user, userProfile, hasPermission, isSuperAdmin, userType } = useAuth();
   const userName = user?.email?.split('@')[0] || "Unknown User";
+
+  // Permission & Mode Resolution
+  const isDirectEditor = isSuperAdmin || hasPermission('CAN_DIRECT_EDIT');
+  const mustRequestChanges = !isDirectEditor && (userType === 'company_user' || hasPermission('CAN_REQUEST_CHANGES'));
+  const isReviewingApproval = Boolean(preFilledChanges && preFilledChanges.length > 0);
+
+  // Update Logs Toggle State (default hidden for requesters, visible for direct editors)
+  const [showUpdateLogs, setShowUpdateLogs] = useState<boolean>(!mustRequestChanges);
+
+  useEffect(() => {
+    if (isOpen) {
+      setShowUpdateLogs(!mustRequestChanges);
+    }
+  }, [isOpen, mustRequestChanges]);
 
   // Collaborative Hooks
   const liveMenuId = isOpen && menuId && !isCreateMode ? menuId : "";
@@ -2797,6 +2836,8 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
 
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [hasPendingApproval, setHasPendingApproval] = useState(false)
+
   const [progress, setProgress] = useState(0)
   const [message, setMessage] = useState("Loading...")
   const [zipLoading, setZipLoading] = useState(false) // <--- ADD THIS
@@ -2804,6 +2845,14 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
 
   const [menu, setMenu] = useState<MenuData | null>(null)
   
+  useEffect(() => {
+    if (menu?.id) {
+      approvalRequestsService.hasPendingChanges(menu.id, 'MENU_UPDATION').then(setHasPendingApproval)
+    } else {
+      setHasPendingApproval(false)
+    }
+  }, [menu?.id])
+
   // To avoid circular hook rewriting on menuData changes, we proxy setMenuData
   const [rawMenuData, setRawMenuData] = useState<any>({})
 
@@ -3071,6 +3120,7 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
       setMenuData({})
       setOriginalMenuData({})
       setOgMenuData({})  // FIXED: Reset OG data on close
+      setLiveChanges({})
       setSelectedService(null)
       setSelectedSubService(null)
       setRepetitionLog([])
@@ -3446,7 +3496,35 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
         setOgMenuData(ogData)
 
         setMenu(menuDoc)
-        setMenuData(originalData)
+        
+        let modifiedData = JSON.parse(JSON.stringify(originalData))
+        if (preFilledChanges && preFilledChanges.length > 0) {
+           const initialLiveChanges: Record<string, any[]> = {}
+           preFilledChanges.forEach(cell => {
+             if (!modifiedData[cell.date]) modifiedData[cell.date] = {}
+             if (!modifiedData[cell.date][cell.serviceId]) modifiedData[cell.date][cell.serviceId] = {}
+             if (!modifiedData[cell.date][cell.serviceId][cell.subServiceId]) modifiedData[cell.date][cell.serviceId][cell.subServiceId] = {}
+             if (!modifiedData[cell.date][cell.serviceId][cell.subServiceId][cell.mealPlanId]) modifiedData[cell.date][cell.serviceId][cell.subServiceId][cell.mealPlanId] = {}
+             
+             modifiedData[cell.date][cell.serviceId][cell.subServiceId][cell.mealPlanId][cell.subMealPlanId] = {
+               menuItemIds: cell.menuItemIds || [],
+               selectedDescriptions: cell.selectedDescriptions || {},
+               itemQuantities: cell.itemQuantities || {},
+               itemChoiceMarks: cell.itemChoiceMarks || {},
+               liveTrail: cell.liveTrail || []
+             }
+
+             const cellKey = `${cell.date}|${cell.serviceId}|${cell.mealPlanId}|${cell.subMealPlanId}`
+             if (cell.liveTrail && cell.liveTrail.length > 0) {
+               initialLiveChanges[cellKey] = cell.liveTrail
+             } else if (cell.changes && cell.changes.length > 0) {
+               initialLiveChanges[cellKey] = cell.changes
+             }
+           })
+           setLiveChanges(initialLiveChanges)
+        }
+        setMenuData(modifiedData)
+
         setDateRange(dates)
         setServices(filteredServices)
         setSubServices(subServicesMap)
@@ -4904,6 +4982,7 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
       const changedCells = detectMenuChanges(originalMenuData, menuDataToSave, menuItemsMap)
 
       // Attach live trail metadata to the changes so they are saved in the U# record
+
       const enrichedChangedCells = changedCells.map(cell => {
         const cellKey = `${cell.date}|${cell.serviceId}|${cell.mealPlanId}|${cell.subMealPlanId}`;
         return {
@@ -4911,6 +4990,44 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
           liveTrail: liveChanges[cellKey] || [] // This saves the "Pasta -> Pizza" breadcrumb into Firestore
         };
       });
+
+      // INTERCEPT FOR COMPANY USERS
+      const mustRequestChanges = !isSuperAdmin && !hasPermission('CAN_DIRECT_EDIT') && (userType === 'company_user' || hasPermission('CAN_REQUEST_CHANGES'));
+      
+      if (mustRequestChanges && !isDraft) {
+        if (enrichedChangedCells.length === 0) {
+            toast({ title: "No Changes", description: "No changes detected to request." });
+            setSaving(false);
+            return;
+        }
+        
+        try {
+            const payload = {
+              targetType: "MENU_UPDATION" as const,
+              targetId: menu.id,
+              companyId: menu.companyId || menu.id,
+              vendorId: '', // Set by system or left empty for matching
+              requestedByUserId: userProfile?.id || '',
+              requestedByUserName: userProfile?.name || 'Company User',
+              menuUpdationPayload: {
+                menuId: menu.id,
+                menuStartDate: menu.startDate,
+                menuEndDate: menu.endDate,
+                changedCells: enrichedChangedCells
+              }
+            };
+            await approvalRequestsService.add(payload);
+            toast({ title: "Request Submitted", description: "Menu changes sent to vendor for approval." });
+            onClose();
+        } catch (error) {
+            console.error("Error submitting approval request", error);
+            toast({ title: "Error", description: "Failed to submit request.", variant: "destructive" });
+        } finally {
+            setSaving(false);
+        }
+        return;
+      }
+
 
       // Sanitize menuData before saving to remove any undefined values that Firebase rejects
       const deepCopy = JSON.parse(JSON.stringify(menuDataToSave))
@@ -6099,30 +6216,111 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
 
         {/* Header */}
         <div className="border-b p-4 flex-none flex items-center justify-between bg-white z-40">
-          <div>
-            <h2 className="text-2xl font-bold">
-              {isCreateMode ? "Create" : "Edit"} {menuType === "combined" ? "Combined" : "Company"} Menu
-            </h2>
-            {(menu || isCreateMode) && (
-              <p className="text-sm text-gray-600 mt-1">
-                {new Date(menu?.startDate || createStartDate || '').toLocaleDateString()} to {new Date(menu?.endDate || createEndDate || '').toLocaleDateString()}
-                {isCreateMode && <span className="ml-2 bg-green-100 text-green-700 px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wider">New</span>}
-                {!isCreateMode && menu?.status === 'draft' && (<span className="ml-2 bg-purple-100 text-purple-700 px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wider">Draft</span>)}
-              </p>
-            )}
+          <div className="flex items-center gap-3">
+            <div>
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <h2 className="text-2xl font-bold">
+                  {isCreateMode ? "Create" : "Edit"} {menuType === "combined" ? "Combined" : "Company"} Menu
+                </h2>
+                {mustRequestChanges ? (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 border border-amber-300 shadow-xs">
+                    <FileEdit className="h-3.5 w-3.5 text-amber-700" />
+                    Request Mode
+                  </span>
+                ) : isReviewingApproval ? (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-purple-100 text-purple-800 border border-purple-300 shadow-xs">
+                    <CheckCircle className="h-3.5 w-3.5 text-purple-700" />
+                    Approval Review
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-xs">
+                    <ShieldCheck className="h-3.5 w-3.5 text-emerald-700" />
+                    Direct Edit Mode
+                  </span>
+                )}
+              </div>
+              {(menu || isCreateMode) && (
+                <p className="text-sm text-gray-600 mt-1">
+                  {new Date(menu?.startDate || createStartDate || '').toLocaleDateString()} to {new Date(menu?.endDate || createEndDate || '').toLocaleDateString()}
+                  {isCreateMode && <span className="ml-2 bg-green-100 text-green-700 px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wider">New</span>}
+                  {!isCreateMode && menu?.status === 'draft' && (<span className="ml-2 bg-purple-100 text-purple-700 px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wider">Draft</span>)}
+                </p>
+              )}
+            </div>
           </div>
           <div className="flex items-center gap-2">
+            {/* Update Logs Toggle Button */}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setShowUpdateLogs((prev) => !prev)}
+              className={`h-9 px-3 gap-2 text-xs font-medium transition-all ${
+                showUpdateLogs
+                  ? "bg-blue-50 text-blue-700 border-blue-300 hover:bg-blue-100"
+                  : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50"
+              }`}
+              title={showUpdateLogs ? "Hide Update Logs" : "Show Update Logs"}
+              aria-label="Toggle Update Logs"
+              data-testid="toggle-update-logs"
+            >
+              {showUpdateLogs ? <EyeOff className="h-4 w-4 text-blue-600" /> : <Eye className="h-4 w-4 text-gray-500" />}
+              <span>{showUpdateLogs ? "Hide Update Logs" : "Show Update Logs"}</span>
+            </Button>
+
             {copyBuffer && (
               <div className="flex items-center gap-2 px-3 py-1 border rounded bg-yellow-50 text-sm">
                 <span className="text-xs">{copyBuffer.items.length} copied</span>
                 <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => setCopyBuffer(null)}><X className="h-3 w-3" /></Button>
               </div>
             )}
-            <button onClick={handleRequestClose} className="text-gray-500 hover:text-gray-700">
+            <button onClick={handleRequestClose} className="text-gray-500 hover:text-gray-700" title="Close">
               <X className="h-6 w-6" />
             </button>
           </div>
         </div>
+
+        {/* Mode Announcement Banners */}
+        {mustRequestChanges && (
+          <div className="bg-amber-50 border-b border-amber-200 px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 text-sm shrink-0">
+            <div className="flex items-center gap-2.5 text-amber-900">
+              <AlertCircle className="h-4 w-4 text-amber-600 shrink-0" />
+              <span className="text-xs sm:text-sm">
+                <strong>Request Mode:</strong> Your changes will be submitted as a request for approval, rather than modifying the live menu immediately.
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-amber-800 font-medium">
+                Update logs: <strong>{showUpdateLogs ? "Visible" : "Hidden"}</strong>
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowUpdateLogs((prev) => !prev)}
+                className="text-xs text-amber-900 underline hover:text-amber-950 font-semibold cursor-pointer"
+              >
+                {showUpdateLogs ? "Hide" : "Show"}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {isReviewingApproval && (
+          <div className="bg-purple-50 border-b border-purple-200 px-4 py-2.5 flex items-center gap-2.5 text-sm text-purple-900 shrink-0">
+            <CheckCircle className="h-4 w-4 text-purple-600 shrink-0" />
+            <span className="text-xs sm:text-sm">
+              <strong>Approval Review Mode:</strong> You are reviewing proposed menu changes. Saving will approve and apply them to the live menu.
+            </span>
+          </div>
+        )}
+
+        {hasPendingApproval && !isReviewingApproval && (
+          <div className="bg-yellow-50 border-b border-yellow-300 px-4 py-2.5 flex items-center gap-2.5 text-sm text-yellow-900 shrink-0">
+            <AlertCircle className="h-4 w-4 text-yellow-600 shrink-0" />
+            <span className="text-xs sm:text-sm">
+              This menu has a pending change request awaiting Vendor Approval. Further edits cannot be saved until resolved.
+            </span>
+          </div>
+        )}
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto min-h-0 bg-gray-50/50">
@@ -6311,6 +6509,8 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
                                       cellUpdations={cellUpdations}
                                       onShowConflicts={handleAnalyzeConflicts}
                                       activeEditorNames={activeEditorNames}
+                                      showUpdateLogs={showUpdateLogs}
+                                      isRequestMode={mustRequestChanges}
                                     />
                                   )
                                 })}
@@ -6596,31 +6796,71 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
                 AI Suggest
               </Button>
             )}
-            <Button variant="outline" onClick={() => handleSave(true)} disabled={saving || loading} className="border-purple-300 text-purple-700 hover:bg-purple-50">
-              {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
-              Save as Draft
-            </Button>
-            <Button variant="outline" onClick={handleRequestClose} disabled={saving}>
-              Cancel
-            </Button>
-            <Button onClick={() => handleSave(false)} disabled={saving || loading}>
-              {saving ? (
+            
+            {(() => {
+              const isDirectEditor = isSuperAdmin || hasPermission('CAN_DIRECT_EDIT');
+              const mustRequestChanges = !isDirectEditor && (userType === 'company_user' || hasPermission('CAN_REQUEST_CHANGES'));
+              const isReviewingApproval = Boolean(preFilledChanges && preFilledChanges.length > 0);
+              
+              return (
                 <>
-                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                  {isCreateMode ? "Creating..." : "Saving..."}
+                  {!mustRequestChanges && (
+                    <Button variant="outline" onClick={() => handleSave(true)} disabled={saving || loading} className="border-purple-300 text-purple-700 hover:bg-purple-50">
+                      {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
+                      Save as Draft
+                    </Button>
+                  )}
+                  <Button variant="outline" onClick={handleRequestClose} disabled={saving}>
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={() => handleSave(false)}
+                    disabled={saving || loading || hasPendingApproval}
+                    className={
+                      mustRequestChanges
+                        ? "bg-amber-600 hover:bg-amber-700 text-white shadow-sm"
+                        : isReviewingApproval
+                          ? "bg-green-600 hover:bg-green-700 text-white shadow-sm"
+                          : ""
+                    }
+                  >
+                    {saving ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                        {isCreateMode
+                          ? "Creating..."
+                          : mustRequestChanges
+                            ? "Submitting Request..."
+                            : isReviewingApproval
+                              ? "Approving Changes..."
+                              : "Saving..."
+                        }
+                      </>
+                    ) : (
+                      <>
+                        {mustRequestChanges ? (
+                          <Send className="h-4 w-4 mr-2" />
+                        ) : isReviewingApproval ? (
+                          <CheckCircle className="h-4 w-4 mr-2" />
+                        ) : (
+                          <Save className="h-4 w-4 mr-2" />
+                        )}
+                        {isCreateMode
+                          ? "Save & Generate Company Menus"
+                          : menuType === 'combined' && menu?.status === 'draft'
+                            ? "Save & Activate"
+                            : mustRequestChanges
+                              ? "Submit Change Request"
+                              : isReviewingApproval
+                                ? "Approve & Save Changes"
+                                : "Save Changes"
+                        }
+                      </>
+                    )}
+                  </Button>
                 </>
-              ) : (
-                <>
-                  <Save className="h-4 w-4 mr-2" />
-                  {isCreateMode
-                    ? "Save & Generate Company Menus"
-                    : menuType === 'combined' && menu?.status === 'draft'
-                      ? "Save & Activate"
-                      : "Save Changes"
-                  }
-                </>
-              )}
-            </Button>
+              );
+            })()}
           </div>
         </div>
 

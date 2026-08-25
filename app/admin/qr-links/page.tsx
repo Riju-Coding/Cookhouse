@@ -281,6 +281,48 @@ export default function QRLinksPage() {
     }
   }
 
+  const handleGenerateAll = async () => {
+    if (!confirm("Are you sure you want to generate QR links for all missing cafeterias?")) return;
+    
+    setCreating(true)
+    let generatedCount = 0;
+    
+    try {
+      for (const cafe of cafeterias) {
+        const company = companies.find(c => c.id === cafe.companyId);
+        const building = buildings.find(b => b.id === cafe.buildingId);
+        
+        if (!company || !building) continue;
+        
+        const existingLink = links.find(l => l.cafeId === cafe.id && l.buildingId === building.id && l.companyId === company.id);
+        if (existingLink) continue;
+
+        await qrLinksService.create({
+          companyId: company.id,
+          companyName: company.name,
+          buildingId: building.id,
+          buildingName: building.name,
+          cafeId: cafe.id,
+          cafeName: cafe.name,
+          createdBy: user?.uid || 'admin',
+          createdByName: user?.displayName || 'Admin',
+          requireName: false,
+          requireEmail: false,
+          requireEmployeeId: false,
+          customization: initialCustomization
+        });
+        generatedCount++;
+      }
+      
+      toast({ title: "Success", description: `Generated ${generatedCount} new QR links.` })
+      fetchLinks()
+    } catch (e) {
+      toast({ title: "Error", description: "Failed to generate all links.", variant: "destructive" })
+    } finally {
+      setCreating(false)
+    }
+  }
+
   const openEditModal = (link: QRLink) => {
     setEditLink(link)
     setEditRequireName(!!link.requireName)
@@ -416,12 +458,17 @@ export default function QRLinksPage() {
           </h1>
           <p className="text-gray-500">Generate public QR codes for capturing tickets from specific locations.</p>
         </div>
-        <Dialog open={modalOpen} onOpenChange={setModalOpen}>
-          <DialogTrigger asChild>
-            <Button className="gap-2">
-              <Plus className="w-4 h-4" /> Generate New Link
-            </Button>
-          </DialogTrigger>
+        <div className="flex items-center gap-3">
+          <Button variant="outline" className="gap-2 bg-white" onClick={handleGenerateAll} disabled={creating}>
+            {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : <QrCode className="w-4 h-4" />}
+            Generate All
+          </Button>
+          <Dialog open={modalOpen} onOpenChange={setModalOpen}>
+            <DialogTrigger asChild>
+              <Button className="gap-2">
+                <Plus className="w-4 h-4" /> Generate New Link
+              </Button>
+            </DialogTrigger>
           <DialogContent className="!max-w-none !w-screen !h-screen !m-0 !p-0 !rounded-none border-0 overflow-hidden bg-gray-50">
             <div className="flex h-full w-full">
               {/* Left Side: Form Controls */}
@@ -505,6 +552,7 @@ export default function QRLinksPage() {
             </div>
           </DialogContent>
         </Dialog>
+        </div>
       </div>
 
       {/* ── Edit Fields Modal ─────────────────────────────────────────────── */}
