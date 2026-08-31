@@ -200,6 +200,16 @@ export const approvalRequestsService = {
     return results
   },
 
+  getAllPending: async (): Promise<ApprovalRequest[]> => {
+    const q = query(
+      approvalsCollection,
+      where("status", "==", "PENDING"),
+      orderBy("requestedAt", "desc")
+    )
+    const snapshot = await getDocs(q)
+    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ApprovalRequest))
+  },
+
   /**
    * Fetch all pending requests made by a specific company
    */

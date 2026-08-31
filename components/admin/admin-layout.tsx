@@ -118,7 +118,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
   const [isIframe, setIsIframe] = useState(false)
   const sidebarScrollRef = useRef<HTMLElement>(null)
   const sidebarScrollPositionRef = useRef(0)
-  const { user, loading, userProfile, isSuperAdmin, hasRouteAccess, allowedRoutes, signOut } = useAuth()
+  const { user, loading, userProfile, isSuperAdmin, hasPermission, hasRouteAccess, allowedRoutes, signOut } = useAuth()
 
   const [pendingApprovalsCount, setPendingApprovalsCount] = useState(0)
 
@@ -133,7 +133,21 @@ export function AdminLayout({ children }: AdminLayoutProps) {
         where('status', '==', 'PENDING')
       )
       unsubscribe = onSnapshot(q, (snapshot) => {
-        setPendingApprovalsCount(snapshot.size)
+        if (isSuperAdmin) {
+          setPendingApprovalsCount(snapshot.size)
+        } else {
+          const visibleCount = snapshot.docs.filter(doc => {
+            const data = doc.data();
+            if (data.targetType === 'MEAL_PLAN_STRUCTURE' || data.targetType === 'STRUCTURAL_ASSIGNMENT') {
+              return hasPermission('CAN_APPROVE_STRUCTURE_REQUESTS');
+            }
+            if (data.targetType === 'MENU_UPDATION') {
+              return hasPermission('CAN_APPROVE_REQUESTS');
+            }
+            return false;
+          }).length;
+          setPendingApprovalsCount(visibleCount);
+        }
       })
     } else if (isSuperAdmin) {
       const q = query(

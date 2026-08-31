@@ -1234,6 +1234,17 @@ export default function UserManagementPage() {
                   />
                 </div>
 
+                <div className="mb-4 p-4 bg-white border border-orange-200 rounded-md flex items-center justify-between">
+                  <div>
+                    <Label className="text-orange-900 font-medium">Can Approve Structure Updates</Label>
+                    <p className="text-xs text-gray-500">Allow this vendor staff to approve or reject Meal Plan Structure changes requested by Companies.</p>
+                  </div>
+                  <Switch 
+                    checked={!!formData.canApproveStructureRequests}
+                    onCheckedChange={(checked) => setFormData({ ...formData, canApproveStructureRequests: checked })}
+                  />
+                </div>
+
                 <div className="mb-6 p-4 bg-white border border-orange-200 rounded-md flex items-center justify-between">
                   <div>
                     <Label className="text-orange-900 font-medium">Can Request Menu Changes</Label>
@@ -1242,6 +1253,39 @@ export default function UserManagementPage() {
                   <Switch 
                     checked={!!formData.canRequestChanges}
                     onCheckedChange={(checked) => setFormData({ ...formData, canRequestChanges: checked })}
+                  />
+                </div>
+
+                <div className="mb-6 p-4 bg-white border border-orange-200 rounded-md flex items-center justify-between">
+                  <div>
+                    <Label className="text-orange-900 font-medium">Can Request Meal Plan Assignment</Label>
+                    <p className="text-xs text-gray-500">Allow this vendor staff to propose changes to the Meal Plan Assignments.</p>
+                  </div>
+                  <Switch 
+                    checked={!!formData.canRequestMealPlanAssignment}
+                    onCheckedChange={(checked) => setFormData({ ...formData, canRequestMealPlanAssignment: checked })}
+                  />
+                </div>
+
+                <div className="mb-6 p-4 bg-white border border-orange-200 rounded-md flex items-center justify-between">
+                  <div>
+                    <Label className="text-orange-900 font-medium">Can Request Structure Updates</Label>
+                    <p className="text-xs text-gray-500">Allow this vendor staff to propose changes to the Meal Plan Structure.</p>
+                  </div>
+                  <Switch 
+                    checked={!!formData.canRequestStructureUpdates}
+                    onCheckedChange={(checked) => setFormData({ ...formData, canRequestStructureUpdates: checked })}
+                  />
+                </div>
+
+                <div className="mb-6 p-4 bg-white border border-orange-200 rounded-md flex items-center justify-between">
+                  <div>
+                    <Label className="text-orange-900 font-medium">Can Cut Structure Items</Label>
+                    <p className="text-xs text-gray-500">Allow this vendor staff to request deletion/cut of existing structure items in request mode.</p>
+                  </div>
+                  <Switch 
+                    checked={!!formData.canCutStructureItems}
+                    onCheckedChange={(checked) => setFormData({ ...formData, canCutStructureItems: checked })}
                   />
                 </div>
 

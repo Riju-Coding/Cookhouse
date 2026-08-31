@@ -127,6 +127,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (data.canRequestChanges === true) {
         permissions['CAN_REQUEST_CHANGES'] = true;
       }
+      if (data.canRequestMealPlanAssignment === true) {
+        permissions['CAN_REQUEST_MEAL_PLAN_ASSIGNMENT'] = true;
+      }
+      if (data.canRequestStructureUpdates === true) {
+        permissions['CAN_REQUEST_STRUCTURE_CHANGES'] = true;
+      }
+      if (data.canCutStructureItems === true) {
+        permissions['CAN_CUT_STRUCTURE_ITEMS'] = true;
+      }
+      if (data.canApproveStructureRequests === true) {
+        permissions['CAN_APPROVE_STRUCTURE_REQUESTS'] = true;
+      }
+      if (data.canApproveRequests === true) {
+        permissions['CAN_APPROVE_REQUESTS'] = true;
+      }
 
       return {
         id: userDoc.id,

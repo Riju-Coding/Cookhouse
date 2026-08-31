@@ -12,7 +12,7 @@ import { MenuEditModal } from "@/components/menu-edit-modal"
 import { useToast } from "@/components/ui/use-toast"
 
 export default function ApprovalsPage() {
-  const { userProfile, isSuperAdmin, loading: authLoading } = useAuth()
+  const { userProfile, isSuperAdmin, loading: authLoading, hasPermission } = useAuth()
   const { toast } = useToast()
   const [requests, setRequests] = useState<ApprovalRequest[]>([])
   const [loading, setLoading] = useState(true)
@@ -38,7 +38,21 @@ export default function ApprovalsPage() {
     try {
       const vendorId = userProfile?.vendorId || "";
       if (vendorId) {
-        const data = await approvalRequestsService.getPendingForVendor(vendorId)
+        let data = await approvalRequestsService.getPendingForVendor(vendorId)
+        if (!isSuperAdmin) {
+          data = data.filter(r => {
+            if (r.targetType === 'MEAL_PLAN_STRUCTURE' || r.targetType === 'STRUCTURAL_ASSIGNMENT') {
+              return hasPermission('CAN_APPROVE_STRUCTURE_REQUESTS');
+            }
+            if (r.targetType === 'MENU_UPDATION') {
+              return hasPermission('CAN_APPROVE_REQUESTS');
+            }
+            return false;
+          });
+        }
+        setRequests(data)
+      } else if (isSuperAdmin) {
+        const data = await approvalRequestsService.getAllPending()
         setRequests(data)
       } else {
         setRequests([])

@@ -24,7 +24,11 @@ export interface User {
   roleKey: string;
   vendorId: string;
   canApproveRequests?: boolean; // NEW
-  canRequestChanges?: boolean; // NEW
+  canApproveStructureRequests?: boolean;
+  canRequestChanges?: boolean;
+  canRequestMealPlanAssignment?: boolean; // NEW
+  canRequestStructureUpdates?: boolean;
+  canCutStructureItems?: boolean; // NEW
   allowHoAttendance?: boolean; // NEW
   companyIds: string[];
   buildingIds: string[];  // NEW

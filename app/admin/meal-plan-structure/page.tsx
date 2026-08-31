@@ -118,6 +118,7 @@ interface BaseService {
 
 export default function MealPlanStructurePage() {
   const { userProfile, userType, isSuperAdmin, hasPermission } = useAuth()
+  const canEditStructure = isSuperAdmin || userType === 'company_user' || hasPermission('CAN_REQUEST_CHANGES') || hasPermission('CAN_REQUEST_STRUCTURE_CHANGES') || hasPermission('CAN_DIRECT_EDIT');
   const [companies, setCompanies] = useState<Company[]>([])
   const [buildings, setBuildings] = useState<Building[]>([])
   const [services, setServices] = useState<Service[]>([])
@@ -905,7 +906,7 @@ export default function MealPlanStructurePage() {
         status: "active",
       }
 
-      if (userType === 'company_user' || hasPermission('CAN_REQUEST_CHANGES')) {
+      if (userType === 'company_user' || hasPermission('CAN_REQUEST_CHANGES') || hasPermission('CAN_REQUEST_STRUCTURE_CHANGES')) {
         const payload = {
           targetType: "MEAL_PLAN_STRUCTURE" as const,
           targetId: currentAssignmentId || `new_${selectedCompany}_${selectedBuilding}`,
@@ -1414,7 +1415,7 @@ export default function MealPlanStructurePage() {
                   .filter((b) => b.id !== selectedBuilding)
                   .map((building) => (
                     <div key={building.id} className="flex items-center space-x-2">
-                      <Checkbox disabled={!isSuperAdmin}
+                      <Checkbox disabled={!canEditStructure}
                         id={`target-${building.id}`}
                         checked={selectedTargetBuildings.includes(building.id)}
                         onCheckedChange={() => toggleTargetBuilding(building.id)}
@@ -1482,7 +1483,7 @@ export default function MealPlanStructurePage() {
               <div className="space-y-3">
                 {DAYS.filter((d) => d !== selectedChoiceToCopy?.day).map((day) => (
                   <div key={day} className="flex items-center space-x-2">
-                    <Checkbox disabled={!isSuperAdmin}
+                    <Checkbox disabled={!canEditStructure}
                       id={`copy-day-${day}`}
                       checked={selectedTargetDays.includes(day)}
                       onCheckedChange={() => {
@@ -1599,7 +1600,7 @@ export default function MealPlanStructurePage() {
                         return (
                           <div key={mp.id} className="space-y-1">
                             <div className="flex items-center space-x-2 py-2 bg-gray-50 rounded px-2">
-                              <Checkbox disabled={!isSuperAdmin} 
+                              <Checkbox disabled={!canEditStructure} 
                                 id={`choice-mp-${mp.id}`} 
                                 checked={isSelected} 
                                 onCheckedChange={(checked) => {
@@ -1618,7 +1619,7 @@ export default function MealPlanStructurePage() {
                               <div className="ml-6 space-y-1">
                                 {subMealsForPlan.map((smp) => (
                                   <div key={smp.id} className="flex items-center space-x-2">
-                                    <Checkbox disabled={!isSuperAdmin} 
+                                    <Checkbox disabled={!canEditStructure} 
                                       id={`choice-smp-${smp.id}`} 
                                       checked={currentAssignment?.subMealPlans?.some(s => s.subMealPlanId === smp.id) || false}
                                       onCheckedChange={(checked) => {
@@ -1730,7 +1731,7 @@ export default function MealPlanStructurePage() {
                    if (d === copyMpTarget?.sourceDay) return null;
                    return (
                       <div key={d} className="flex items-center space-x-2">
-                         <Checkbox disabled={!isSuperAdmin} 
+                         <Checkbox disabled={!canEditStructure} 
                            id={`copy-mp-${d}`}
                            checked={copyMpSelectedDays.includes(d)}
                            onCheckedChange={(c) => {
@@ -1882,7 +1883,7 @@ export default function MealPlanStructurePage() {
                               <TableCell className="font-bold text-gray-700 pl-8 sticky left-0 bg-gray-100/80 z-20 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)] border-r">
                                 <div className="flex items-center justify-between gap-2">
                                   <span>{subSvc.subServiceName}</span>
-                                  <Dialog>
+                                  {(isSuperAdmin || hasPermission('CAN_DIRECT_EDIT') || hasPermission('CAN_CUT_STRUCTURE_ITEMS')) && <Dialog>
                                     <DialogTrigger asChild>
                                       <Button size="sm" variant="ghost" className="opacity-0 group-hover:opacity-100 transition-opacity h-6 w-6 p-0">
                                         <Trash2 className="h-3 w-3 text-red-500" />
@@ -1910,7 +1911,7 @@ export default function MealPlanStructurePage() {
                                         </Button>
                                       </div>
                                     </DialogContent>
-                                  </Dialog>
+                                  </Dialog>}
                                 </div>
                               </TableCell>
                               {DAYS.map(day => {
@@ -1986,7 +1987,7 @@ export default function MealPlanStructurePage() {
                                      <TableCell className="pl-12 align-middle text-sm font-semibold text-gray-800 sticky left-0 bg-white z-20 border-r shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
                                         <div className="flex items-center justify-between gap-2">
                                           <span>{mp.name}</span>
-                                          <button
+                                          {(isSuperAdmin || hasPermission('CAN_DIRECT_EDIT') || hasPermission('CAN_CUT_STRUCTURE_ITEMS')) && <button
                                             onClick={() => {
                                               const updatedDays = { ...weeklyStructure };
                                               DAYS.forEach(day => {
@@ -2006,7 +2007,7 @@ export default function MealPlanStructurePage() {
                                             title="Delete this meal plan from all days"
                                           >
                                             <Trash2 className="w-4 h-4" />
-                                          </button>
+                                          </button>}
                                         </div>
                                      </TableCell>
                                      {DAYS.map(day => {
@@ -2034,7 +2035,7 @@ export default function MealPlanStructurePage() {
                                                                      return (
                                                                         <div key={smp.id} className="flex flex-row items-center justify-between gap-1 p-1 rounded border border-blue-300 bg-blue-50 hover:border-blue-400 transition-colors whitespace-nowrap overflow-hidden">
                                                                            <div className="flex items-center gap-1.5 overflow-hidden">
-                                                                              <Checkbox disabled={!isSuperAdmin} 
+                                                                              <Checkbox disabled={!canEditStructure} 
                                                                                  id={`chk-${day}-${mp.id}-${smp.id}`}
                                                                                  checked={true}
                                                                                  onCheckedChange={(c) => {
@@ -2122,7 +2123,7 @@ export default function MealPlanStructurePage() {
                                                     >
                                                        <Copy className="h-3 w-3" />
                                                     </Button>
-                                                    <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-gray-400 hover:text-red-600 shrink-0 bg-gray-50 border border-gray-200 hover:border-red-300 hover:bg-red-50"
+                                                    {(isSuperAdmin || hasPermission('CAN_DIRECT_EDIT') || hasPermission('CAN_CUT_STRUCTURE_ITEMS')) && <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-gray-400 hover:text-red-600 shrink-0 bg-gray-50 border border-gray-200 hover:border-red-300 hover:bg-red-50"
                                                        title="Delete this Meal Plan row"
                                                        onClick={() => {
                                                           let newPlans = assignedPlans.filter((a: any) => a.mealPlanId !== mp.id);
@@ -2130,7 +2131,7 @@ export default function MealPlanStructurePage() {
                                                        }}
                                                     >
                                                        <Trash2 className="h-3 w-3" />
-                                                    </Button>
+                                                    </Button>}
                                                   </div>
                                                )}
                                                             </div>
@@ -2174,7 +2175,7 @@ export default function MealPlanStructurePage() {
                                                                   <div className="flex gap-0.5 justify-end">
                                                                       <button onClick={() => handleEditChoice({...choice, day, serviceId: svc.serviceId, subServiceId: subSvc.subServiceId})} className="text-blue-500 hover:bg-blue-50 p-1 rounded" title="Edit Choice"><Edit className="w-3 h-3"/></button>
                                                                       <button onClick={() => handleCopyChoice({...choice, day, serviceId: svc.serviceId, subServiceId: subSvc.subServiceId})} className="text-green-500 hover:bg-green-50 p-1 rounded" title="Copy to other days"><Copy className="w-3 h-3"/></button>
-                                                                      {isSuperAdmin && <button onClick={() => handleDeleteChoice(day, svc.serviceId, subSvc.subServiceId, choice.choiceId)} className="text-red-500 hover:bg-red-50 p-1 rounded" title="Delete Choice"><Trash2 className="w-3 h-3"/></button>}
+                                                                      {(isSuperAdmin || hasPermission('CAN_DIRECT_EDIT') || hasPermission('CAN_CUT_STRUCTURE_ITEMS')) && <button onClick={() => handleDeleteChoice(day, svc.serviceId, subSvc.subServiceId, choice.choiceId)} className="text-red-500 hover:bg-red-50 p-1 rounded" title="Delete Choice"><Trash2 className="w-3 h-3"/></button>}
                                                                   </div>
                                                               </div>
                                                               <div className="text-[10px] text-amber-700 mt-1 line-clamp-2">
@@ -2226,9 +2227,9 @@ export default function MealPlanStructurePage() {
               <Button variant="outline" onClick={() => setIsModalOpen(false)}>
                 Cancel
               </Button>
-              {(isSuperAdmin || userType === 'company_user' || hasPermission('CAN_REQUEST_CHANGES') || hasPermission('CAN_DIRECT_EDIT')) && <Button onClick={handleSaveStructure} disabled={loading || hasPendingApproval} className="min-w-[120px]">
+              {(isSuperAdmin || userType === 'company_user' || hasPermission('CAN_REQUEST_CHANGES') || hasPermission('CAN_REQUEST_STRUCTURE_CHANGES') || hasPermission('CAN_DIRECT_EDIT')) && <Button onClick={handleSaveStructure} disabled={loading || hasPendingApproval} className="min-w-[120px]">
                 {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                Save Changes
+                {userType === 'company_user' || hasPermission('CAN_REQUEST_CHANGES') || hasPermission('CAN_REQUEST_STRUCTURE_CHANGES') ? 'Submit Request' : 'Save Changes'}
               </Button>}
             </div>
           </DialogFooter>
@@ -2808,7 +2809,7 @@ function MealPlanSelector({
                         <tr key={mp.id} className={`border-b border-slate-200 hover:bg-blue-50/40 transition-colors ${rowBg}`}>
                           <td className={`sticky left-0 z-10 px-4 py-3 border-r border-slate-200 ${rowBg} shadow-[2px_0_5px_-2px_rgba(0,0,0,0.03)] align-top`}>
                             <div className="flex items-start gap-3 mt-1">
-                              <Checkbox disabled={!isSuperAdmin}
+                              <Checkbox disabled={!canEditStructure}
                                 id={`mp-${mp.id}`}
                                 checked={isSelected}
                                 onCheckedChange={(c) => toggleMealPlan(mp.id, c as boolean)}
@@ -2844,7 +2845,7 @@ function MealPlanSelector({
                                   !isSelected ? "opacity-60 grayscale-[0.5]" : ""
                                 } ${isSubMealSelected ? "bg-white border border-blue-200 shadow-sm" : "bg-transparent border border-transparent hover:border-slate-200"}`}>
                                   <div className="flex items-start gap-2.5">
-                                    <Checkbox disabled={!isSuperAdmin}
+                                    <Checkbox disabled={!canEditStructure}
                                       id={`smp-${mp.id}-${smp.id}`}
                                       checked={isSubMealSelected}
                                       disabled={!isSelected}
@@ -2991,3 +2992,4 @@ function MealPlanSelector({
     </div>
   )
 }
+

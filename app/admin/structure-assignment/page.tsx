@@ -80,6 +80,12 @@ export default function StructureAssignmentPage() {
   const [hasPendingApproval, setHasPendingApproval] = useState(false)
   const { userProfile, userType, isSuperAdmin, hasPermission } = useAuth()
 
+  const [existingStructure, setExistingStructure] = useState<any | null>(null)
+  const [selectedCompany, setSelectedCompany] = useState<string>("")
+  const [selectedBuilding, setSelectedBuilding] = useState<string>("")
+  const [weekStructure, setWeekStructure] = useState<DayStructure>({})
+  const [expandedDays, setExpandedDays] = useState<Record<string, boolean>>({})
+
   useEffect(() => {
     if (existingStructure?.id) {
       approvalRequestsService.hasPendingChanges(existingStructure.id, 'STRUCTURAL_ASSIGNMENT').then(setHasPendingApproval)
@@ -87,13 +93,6 @@ export default function StructureAssignmentPage() {
       setHasPendingApproval(false)
     }
   }, [existingStructure?.id])
-
-  const [existingStructure, setExistingStructure] = useState<any | null>(null)
-
-  const [selectedCompany, setSelectedCompany] = useState<string>("")
-  const [selectedBuilding, setSelectedBuilding] = useState<string>("")
-  const [weekStructure, setWeekStructure] = useState<DayStructure>({})
-  const [expandedDays, setExpandedDays] = useState<Record<string, boolean>>({})
   
   // Search states
   const [companySearch, setCompanySearch] = useState("")
@@ -328,7 +327,7 @@ export default function StructureAssignmentPage() {
         updatedAt: new Date()
       }
 
-      if (userType === 'company_user' || hasPermission('CAN_REQUEST_CHANGES')) {
+      if (userType === 'company_user' || hasPermission('CAN_REQUEST_MEAL_PLAN_ASSIGNMENT') || hasPermission('CAN_REQUEST_CHANGES')) {
         const payload = {
           targetType: "STRUCTURAL_ASSIGNMENT" as const,
           targetId: existingStructure?.id || `new_${selectedCompany}_${selectedBuilding}`,
@@ -344,7 +343,7 @@ export default function StructureAssignmentPage() {
         await approvalRequestsService.add(payload);
         setHasPendingApproval(true);
         toast({ title: "Request Submitted", description: "Changes sent to vendor for approval." });
-      } else {
+      } else if (isSuperAdmin || hasPermission('CAN_DIRECT_EDIT')) {
         if (existingStructure?.id) {
           await updateDoc(doc(db, "structureAssignments", existingStructure.id), structureData)
           toast({ title: "Success", description: "Structure updated successfully!" })
@@ -701,9 +700,11 @@ export default function StructureAssignmentPage() {
                 </DialogContent>
               </Dialog>
 
-              <Button onClick={handleSaveStructure} className="min-w-[200px]" disabled={saving || hasPendingApproval}>
-                {saving ? "Saving..." : existingStructure ? "Update Current Schedule" : "Save Schedule"}
-              </Button>
+              {(isSuperAdmin || userType === 'company_user' || hasPermission('CAN_REQUEST_MEAL_PLAN_ASSIGNMENT') || hasPermission('CAN_REQUEST_CHANGES') || hasPermission('CAN_DIRECT_EDIT')) && (
+                <Button onClick={handleSaveStructure} className="min-w-[200px]" disabled={saving || hasPendingApproval}>
+                  {saving ? "Saving..." : existingStructure ? (userType === 'company_user' || (!isSuperAdmin && !hasPermission('CAN_DIRECT_EDIT')) ? "Submit Request" : "Update Current Schedule") : "Save Schedule"}
+                </Button>
+              )}
             </div>
           </CardContent>
         </Card>

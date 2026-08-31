@@ -30,6 +30,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Label } from "@/components/ui/label"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -49,6 +50,8 @@ interface Entity {
   email?: string
   contactPerson?: string
   status?: string
+  permissions?: Record<string, boolean>
+  entityId?: string | null
 }
 
 // Route groupings for better UX
@@ -147,6 +150,8 @@ export default function AccessManagementPage() {
   // UI State
   const [activeTab, setActiveTab] = useState("companies")
   const [selectedEntity, setSelectedEntity] = useState<Entity | null>(null)
+  const [selectedPermissions, setSelectedPermissions] = useState<Record<string, boolean>>({})
+  const [vendorFilter, setVendorFilter] = useState<string>("all")
   const [selectedRoutes, setSelectedRoutes] = useState<Set<string>>(new Set())
   const [searchQuery, setSearchQuery] = useState("")
   const [routeSearchQuery, setRouteSearchQuery] = useState("")
@@ -187,6 +192,7 @@ export default function AccessManagementPage() {
   const handleSelectEntity = useCallback(
     (entity: Entity) => {
       setSelectedEntity(entity)
+      setSelectedPermissions(entity.permissions || {})
       setHasChanges(false)
 
       const userType = activeTab === "companies" ? "company_user" : "vendor_staff"
@@ -264,6 +270,16 @@ export default function AccessManagementPage() {
 
     try {
       setSaving(true)
+      
+      if (activeTab === "roles") {
+        try {
+          const { doc, updateDoc } = await import("firebase/firestore")
+          await updateDoc(doc(db, "roles", selectedEntity.id), { permissions: selectedPermissions })
+          setRoles(prev => prev.map(r => r.id === selectedEntity.id ? { ...r, permissions: selectedPermissions } : r))
+        } catch (err) {
+          console.error("Failed to update role permissions", err)
+        }
+      }
 
       // Find existing access path for this entity or role
       let existingPath
@@ -334,8 +350,10 @@ export default function AccessManagementPage() {
     let list: Entity[] = []
     if (activeTab === "companies") list = companies
     if (activeTab === "vendors") list = vendors
-    if (activeTab === "roles") list = roles.map(r => ({ id: r.id, name: r.name, key: r.key }))
+    if (activeTab === "roles") list = roles.map(r => ({ id: r.id, name: r.name, key: r.key, permissions: r.permissions, entityId: r.entityId }))
 
+    if (activeTab === "roles" && vendorFilter !== "all") list = list.filter(r => r.entityId === vendorFilter)
+    
     if (!searchQuery) return list
     const q = searchQuery.toLowerCase()
     return list.filter(
@@ -344,7 +362,7 @@ export default function AccessManagementPage() {
         (e.email && e.email.toLowerCase().includes(q)) ||
         ((e as any).key && (e as any).key.toLowerCase().includes(q))
     )
-  }, [companies, vendors, roles, activeTab, searchQuery])
+  }, [companies, vendors, roles, activeTab, searchQuery, vendorFilter])
 
   // ─── NOT SUPER ADMIN GUARD ────────────────────────────────────────────────────
   if (!isSuperAdmin) {
@@ -410,6 +428,22 @@ export default function AccessManagementPage() {
               </Tabs>
             </CardHeader>
             <CardContent className="pt-0 space-y-3">
+              {activeTab === "roles" && (
+                <div className="mb-2">
+                  <Select value={vendorFilter} onValueChange={setVendorFilter}>
+                    <SelectTrigger className="w-full h-8 text-xs">
+                      <SelectValue placeholder="Filter by Vendor..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Roles</SelectItem>
+                      {vendors.map(v => (
+                        <SelectItem key={v.id} value={v.id}>{v.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
               {/* Search */}
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
@@ -545,6 +579,35 @@ export default function AccessManagementPage() {
                     </Button>
                   ))}
                 </div>
+
+                {activeTab === "roles" && (
+                  <div className="mt-4 p-4 border border-orange-200 rounded-md bg-white space-y-3">
+                    <h3 className="text-sm font-semibold text-orange-900 mb-2">Role Permissions (Checkboxes)</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {[
+                        { key: "CAN_REQUEST_CHANGES", label: "Can Request Menu Changes" },
+                        { key: "CAN_APPROVE_REQUESTS", label: "Can Approve Menu Updates" },
+                        { key: "CAN_REQUEST_MEAL_PLAN_ASSIGNMENT", label: "Can Request Meal Plan Assignment" },
+                        { key: "CAN_REQUEST_STRUCTURE_CHANGES", label: "Can Request Structure Updates" },
+                        { key: "CAN_APPROVE_STRUCTURE_REQUESTS", label: "Can Approve Structure Updates" },
+                        { key: "CAN_CUT_STRUCTURE_ITEMS", label: "Can Cut Structure Items" },
+                        { key: "ALLOW_HO_ATTENDANCE", label: "Allow HO Attendance" }
+                      ].map(perm => (
+                        <div key={perm.key} className="flex items-center space-x-2 bg-gray-50 p-2 rounded border">
+                          <Checkbox
+                            id={`perm-${perm.key}`}
+                            checked={!!selectedPermissions[perm.key]}
+                            onCheckedChange={(checked) => {
+                              setSelectedPermissions(prev => ({ ...prev, [perm.key]: !!checked }))
+                              setHasChanges(true)
+                            }}
+                          />
+                          <Label htmlFor={`perm-${perm.key}`} className="text-xs cursor-pointer">{perm.label}</Label>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {/* Route Search */}
                 <div className="relative mt-3">
