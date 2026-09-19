@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { vendorsService, type Vendor } from "@/lib/firestore"
+import { vendorLocationsService } from "@/lib/firestore/vendorLocationsService"
 import { toast } from "@/hooks/use-toast"
 
 // Icons
@@ -164,9 +165,13 @@ export default function VendorManagementPage() {
 
       if (editingId) {
         await vendorsService.update(editingId, payload as any)
+        await vendorLocationsService.ensurePrimaryLocationForVendor(editingId, payload as any)
         toast({ title: "Success", description: "Vendor updated" })
       } else {
-        await vendorsService.add(payload as any)
+        const newRef: any = await vendorsService.add(payload as any)
+        if (newRef?.id) {
+          await vendorLocationsService.ensurePrimaryLocationForVendor(newRef.id, payload as any)
+        }
         toast({ title: "Success", description: "Vendor created" })
       }
       

@@ -38,7 +38,8 @@ import { ShiftsAndBreaksTab } from "@/components/attendance/shifts-breaks-tab"
 import { PoliciesTab } from "@/components/attendance/policies-tab"
 import { LiveMonitorTab } from "@/components/attendance/live-monitor-tab"
 
-import * as XLSX from "xlsx"
+import ExcelJS from "exceljs"
+import { saveAs } from "file-saver"
 
 // ── Dynamic imports for Google Maps (avoid SSR) ──────────────────────────────
 const GoogleMapPicker = dynamic(() => import("@/components/google-map-picker"), {
@@ -167,8 +168,8 @@ function CafeteriaLocationModal({
       setSelectedBuildingId(editCafeteria.buildingId || "")
       setSelectedCafeteriaId(editCafeteria.id)
       setRadius(editCafeteria.radius ?? 100)
-      setShiftStart(editCafeteria.shiftStart ?? "09:00")
-      setShiftEnd(editCafeteria.shiftEnd ?? "18:00")
+      setShiftStart((editCafeteria as any).shiftStart ?? "09:00")
+      setShiftEnd((editCafeteria as any).shiftEnd ?? "18:00")
       if (editCafeteria.latitude && editCafeteria.longitude) {
         setLocation({
           lat: editCafeteria.latitude,
@@ -235,8 +236,8 @@ function CafeteriaLocationModal({
           setLocation(null)
         }
         setRadius(cafe.radius ?? 100)
-        setShiftStart(cafe.shiftStart ?? "09:00")
-        setShiftEnd(cafe.shiftEnd ?? "18:00")
+        setShiftStart((cafe as any).shiftStart ?? "09:00")
+        setShiftEnd((cafe as any).shiftEnd ?? "18:00")
       }
     }
   }, [selectedCafeteriaId])
@@ -462,7 +463,7 @@ export default function AttendanceAdminPage() {
   const [search, setSearch] = useState("")
   const [filterCompany, setFilterCompany] = useState("all")
   const [filterStatus, setFilterStatus] = useState("all")
-  const [filterDate, setFilterDate] = useState("today")
+  const [filterDate, setFilterDate] = useState("all")
 
   // Location modal
   const [locationModalOpen, setLocationModalOpen] = useState(false)
@@ -492,30 +493,11 @@ export default function AttendanceAdminPage() {
         cafSnap.docs.map((d) => ({ id: d.id, ...d.data() })) as Cafeteria[]
       )
 
-      // Load recent attendance records
-      const dateStart = new Date()
-      if (filterDate === "today") {
-        dateStart.setHours(0, 0, 0, 0)
-      } else if (filterDate === "week") {
-        dateStart.setDate(dateStart.getDate() - 7)
-      } else if (filterDate === "month") {
-        dateStart.setDate(dateStart.getDate() - 30)
-      } else {
-        dateStart.setFullYear(2000)
-      }
-
-      const qConstraints: any[] = [
-        where("timestamp", ">=", Timestamp.fromDate(dateStart)),
-        orderBy("timestamp", "desc"),
-        limit(200),
-      ]
-      if (filterCompany !== "all")
-        qConstraints.unshift(where("companyId", "==", filterCompany))
-      if (filterStatus !== "all")
-        qConstraints.unshift(where("status", "==", filterStatus))
-
+      // Load recent attendance records (sorted by timestamp descending)
+      // Note: We fetch recent records and perform filtering client-side
+      // to avoid Firestore composite index errors on compound queries.
       const rSnap = await getDocs(
-        query(collection(db, "attendance"), ...qConstraints)
+        query(collection(db, "attendance"), orderBy("timestamp", "desc"), limit(500))
       )
       setRecords(
         rSnap.docs.map((d) => ({
@@ -524,6 +506,7 @@ export default function AttendanceAdminPage() {
         })) as AttendanceRecord[]
       )
     } catch (e: any) {
+      console.error("Failed to fetch attendance data:", e)
       toast({
         title: "Error",
         description: e.message,
@@ -532,7 +515,7 @@ export default function AttendanceAdminPage() {
     } finally {
       setLoading(false)
     }
-  }, [filterDate, filterCompany, filterStatus])
+  }, [])
 
   useEffect(() => {
     fetchAll()
@@ -556,87 +539,294 @@ export default function AttendanceAdminPage() {
     (c) => c.latitude != null && c.longitude != null
   ).length
 
-  // Filtered records
+  // Filtered records (client-side filtering for search, company, status, and date range)
   const filteredRecords = useMemo(() => {
+    const now = new Date()
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+    const weekStart = now.getTime() - 7 * 24 * 60 * 60 * 1000
+    const monthStart = now.getTime() - 30 * 24 * 60 * 60 * 1000
+
     return records.filter((r) => {
-      const matchSearch =
-        !search ||
-        r.employeeName?.toLowerCase().includes(search.toLowerCase()) ||
-        r.siteName?.toLowerCase().includes(search.toLowerCase())
-      return matchSearch
+      // Search filter
+      if (search) {
+        const query = search.toLowerCase()
+        const matchesEmployee = r.employeeName?.toLowerCase().includes(query)
+        const matchesSite = r.siteName?.toLowerCase().includes(query)
+        if (!matchesEmployee && !matchesSite) return false
+      }
+
+      // Company filter
+      if (filterCompany !== "all" && r.companyId !== filterCompany) {
+        return false
+      }
+
+      // Status filter
+      if (filterStatus !== "all" && r.status !== filterStatus) {
+        return false
+      }
+
+      // Date filter
+      if (filterDate !== "all") {
+        const rTime = r.timestamp?.toDate
+          ? r.timestamp.toDate().getTime()
+          : r.timestamp
+          ? new Date(r.timestamp).getTime()
+          : 0
+
+        if (filterDate === "today" && rTime < todayStart) return false
+        if (filterDate === "week" && rTime < weekStart) return false
+        if (filterDate === "month" && rTime < monthStart) return false
+      }
+
+      return true
     })
-  }, [records, search])
+  }, [records, search, filterCompany, filterStatus, filterDate])
 
   // Stats
   const stats = useMemo(
     () => ({
-      totalCheckIns: records.filter((r) => r.status === "IN").length,
-      totalCheckOuts: records.filter((r) => r.status === "OUT").length,
-      mockLocationFlags: records.filter((r) => r.mockLocation).length,
+      totalCheckIns: filteredRecords.filter((r) => r.status === "IN").length,
+      totalCheckOuts: filteredRecords.filter((r) => r.status === "OUT").length,
+      mockLocationFlags: filteredRecords.filter((r) => r.mockLocation).length,
       geoEnabledCafeterias: geoEnabledCount,
-      uniqueUsers: new Set(records.map((r) => r.userId)).size,
+      uniqueUsers: new Set(filteredRecords.map((r) => r.userId)).size,
     }),
-    [records, geoEnabledCount]
+    [filteredRecords, geoEnabledCount]
   )
 
-  // Export CSV
-  const exportCSV = () => {
-    const headers = [
-      "Date",
-      "Time",
-      "Employee",
-      "Company",
-      "Site",
-      "Status",
-      "Distance",
-      "Accuracy",
-      "Device",
-      "Mock GPS",
-      "Battery",
-    ]
-    const rows = filteredRecords.map((r) => [
-      fmtDate(r.timestamp),
-      fmtTime(r.timestamp),
-      r.employeeName,
-      companies.find((c) => c.id === r.companyId)?.name ?? r.companyId,
-      r.siteName,
-      r.status,
-      fmtDist(r.distance),
-      `±${Math.round(r.accuracy)}m`,
-      r.deviceId?.substring(0, 12),
-      r.mockLocation ? "YES" : "no",
-      `${Math.round((r.batteryLevel ?? 0) * 100)}%`,
-    ])
-    const csv = [headers, ...rows].map((row) => row.join(",")).join("\n")
-    const blob = new Blob([csv], { type: "text/csv" })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement("a")
-    a.href = url
-    a.download = `attendance_${new Date().toISOString().split("T")[0]}.csv`
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
+  // Export Attendance XLSX (Modern Office OpenXML format via ExcelJS)
+  const exportXLSX = async () => {
+    if (filteredRecords.length === 0) {
+      toast({
+        title: "No records to export",
+        description: "There are no attendance records matching your filter.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    try {
+      const workbook = new ExcelJS.Workbook()
+      workbook.creator = "Cookhouse Admin"
+      workbook.lastModifiedBy = "Cookhouse Admin"
+      workbook.created = new Date()
+      workbook.modified = new Date()
+
+      const worksheet = workbook.addWorksheet("Attendance Records", {
+        views: [{ state: "frozen", ySplit: 1 }],
+      })
+
+      // Define columns
+      worksheet.columns = [
+        { header: "Date", key: "date", width: 14 },
+        { header: "Time", key: "time", width: 12 },
+        { header: "Employee Name", key: "employee", width: 22 },
+        { header: "Company", key: "company", width: 22 },
+        { header: "Cafeteria / Site", key: "site", width: 24 },
+        { header: "Status", key: "status", width: 14 },
+        { header: "Distance", key: "distance", width: 14 },
+        { header: "GPS Accuracy", key: "accuracy", width: 14 },
+        { header: "Device ID", key: "device", width: 16 },
+        { header: "Mock GPS Flag", key: "mock", width: 16 },
+        { header: "Battery", key: "battery", width: 12 },
+        { header: "Latitude", key: "latitude", width: 14 },
+        { header: "Longitude", key: "longitude", width: 14 },
+      ]
+
+      // Style Header Row
+      const headerRow = worksheet.getRow(1)
+      headerRow.height = 28
+      headerRow.eachCell((cell) => {
+        cell.font = { bold: true, color: { argb: "FFFFFFFF" }, size: 11 }
+        cell.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: "FF15803D" }, // Forest Green (matching Cookhouse theme)
+        }
+        cell.alignment = { vertical: "middle", horizontal: "center" }
+        cell.border = {
+          top: { style: "thin", color: { argb: "FFCCCCCC" } },
+          bottom: { style: "medium", color: { argb: "FF15803D" } },
+          left: { style: "thin", color: { argb: "FFCCCCCC" } },
+          right: { style: "thin", color: { argb: "FFCCCCCC" } },
+        }
+      })
+
+      // Add Data Rows
+      filteredRecords.forEach((r) => {
+        const row = worksheet.addRow({
+          date: fmtDate(r.timestamp),
+          time: fmtTime(r.timestamp),
+          employee: r.employeeName || "N/A",
+          company: companies.find((c) => c.id === r.companyId)?.name ?? (r.companyId || "N/A"),
+          site: r.siteName || "N/A",
+          status: r.status === "IN" ? "Check In" : r.status === "OUT" ? "Check Out" : r.status,
+          distance: fmtDist(r.distance),
+          accuracy: `±${Math.round(r.accuracy || 0)}m`,
+          device: r.deviceId?.substring(0, 12) || "N/A",
+          mock: r.mockLocation ? "YES (Flagged)" : "No",
+          battery: r.batteryLevel != null ? `${Math.round((r.batteryLevel ?? 0) * 100)}%` : "N/A",
+          latitude: r.latitude != null ? r.latitude : "",
+          longitude: r.longitude != null ? r.longitude : "",
+        })
+
+        row.height = 22
+        row.eachCell((cell, colNumber) => {
+          cell.alignment = {
+            vertical: "middle",
+            horizontal: [1, 2, 6, 10, 11].includes(colNumber)
+              ? "center"
+              : [7, 8, 12, 13].includes(colNumber)
+              ? "right"
+              : "left",
+          }
+          cell.border = {
+            top: { style: "thin", color: { argb: "FFE5E7EB" } },
+            bottom: { style: "thin", color: { argb: "FFE5E7EB" } },
+            left: { style: "thin", color: { argb: "FFE5E7EB" } },
+            right: { style: "thin", color: { argb: "FFE5E7EB" } },
+          }
+          // Highlight Mock GPS
+          if (colNumber === 10 && r.mockLocation) {
+            cell.font = { bold: true, color: { argb: "FFDC2626" } }
+            cell.fill = {
+              type: "pattern",
+              pattern: "solid",
+              fgColor: { argb: "FFFEE2E2" },
+            }
+          }
+        })
+      })
+
+      const buffer = await workbook.xlsx.writeBuffer()
+      const blob = new Blob([buffer], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      })
+      const fileName = `Attendance_Records_${new Date().toISOString().split("T")[0]}.xlsx`
+      saveAs(blob, fileName)
+
+      toast({
+        title: "Export Successful ✅",
+        description: `Exported ${filteredRecords.length} records to ${fileName}`,
+      })
+    } catch (err: any) {
+      console.error("Attendance export error:", err)
+      toast({
+        title: "Export Failed",
+        description: err.message || "Failed to export attendance records",
+        variant: "destructive",
+      })
+    }
   }
 
-  // Export Locations XLSX
-  const exportLocationsXlsx = () => {
-    const data = enrichedCafeterias.map(cafe => ({
-      Company: cafe.companyName || "N/A",
-      Building: cafe.buildingName || "N/A",
-      Cafeteria: cafe.name,
-      Status: cafe.latitude != null && cafe.longitude != null ? "Set" : "Not Set",
-      Latitude: cafe.latitude || "",
-      Longitude: cafe.longitude || "",
-      Radius: cafe.radius || "",
-      Address: cafe.address || ""
-    }));
+  // Export Locations XLSX (Modern Office OpenXML format via ExcelJS)
+  const exportLocationsXlsx = async () => {
+    try {
+      const workbook = new ExcelJS.Workbook()
+      workbook.creator = "Cookhouse Admin"
+      workbook.lastModifiedBy = "Cookhouse Admin"
+      workbook.created = new Date()
+      workbook.modified = new Date()
 
-    const ws = XLSX.utils.json_to_sheet(data);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Locations");
-    XLSX.writeFile(wb, "Cafeteria_Locations.xlsx");
-    toast({ title: "Export Successful", description: "Locations exported to XLSX" })
+      const worksheet = workbook.addWorksheet("Cafeteria Locations", {
+        views: [{ state: "frozen", ySplit: 1 }],
+      })
+
+      worksheet.columns = [
+        { header: "Company", key: "company", width: 24 },
+        { header: "Building", key: "building", width: 24 },
+        { header: "Cafeteria", key: "cafeteria", width: 24 },
+        { header: "Geo Status", key: "status", width: 16 },
+        { header: "Latitude", key: "latitude", width: 14 },
+        { header: "Longitude", key: "longitude", width: 14 },
+        { header: "Radius", key: "radius", width: 14 },
+        { header: "Shift Start", key: "shiftStart", width: 14 },
+        { header: "Shift End", key: "shiftEnd", width: 14 },
+        { header: "Address", key: "address", width: 36 },
+      ]
+
+      // Style Header Row
+      const headerRow = worksheet.getRow(1)
+      headerRow.height = 28
+      headerRow.eachCell((cell) => {
+        cell.font = { bold: true, color: { argb: "FFFFFFFF" }, size: 11 }
+        cell.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: "FF15803D" }, // Forest Green
+        }
+        cell.alignment = { vertical: "middle", horizontal: "center" }
+        cell.border = {
+          top: { style: "thin", color: { argb: "FFCCCCCC" } },
+          bottom: { style: "medium", color: { argb: "FF15803D" } },
+          left: { style: "thin", color: { argb: "FFCCCCCC" } },
+          right: { style: "thin", color: { argb: "FFCCCCCC" } },
+        }
+      })
+
+      // Add Data Rows
+      enrichedCafeterias.forEach((cafe) => {
+        const hasGeo = cafe.latitude != null && cafe.longitude != null
+        const row = worksheet.addRow({
+          company: cafe.companyName || "N/A",
+          building: cafe.buildingName || "N/A",
+          cafeteria: cafe.name,
+          status: hasGeo ? "Configured" : "Not Set",
+          latitude: cafe.latitude != null ? cafe.latitude : "",
+          longitude: cafe.longitude != null ? cafe.longitude : "",
+          radius: cafe.radius ? fmtDist(cafe.radius) : "100m",
+          shiftStart: (cafe as any).shiftStart || "09:00",
+          shiftEnd: (cafe as any).shiftEnd || "18:00",
+          address: cafe.address || "",
+        })
+
+        row.height = 22
+        row.eachCell((cell, colNumber) => {
+          cell.alignment = {
+            vertical: "middle",
+            horizontal: [4, 8, 9].includes(colNumber)
+              ? "center"
+              : [5, 6, 7].includes(colNumber)
+              ? "right"
+              : "left",
+          }
+          cell.border = {
+            top: { style: "thin", color: { argb: "FFE5E7EB" } },
+            bottom: { style: "thin", color: { argb: "FFE5E7EB" } },
+            left: { style: "thin", color: { argb: "FFE5E7EB" } },
+            right: { style: "thin", color: { argb: "FFE5E7EB" } },
+          }
+          // Status styling
+          if (colNumber === 4) {
+            cell.font = { bold: true, color: { argb: hasGeo ? "FF166534" : "FF9A3412" } }
+            cell.fill = {
+              type: "pattern",
+              pattern: "solid",
+              fgColor: { argb: hasGeo ? "FFDCFCE7" : "FFFFEDD5" },
+            }
+          }
+        })
+      })
+
+      const buffer = await workbook.xlsx.writeBuffer()
+      const blob = new Blob([buffer], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      })
+      const fileName = `Cafeteria_Locations_${new Date().toISOString().split("T")[0]}.xlsx`
+      saveAs(blob, fileName)
+
+      toast({
+        title: "Export Successful ✅",
+        description: `Exported ${enrichedCafeterias.length} locations to ${fileName}`,
+      })
+    } catch (err: any) {
+      console.error("Locations export error:", err)
+      toast({
+        title: "Export Failed",
+        description: err.message || "Failed to export locations",
+        variant: "destructive",
+      })
+    }
   }
 
   return (
@@ -655,8 +845,8 @@ export default function AttendanceAdminPage() {
           <Button variant="outline" size="sm" onClick={fetchAll}>
             <RefreshCw className="h-4 w-4 mr-1" /> Refresh
           </Button>
-          <Button variant="outline" size="sm" onClick={exportCSV}>
-            <Download className="h-4 w-4 mr-1" /> Export CSV
+          <Button variant="outline" size="sm" onClick={exportXLSX}>
+            <Download className="h-4 w-4 mr-1" /> Export XLSX
           </Button>
           <Button
             size="sm"
@@ -931,9 +1121,21 @@ export default function AttendanceAdminPage() {
                   <TableRow>
                     <TableCell
                       colSpan={8}
-                      className="text-center py-8 text-gray-400"
+                      className="text-center py-10 text-gray-400"
                     >
-                      No attendance records found
+                      <div className="flex flex-col items-center justify-center gap-1.5">
+                        <Clock className="h-8 w-8 text-gray-300 mb-1" />
+                        <p className="font-semibold text-gray-600">No attendance records found</p>
+                        {filterDate === "today" ? (
+                          <p className="text-xs text-gray-400 max-w-sm">
+                            No check-ins have been logged for today yet. Try switching the date filter to &quot;Last 7 Days&quot; or &quot;All Time&quot; above to view historical punches.
+                          </p>
+                        ) : (
+                          <p className="text-xs text-gray-400 max-w-sm">
+                            No records match the current filter criteria. Try changing the company or status filter.
+                          </p>
+                        )}
+                      </div>
                     </TableCell>
                   </TableRow>
                 ) : (

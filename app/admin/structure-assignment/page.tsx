@@ -327,7 +327,7 @@ export default function StructureAssignmentPage() {
         updatedAt: new Date()
       }
 
-      if (userType === 'company_user' || hasPermission('CAN_REQUEST_MEAL_PLAN_ASSIGNMENT') || hasPermission('CAN_REQUEST_CHANGES')) {
+      if (userType === 'company_user' || (!isSuperAdmin && !hasPermission('CAN_DIRECT_EDIT') && (hasPermission('CAN_REQUEST_MEAL_PLAN_ASSIGNMENT') || hasPermission('CAN_REQUEST_CHANGES')))) {
         const payload = {
           targetType: "STRUCTURAL_ASSIGNMENT" as const,
           targetId: existingStructure?.id || `new_${selectedCompany}_${selectedBuilding}`,
@@ -701,7 +701,7 @@ export default function StructureAssignmentPage() {
               </Dialog>
 
               {(isSuperAdmin || userType === 'company_user' || hasPermission('CAN_REQUEST_MEAL_PLAN_ASSIGNMENT') || hasPermission('CAN_REQUEST_CHANGES') || hasPermission('CAN_DIRECT_EDIT')) && (
-                <Button onClick={handleSaveStructure} className="min-w-[200px]" disabled={saving || hasPendingApproval}>
+                <Button onClick={handleSaveStructure} className="min-w-[200px]" disabled={saving || (hasPendingApproval && !isSuperAdmin && !hasPermission('CAN_DIRECT_EDIT'))}>
                   {saving ? "Saving..." : existingStructure ? (userType === 'company_user' || (!isSuperAdmin && !hasPermission('CAN_DIRECT_EDIT')) ? "Submit Request" : "Update Current Schedule") : "Save Schedule"}
                 </Button>
               )}

@@ -32,6 +32,9 @@ import {
   Ticket,
   Code,
   Activity,
+  Upload,
+  Sparkles,
+  ClipboardList,
 } from "lucide-react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
@@ -51,6 +54,7 @@ const navigation = [
   { name: "Ingredients", href: "/admin/ingredients", icon: Package, category: "ingredients" },
   { name: "GP", href: "/admin/gp", icon: Layers, category: "ingredients" },
   { name: "SubGp", href: "/admin/subgp", icon: Grid3X3, category: "ingredients" },
+  { name: "Import Excel", href: "/admin/import", icon: Upload, category: "ingredients" },
   { name: "Templates", href: "/admin/templates", icon: Tags, category: "master" },
   { name: "Brands", href: "/admin/brands", icon: Building2, category: "master" },
   { name: "Sub Brands", href: "/admin/sub-brands", icon: Building2, category: "master" },
@@ -86,6 +90,7 @@ const navigation = [
   { name: "Structure Management", href: "/admin/structure-management", icon: Settings, category: "organization" },
   { name: "Meal Plan Structure", href: "/admin/meal-plan-structure", icon: FileText, category: "organization" },
   { name: "Vendors Management", href: "/admin/vendors", icon: FileText, category: "vendors" },
+  { name: "Vendor HO SOPs", href: "/admin/vendor-ho-templates", icon: Sparkles, category: "vendors" },
   { name: "Approvals Inbox", href: "/admin/approvals", icon: FileSignature, category: "vendors" },
   { name: "Attendance Management", href: "/admin/attendance", icon: MapPin, category: "attendance" },
   { name: "Admin Activity", href: "/admin/attendance-dashboard", icon: Activity, category: "attendance" },

@@ -5873,11 +5873,30 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
       const fileSaver = await import("file-saver");
       const saveAs = fileSaver.saveAs || fileSaver.default;
 
-      const [companyMenusSnap] = await Promise.all([
-        getDocs(query(collection(db, "companyMenus"), where("combinedMenuId", "==", menuId)))
-      ]);
-
-      const companyMenus = companyMenusSnap.docs.map(d => d.data() as MenuData);
+      const activeCompanies = companies.filter((c: any) => c.status === "active");
+      const companyMenus: any[] = [];
+      for (const company of activeCompanies) {
+        const companyBuildings = buildings.filter((b: any) => b.companyId === company.id && b.status === "active");
+        for (const building of companyBuildings) {
+          const structureAssignment = allStructureAssignments.find(
+            (sa: any) => sa.companyId === company.id && sa.buildingId === building.id
+          );
+          const mealPlanStructureData = mealPlanAssignments.find(
+            (mpsa: any) => mpsa.companyId === company.id && mpsa.buildingId === building.id
+          );
+          if (structureAssignment && mealPlanStructureData) {
+            const generatedMenu = buildCompanyMenu(
+              company,
+              building,
+              structureAssignment,
+              mealPlanStructureData,
+              menuData,
+              dateRange
+            );
+            companyMenus.push(generatedMenu);
+          }
+        }
+      }
       const zip = new JSZip();
 
       const getName = (id: string) => menuItems.find(i => i.id === id)?.name || id;
@@ -6815,7 +6834,7 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
                   </Button>
                   <Button
                     onClick={() => handleSave(false)}
-                    disabled={saving || loading || hasPendingApproval}
+                    disabled={saving || loading || (hasPendingApproval && !isDirectEditor)}
                     className={
                       mustRequestChanges
                         ? "bg-amber-600 hover:bg-amber-700 text-white shadow-sm"

@@ -906,7 +906,7 @@ export default function MealPlanStructurePage() {
         status: "active",
       }
 
-      if (userType === 'company_user' || hasPermission('CAN_REQUEST_CHANGES') || hasPermission('CAN_REQUEST_STRUCTURE_CHANGES')) {
+      if (userType === 'company_user' || (!isSuperAdmin && !hasPermission('CAN_DIRECT_EDIT') && (hasPermission('CAN_REQUEST_CHANGES') || hasPermission('CAN_REQUEST_STRUCTURE_CHANGES')))) {
         const payload = {
           targetType: "MEAL_PLAN_STRUCTURE" as const,
           targetId: currentAssignmentId || `new_${selectedCompany}_${selectedBuilding}`,
@@ -2227,9 +2227,9 @@ export default function MealPlanStructurePage() {
               <Button variant="outline" onClick={() => setIsModalOpen(false)}>
                 Cancel
               </Button>
-              {(isSuperAdmin || userType === 'company_user' || hasPermission('CAN_REQUEST_CHANGES') || hasPermission('CAN_REQUEST_STRUCTURE_CHANGES') || hasPermission('CAN_DIRECT_EDIT')) && <Button onClick={handleSaveStructure} disabled={loading || hasPendingApproval} className="min-w-[120px]">
+              {(isSuperAdmin || userType === 'company_user' || hasPermission('CAN_REQUEST_CHANGES') || hasPermission('CAN_REQUEST_STRUCTURE_CHANGES') || hasPermission('CAN_DIRECT_EDIT')) && <Button onClick={handleSaveStructure} disabled={loading || (hasPendingApproval && !isSuperAdmin && !hasPermission('CAN_DIRECT_EDIT'))} className="min-w-[120px]">
                 {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                {userType === 'company_user' || hasPermission('CAN_REQUEST_CHANGES') || hasPermission('CAN_REQUEST_STRUCTURE_CHANGES') ? 'Submit Request' : 'Save Changes'}
+                {userType === 'company_user' || (!isSuperAdmin && !hasPermission('CAN_DIRECT_EDIT') && (hasPermission('CAN_REQUEST_CHANGES') || hasPermission('CAN_REQUEST_STRUCTURE_CHANGES'))) ? 'Submit Request' : 'Save Changes'}
               </Button>}
             </div>
           </DialogFooter>
