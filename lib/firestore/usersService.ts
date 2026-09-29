@@ -58,6 +58,17 @@ export interface User {
   }[];
   managerId: string;
   status: 'active' | 'inactive';
+  registeredDeviceId?: string;
+  registeredDeviceModel?: string;
+  registeredDeviceAt?: any;
+  devices?: Record<string, {
+    pushToken: string;
+    deviceModel: string;
+    platform: string;
+    updatedAt: any;
+  }>;
+  fcmToken?: string;
+  tokenUpdatedAt?: any;
   createdAt?: any;
   updatedAt?: any;
 }

@@ -2964,8 +2964,11 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
   // AI MENU SUGGESTION (Preview + Apply)
   const [showAiSuggestModal, setShowAiSuggestModal] = useState(false)
   const [aiSuggestLoading, setAiSuggestLoading] = useState(false)
+  const [aiModel, setAiModel] = useState("gemini")
   const [aiSuggestError, setAiSuggestError] = useState<string | null>(null)
   const [aiSuggestPreview, setAiSuggestPreview] = useState<any | null>(null)
+  const [aiGenerationProgress, setAiGenerationProgress] = useState(0)
+  const [aiGenerationStatusText, setAiGenerationStatusText] = useState("")
 
   // CHOICE SELECTION MODAL STATE
   const [showChoiceModal, setShowChoiceModal] = useState(false)
@@ -5722,87 +5725,134 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
 
     setAiSuggestError(null)
     setAiSuggestLoading(true)
+    setAiGenerationProgress(0)
+    setAiGenerationStatusText("Initializing AI Batch Generation...")
     setShowAiSuggestModal(true)
+
     try {
-      const res = await fetch("/api/ai/menu-suggest", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          startDate,
-          endDate,
-          serviceId: selectedService.id,
-          subServiceId: selectedSubService.id,
-          fillMode: "missing_only",
-          // Pass current draft so AI fills only blank cells (matches how you build menus in UI)
-          currentMenuData: menuData,
-        }),
-      })
-      const data = await res.json().catch(() => null)
-      if (!res.ok || !data?.ok) throw new Error(data?.error || "AI suggestion failed")
-      setAiSuggestPreview(data)
-    } catch (e: any) {
-      setAiSuggestPreview(null)
-      setAiSuggestError(e?.message || "AI suggestion failed")
-    } finally {
-      setAiSuggestLoading(false)
-    }
-  }, [menu?.startDate, menu?.endDate, createStartDate, createEndDate, selectedService?.id, selectedSubService?.id, menuData])
+      // Calculate all dates in range
+      const start = new Date(startDate)
+      const end = new Date(endDate)
+      const allDates = []
+      for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+        allDates.push(d.toISOString().split("T")[0])
+      }
 
-  const applyAiMenuToDraft = useCallback(() => {
-    const suggestedMenuData = aiSuggestPreview?.menuData
-    if (!suggestedMenuData || typeof suggestedMenuData !== "object") return
+      // Group dates into batches of 1 to reduce token load on LLM
+      const BATCH_SIZE = 1
+      const batches = []
+      for (let i = 0; i < allDates.length; i += BATCH_SIZE) {
+        batches.push(allDates.slice(i, i + BATCH_SIZE))
+      }
 
-    setMenuData((prev: any) => {
-      const updated = JSON.parse(JSON.stringify(prev || {}))
+      // Process batches sequentially
+      for (let i = 0; i < batches.length; i++) {
+        const batchDates = batches[i]
+        setAiGenerationStatusText(`Generating menu for ${batchDates[0]} to ${batchDates[batchDates.length - 1]}... (Batch ${i + 1} of ${batches.length})`)
+        setAiGenerationProgress(Math.floor((i / batches.length) * 100))
 
-      for (const date of Object.keys(suggestedMenuData)) {
-        const day = suggestedMenuData[date]
-        if (!day || typeof day !== "object") continue
-
-        if (!updated[date]) updated[date] = {}
-
-        for (const serviceId of Object.keys(day)) {
-          const ssObj = day[serviceId]
-          if (!ssObj || typeof ssObj !== "object") continue
-          if (!updated[date][serviceId]) updated[date][serviceId] = {}
-
-          for (const subServiceId of Object.keys(ssObj)) {
-            const mpObj = ssObj[subServiceId]
-            if (!mpObj || typeof mpObj !== "object") continue
-            if (!updated[date][serviceId][subServiceId]) updated[date][serviceId][subServiceId] = {}
-
-            for (const mealPlanId of Object.keys(mpObj)) {
-              const smpObj = mpObj[mealPlanId]
-              if (!smpObj || typeof smpObj !== "object") continue
-              if (!updated[date][serviceId][subServiceId][mealPlanId]) updated[date][serviceId][subServiceId][mealPlanId] = {}
-
-              for (const subMealPlanId of Object.keys(smpObj)) {
-                const cell = smpObj[subMealPlanId]
-                const ids = Array.isArray(cell?.menuItemIds) ? cell.menuItemIds : []
-                if (ids.length === 0) continue
-
-                const existing = updated[date][serviceId][subServiceId][mealPlanId][subMealPlanId]
-                updated[date][serviceId][subServiceId][mealPlanId][subMealPlanId] = {
-                  ...(existing || {}),
-                  menuItemIds: ids.slice(0, 3),
-                  aiSuggestedMarks: ids.slice(0, 3).reduce((acc: any, id: string) => {
-                    acc[id] = true
-                    return acc
-                  }, {}),
-                  aiSuggestedAt: Date.now(),
-                }
+        // Get the relevant slice of current menu data for these dates
+        const currentMenuSlice: any = {}
+        for (const date of batchDates) {
+          if (menuData[date]?.[selectedService.id]?.[selectedSubService.id]) {
+            currentMenuSlice[date] = {
+              [selectedService.id]: {
+                [selectedSubService.id]: menuData[date][selectedService.id][selectedSubService.id]
               }
             }
           }
         }
+
+        const res = await fetch("/api/ai/generate-menu-batch-okf", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            serviceId: selectedService.id,
+            subServiceId: selectedSubService.id,
+            datesToGenerate: batchDates,
+            currentMenuData: currentMenuSlice,
+            aiModel,
+          }),
+        })
+
+        const data = await res.json().catch(() => null)
+        if (!res.ok || !data?.success) {
+           const errMsg = data?.error || `Failed on batch ${i + 1}`
+           const debugStr = data?.debug ? `\n\nDEBUG INFO:\n${JSON.stringify(data.debug, null, 2)}` : ""
+           throw new Error(errMsg + debugStr)
+        }
+
+        const suggestedMenuData = data.menuDataSlice
+        console.log(`[AI Suggest Frontend] Batch ${i+1} suggestedMenuData:`, JSON.stringify(suggestedMenuData))
+        
+        // Deep merge the returned slice into the live menuData state
+        setMenuData((prev: any) => {
+          const updated = JSON.parse(JSON.stringify(prev || {}))
+          for (const date of Object.keys(suggestedMenuData)) {
+            const day = suggestedMenuData[date]
+            if (!day || typeof day !== "object") continue
+            if (!updated[date]) updated[date] = {}
+
+            for (const serviceId of Object.keys(day)) {
+              const ssObj = day[serviceId]
+              if (!ssObj || typeof ssObj !== "object") continue
+              if (!updated[date][serviceId]) updated[date][serviceId] = {}
+
+              for (const subServiceId of Object.keys(ssObj)) {
+                const mpObj = ssObj[subServiceId]
+                if (!mpObj || typeof mpObj !== "object") continue
+                if (!updated[date][serviceId][subServiceId]) updated[date][serviceId][subServiceId] = {}
+
+                for (const mealPlanId of Object.keys(mpObj)) {
+                  const smpObj = mpObj[mealPlanId]
+                  if (!smpObj || typeof smpObj !== "object") continue
+                  if (!updated[date][serviceId][subServiceId][mealPlanId]) updated[date][serviceId][subServiceId][mealPlanId] = {}
+
+                  for (const subMealPlanId of Object.keys(smpObj)) {
+                    const cell = smpObj[subMealPlanId]
+                    
+                    const existing = updated[date][serviceId][subServiceId][mealPlanId][subMealPlanId] || {}
+                    
+                    const mergedItemIds = Array.from(new Set([...(existing.menuItemIds || []), ...(cell.menuItemIds || [])]))
+                    const newAiMarks = (cell.menuItemIds || []).reduce((acc: any, id: string) => { acc[id] = true; return acc; }, {})
+
+                    updated[date][serviceId][subServiceId][mealPlanId][subMealPlanId] = {
+                      ...(existing || {}),
+                      menuItemIds: mergedItemIds,
+                      customAssignments: cell.customAssignments || existing.customAssignments || {},
+                      aiSuggestedMarks: { ...(existing.aiSuggestedMarks || {}), ...newAiMarks },
+                      aiSuggestedAt: Date.now(),
+                    }
+                  }
+                }
+              }
+            }
+          }
+          return updated
+        })
+        
+        // Respect rate limits with a short pause between batches
+        if (i < batches.length - 1) {
+            await new Promise(resolve => setTimeout(resolve, 2000))
+        }
       }
 
-      return updated
-    })
+      setAiGenerationProgress(100)
+      setAiGenerationStatusText("Generation Complete!")
+      toast({ title: "AI Generation Complete", description: "The OKF profile has filled the menu." })
+      setTimeout(() => setShowAiSuggestModal(false), 1500)
 
-    toast({ title: "AI Applied", description: "Suggestions added to your draft. Review and then save." })
+    } catch (e: any) {
+      setAiSuggestError(e?.message || "AI batch generation failed")
+    } finally {
+      setAiSuggestLoading(false)
+    }
+  }, [menu?.startDate, menu?.endDate, createStartDate, createEndDate, selectedService?.id, selectedSubService?.id, menuData, aiModel])
+
+  const applyAiMenuToDraft = useCallback(() => {
+    // This function is kept for signature compatibility if used elsewhere, but does nothing now
     setShowAiSuggestModal(false)
-  }, [aiSuggestPreview])
+  }, [])
 
   const mealPlanStructure = useMemo(() => {
     return mealPlans.map((mp) => ({
@@ -6804,17 +6854,9 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
           )}
 
           <div className="flex gap-2">
-            {menuType === "combined" && (
-              <Button
-                variant="outline"
-                onClick={fetchAiMenuSuggestion}
-                disabled={saving || loading}
-                className="border-blue-300 text-blue-700 hover:bg-blue-50"
-              >
+            {menuType === "combined" && ( <><div className="flex items-center space-x-2 mr-2"><select value={aiModel} onChange={(e) => setAiModel(e.target.value)} className="text-xs border-blue-300 text-blue-700 rounded p-2 focus:ring-blue-500 bg-white"><option value="gemini">Gemini</option><option value="nara">Nara</option><option value="ollama">Local</option></select></div><Button variant="outline" onClick={fetchAiMenuSuggestion} disabled={saving || loading} className="border-blue-300 text-blue-700 hover:bg-blue-50">
                 {aiSuggestLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Zap className="h-4 w-4 mr-2" />}
-                AI Suggest
-              </Button>
-            )}
+                AI Suggest</Button></>)}
             
             {(() => {
               const isDirectEditor = isSuperAdmin || hasPermission('CAN_DIRECT_EDIT');
@@ -6883,84 +6925,25 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
           </div>
         </div>
 
-        <Dialog open={showAiSuggestModal} onOpenChange={setShowAiSuggestModal}>
-          <DialogContent className="max-w-4xl max-h-[85vh] overflow-hidden">
+        <Dialog open={showAiSuggestModal} onOpenChange={(open) => { if (!aiSuggestLoading) setShowAiSuggestModal(open) }}>
+          <DialogContent className="max-w-md" aria-describedby={undefined}>
             <DialogHeader>
-              <DialogTitle>AI Menu Suggestions (Preview)</DialogTitle>
+              <DialogTitle>Generating Menu with AI</DialogTitle>
             </DialogHeader>
 
-            <div className="text-sm text-muted-foreground">
-              Review first. Click “Apply to Draft” to insert suggestions into the current editing session.
+            <div className="py-6 flex justify-center items-center">
+              <LoadingProgress progress={aiGenerationProgress} message={aiGenerationStatusText} />
             </div>
 
-            <div className="mt-3 rounded-md border p-3 bg-muted/20 max-h-[55vh] overflow-auto">
-              {aiSuggestLoading && (
-                <div className="flex items-center gap-2 text-sm">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Generating suggestions...
-                </div>
-              )}
-
-              {!aiSuggestLoading && aiSuggestError && (
-                <div className="text-sm text-red-600">{aiSuggestError}</div>
-              )}
-
-              {!aiSuggestLoading && !aiSuggestError && aiSuggestPreview?.enrichedMenu && (
-                <div className="space-y-4">
-                  {Object.entries(aiSuggestPreview.enrichedMenu).map(([date, servicesForDate]: any) => (
-                    <div key={date} className="rounded-md border bg-white p-3">
-                      <div className="font-semibold text-sm mb-2">{date}</div>
-                      <div className="space-y-3">
-                        {(servicesForDate || []).map((svc: any) => (
-                          <div key={svc.serviceId}>
-                            <div className="font-medium text-sm">{svc.serviceName}</div>
-                            <div className="ml-4 space-y-2">
-                              {(svc.subServices || []).map((ss: any) => (
-                                <div key={ss.subServiceId}>
-                                  <div className="text-sm font-medium text-gray-700">{ss.subServiceName}</div>
-                                  <div className="ml-4 space-y-2">
-                                    {(ss.mealPlans || []).map((mp: any) => (
-                                      <div key={mp.mealPlanId}>
-                                        <div className="text-sm text-gray-700">{mp.mealPlanName}</div>
-                                        <div className="ml-4 space-y-2">
-                                          {(mp.subMealPlans || []).map((smp: any) => (
-                                            <div key={smp.subMealPlanId} className="text-sm">
-                                              <div className="text-gray-600">{smp.subMealPlanName}</div>
-                                              <div className="ml-4 text-gray-800">
-                                                {(smp.items || []).length === 0 ? (
-                                                  <span className="text-gray-400">No suggestion</span>
-                                                ) : (
-                                                  <ul className="list-disc pl-5">
-                                                    {(smp.items || []).map((it: any) => (
-                                                      <li key={it.menuItemId}>{it.menuItemName}</li>
-                                                    ))}
-                                                  </ul>
-                                                )}
-                                              </div>
-                                            </div>
-                                          ))}
-                                        </div>
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+            {aiSuggestError && (
+              <div className="mt-4 text-xs text-red-600 bg-red-50 p-3 rounded-md whitespace-pre-wrap font-mono overflow-auto max-h-64">
+                Error: {aiSuggestError}
+              </div>
+            )}
 
             <div className="mt-4 flex justify-end gap-2">
               <Button variant="outline" onClick={() => setShowAiSuggestModal(false)} disabled={aiSuggestLoading}>
-                Close
-              </Button>
-              <Button onClick={applyAiMenuToDraft} disabled={aiSuggestLoading || !aiSuggestPreview?.menuData}>
-                Apply to Draft
+                Cancel
               </Button>
             </div>
           </DialogContent>
@@ -7079,3 +7062,9 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
     </div>
   )
 }
+
+
+
+
+
+

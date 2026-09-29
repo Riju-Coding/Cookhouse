@@ -12,6 +12,7 @@ import { db } from "@/lib/firebase"
 import Link from "next/link"
 import { MenuViewModal } from "@/components/menu-view-modal"
 import { MenuEditModal } from "@/components/menu-edit-modal"
+import { OKFGenerateModal } from "@/components/okf-generate-modal"
 import type { MenuItem } from "@/lib/types"
 import { menuItemsService } from "@/lib/services"
 import {
@@ -40,6 +41,7 @@ export default function CombinedMenusPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [viewModalOpen, setViewModalOpen] = useState(false)
   const [editModalOpen, setEditModalOpen] = useState(false)
+  const [okfModalOpen, setOkfModalOpen] = useState(false)
   const [selectedMenuId, setSelectedMenuId] = useState<string>("")
   const [menuItems, setMenuItems] = useState<MenuItem[]>([])
   const [menuItemsLoading, setMenuItemsLoading] = useState(false)
@@ -242,9 +244,14 @@ export default function CombinedMenusPage() {
           <h1 className="text-2xl font-bold text-gray-900">Combined Menus Management</h1>
           <p className="text-gray-600">View, manage, and organize all combined menus</p>
         </div>
-        <Link href="/combined-menu-creation">
-          <Button>Create New Menu</Button>
-        </Link>
+        <div className="flex gap-2">
+          <Link href="/combined-menu-creation">
+            <Button>Create New Menu</Button>
+          </Link>
+          <Button onClick={() => setOkfModalOpen(true)} className="bg-indigo-600 hover:bg-indigo-700">
+            Generate via OKF Agent
+          </Button>
+        </div>
       </div>
 
       <Card>
@@ -403,6 +410,14 @@ export default function CombinedMenusPage() {
         menuType="combined"
         onSave={loadCombinedMenus}
         preloadedMenuItems={menuItems}
+      />
+      <OKFGenerateModal
+        open={okfModalOpen}
+        onOpenChange={setOkfModalOpen}
+        onSuccess={(menuId) => {
+          loadCombinedMenus()
+          handleOpenEditModal(menuId)
+        }}
       />
     </div>
   )
