@@ -9,7 +9,7 @@ export const maxDuration = 300
 export async function POST(req: Request) {
   try {
     const body = await req.json()
-    const { serviceId, subServiceId, trainingData, includeDbMenus, aiModel, mealPlanMapping, targetCompanyId } = body
+    const { serviceId, subServiceId, trainingData, includeDbMenus, aiModel, mealPlanMapping, targetCompanyId, targetCompanyIds } = body
 
     if (!serviceId || !subServiceId || (!trainingData && !includeDbMenus)) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
@@ -205,17 +205,20 @@ export async function POST(req: Request) {
       for (const key in mealPlanMapping) {
         const val = mealPlanMapping[key]
         const mpId = typeof val === "object" ? val.mealPlanId : val
-        const smpId = typeof val === "object" ? val.subMealPlanId : ""
+        const smpIds: string[] = typeof val === "object"
+          ? (Array.isArray(val.subMealPlanIds) ? val.subMealPlanIds : (val.subMealPlanId ? [val.subMealPlanId] : []))
+          : []
 
         const mpDoc = mealPlans.find((m: any) => m.id === mpId)
-        const smpDoc = subMealPlans.find((s: any) => s.id === smpId)
+        const smpDocs = subMealPlans.filter((s: any) => smpIds.includes(s.id))
+        const smpNames = smpDocs.map((s: any) => s.name)
 
         detailedMapping[key] = {
           targetMealPlan: mpDoc?.name || mpId,
-          targetSubMealPlan: smpDoc?.name || "auto-classify by item category",
-          instruction: smpId 
-            ? `All items under Excel category '${key}' strictly belong to MealPlan '${mpDoc?.name}' and SubMealPlan '${smpDoc?.name}'.` 
-            : `Items under Excel category '${key}' belong to MealPlan '${mpDoc?.name}'. Categorize them into its sub-plans.`
+          targetSubMealPlans: smpNames.length > 0 ? smpNames : "auto-classify by item category",
+          instruction: smpNames.length > 0 
+            ? `Items under category '${key}' belong to MealPlan '${mpDoc?.name || mpId}' and strictly map into SubMealPlans: ${smpNames.join(', ')}.` 
+            : `Items under category '${key}' belong to MealPlan '${mpDoc?.name || mpId}'. Categorize them into its sub-plans.`
         }
       }
       combinedTrainingData.push({
@@ -225,21 +228,34 @@ export async function POST(req: Request) {
       })
     }
 
-    // Apply targetCompanyId if provided
-    if (targetCompanyId) {
+    // Apply targetCompanyId or targetCompanyIds if provided
+    const effectiveCompanyIds: string[] = []
+    if (Array.isArray(targetCompanyIds)) {
+      effectiveCompanyIds.push(...targetCompanyIds.filter(id => Boolean(id) && id !== "universal"))
+    } else if (targetCompanyId && targetCompanyId !== "universal") {
+      effectiveCompanyIds.push(targetCompanyId)
+    }
+
+    if (effectiveCompanyIds.length > 0) {
       try {
-        const compDoc = await getDoc(doc(db, "companies", targetCompanyId))
-        if (compDoc.exists()) {
-          const compName = (compDoc.data() as any).name
+        const compDocs = await Promise.all(
+          effectiveCompanyIds.map(cId => getDoc(doc(db, "companies", cId)))
+        )
+        const compNames = compDocs
+          .filter(d => d.exists())
+          .map(d => (d.data() as any).name)
+          .filter(Boolean)
+
+        if (compNames.length > 0) {
           combinedTrainingData.push({
-            source: "Target Client Company",
-            companyId: targetCompanyId,
-            companyName: compName,
-            instruction: `These menus are specifically for client company '${compName}'. Learn company-specific preferences, exclusions, and custom override tendencies for '${compName}'.`
+            source: "Target Client Companies",
+            companyIds: effectiveCompanyIds,
+            companyNames: compNames,
+            instruction: `These menus are specifically for client companies: ${compNames.join(", ")}. Learn company-specific preferences, exclusions, and custom override tendencies for these clients.`
           })
         }
       } catch (cErr) {
-        console.warn("Could not fetch target company:", cErr)
+        console.warn("Could not fetch target companies:", cErr)
       }
     }
 

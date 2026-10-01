@@ -6,17 +6,18 @@ import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Checkbox } from "@/components/ui/checkbox"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
-import { Loader2, Upload, BrainCircuit, FileSpreadsheet, CheckCircle2, ChevronRight, ChevronLeft, SlidersHorizontal, Eye, Building2, AlertTriangle, MousePointerClick, Sparkles, Calendar, Layers, Pencil, Trash2, RotateCcw, Search, Filter } from "lucide-react"
+import { Loader2, Upload, BrainCircuit, FileSpreadsheet, CheckCircle2, ChevronRight, ChevronLeft, SlidersHorizontal, Eye, Building2, AlertTriangle, MousePointerClick, Sparkles, Calendar, Layers, Pencil, Trash2, RotateCcw, Search, Filter, Plus } from "lucide-react"
 import { toast } from "@/hooks/use-toast"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import { servicesService, subServicesService, mealPlansService, subMealPlansService, companiesService, type Company } from "@/lib/services"
 import type { Service, SubService, MealPlan, SubMealPlan } from "@/lib/types"
 import * as XLSX from "xlsx"
-import { doc, getDoc, collection, query, orderBy, getDocs } from "firebase/firestore"
+import { doc, getDoc, setDoc, deleteDoc, updateDoc, collection, query, orderBy, getDocs, serverTimestamp } from "firebase/firestore"
 import { db } from "@/lib/firebase"
 import { format } from "date-fns"
 
@@ -59,7 +60,7 @@ export default function AITrainingPage() {
   const [isGlobal, setIsGlobal] = useState(false)
   const [selectedServiceId, setSelectedServiceId] = useState<string>("")
   const [selectedSubServiceId, setSelectedSubServiceId] = useState<string>("")
-  const [selectedCompanyId, setSelectedCompanyId] = useState<string>("universal")
+  const [selectedCompanyIds, setSelectedCompanyIds] = useState<string[]>(["universal"])
 
   // Step 2: Source Selection
   const [trainingSource, setTrainingSource] = useState<'excel' | 'db'>('excel')
@@ -89,7 +90,7 @@ export default function AITrainingPage() {
   const [selectedRowIdx, setSelectedRowIdx] = useState<number | null>(null)
 
   // Database Mapping for Excel Categories (MealPlan -> SubMealPlan)
-  const [mealPlanMapping, setMealPlanMapping] = useState<Record<string, { mealPlanId: string; subMealPlanId?: string }>>({})
+  const [mealPlanMapping, setMealPlanMapping] = useState<Record<string, { mealPlanId: string; subMealPlanIds?: string[] }>>({})
 
   // Specific Day Record Customization & Overrides
   const [recordOverrides, setRecordOverrides] = useState<Record<string, {
@@ -97,6 +98,9 @@ export default function AITrainingPage() {
     mealPlanName?: string
     subMealPlanId?: string
     subMealPlanName?: string
+    items?: string
+    date?: string
+    company?: string
     isDeleted?: boolean
   }>>({})
 
@@ -104,11 +108,39 @@ export default function AITrainingPage() {
   const [editMpId, setEditMpId] = useState<string>("")
   const [editSmpId, setEditSmpId] = useState<string>("")
   const [editCustomSmpName, setEditCustomSmpName] = useState<string>("")
+  const [editItems, setEditItems] = useState<string>("")
+  const [editDate, setEditDate] = useState<string>("")
+  const [editCustomDate, setEditCustomDate] = useState<string>("")
+  const [editCompany, setEditCompany] = useState<string>("Universal")
   const [applyToMatchingDishes, setApplyToMatchingDishes] = useState<boolean>(false)
 
   // Live Output Preview Filtering
   const [previewDayFilter, setPreviewDayFilter] = useState<string>("all")
   const [previewSearch, setPreviewSearch] = useState<string>("")
+  
+  // New Table States
+  const [currentPage, setCurrentPage] = useState(1)
+  const [pageSize, setPageSize] = useState(25)
+  const [sortColumn, setSortColumn] = useState<string>('')
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc')
+  const [previewCompanyFilter, setPreviewCompanyFilter] = useState<string>('all')
+  const [previewMealPlanFilter, setPreviewMealPlanFilter] = useState<string>('all')
+  const [previewServiceFilter, setPreviewServiceFilter] = useState<string>('all')
+
+  // Extra Database Categories & Custom Dishes
+  const [extraMealPlanCategories, setExtraMealPlanCategories] = useState<string[]>([])
+  const [customRecords, setCustomRecords] = useState<any[]>([])
+  const [extraMpToAdd, setExtraMpToAdd] = useState<string>("none")
+
+  // Add Dish Dialog state
+  const [isAddDishOpen, setIsAddDishOpen] = useState(false)
+  const [newDishDate, setNewDishDate] = useState<string>("all")
+  const [newDishCustomDate, setNewDishCustomDate] = useState<string>("")
+  const [newDishCompany, setNewDishCompany] = useState<string>("Universal")
+  const [newDishMpId, setNewDishMpId] = useState<string>("")
+  const [newDishSmpIds, setNewDishSmpIds] = useState<string[]>([])
+  const [newDishCustomSmp, setNewDishCustomSmp] = useState<string>("")
+  const [newDishItems, setNewDishItems] = useState<string>("")
 
   // Step 4: Review
   const [includeDbMenus, setIncludeDbMenus] = useState(false)
@@ -121,6 +153,14 @@ export default function AITrainingPage() {
   const [loadingProfile, setLoadingProfile] = useState(false)
   const [trainingLogs, setTrainingLogs] = useState<any[]>([])
   const [viewLog, setViewLog] = useState<any | null>(null)
+
+  // Profile & Log Editing state
+  const [editingProfileOpen, setEditingProfileOpen] = useState(false)
+  const [editProfileText, setEditProfileText] = useState("")
+  const [editFeedbackText, setEditFeedbackText] = useState("")
+  const [editAdvisoryText, setEditAdvisoryText] = useState("")
+  const [editingLogId, setEditingLogId] = useState<string | null>(null) // null = active profile
+  const [savingProfileEdit, setSavingProfileEdit] = useState(false)
 
   useEffect(() => {
     async function loadData() {
@@ -224,6 +264,8 @@ export default function AITrainingPage() {
     setRecordOverrides({})
     setPreviewDayFilter("all")
     setPreviewSearch("")
+    setExtraMealPlanCategories([])
+    setCustomRecords([])
 
     if (rows.length === 0) return
 
@@ -380,21 +422,21 @@ export default function AITrainingPage() {
       // Get DB Mapping
       const curMapping = mealPlanMapping[rawMp]
       const mappedMpId = typeof curMapping === "object" ? curMapping?.mealPlanId : curMapping
-      const mappedSmpId = typeof curMapping === "object" ? curMapping?.subMealPlanId : ""
+      const mappedSmpIds = typeof curMapping === "object" ? (curMapping?.subMealPlanIds || []) : []
 
       const dbMp = mealPlans.find(m => m.id === mappedMpId)
-      const dbSmp = subMealPlans.find(s => s.id === mappedSmpId)
+      const dbSmps = subMealPlans.filter(s => mappedSmpIds.includes(s.id))
 
-      const finalSubMealPlanName = rawSmp || (dbSmp ? dbSmp.name : "")
-      const isSubMealPlanFromDb = !rawSmp && !!mappedSmpId
+      const finalSubMealPlanName = rawSmp || (dbSmps.length > 0 ? dbSmps.map(s => s.name).join(", ") : "")
+      const isSubMealPlanFromDb = !rawSmp && mappedSmpIds.length > 0
 
       // Company resolution
       let rowCompany = ""
       if (companyColIdx >= 0 && row[companyColIdx]) {
         rowCompany = String(row[companyColIdx]).trim()
-      } else if (selectedCompanyId && selectedCompanyId !== "universal") {
-        const found = companies.find(c => c.id === selectedCompanyId)
-        rowCompany = found ? found.name : "Company"
+      } else if (selectedCompanyIds.length > 0 && !selectedCompanyIds.includes("universal")) {
+        const found = companies.filter(c => selectedCompanyIds.includes(c.id))
+        rowCompany = found.length > 0 ? found.map(c => c.name).join(", ") : "Company"
       } else {
         const match = rawMp.match(/\(([^)]+)\)/)
         if (match) {
@@ -435,9 +477,9 @@ export default function AITrainingPage() {
             const activeDbMp = mealPlans.find(m => m.id === activeMpId)
             const activeMpName = override?.mealPlanName || activeDbMp?.name || dbMp?.name || rawMp
 
-            const activeSmpId = override?.subMealPlanId !== undefined ? override.subMealPlanId : (mappedSmpId || "")
-            const activeDbSmp = subMealPlans.find(s => s.id === activeSmpId)
-            const activeSmpName = override?.subMealPlanName !== undefined ? override.subMealPlanName : (rawSmp || (activeDbSmp ? activeDbSmp.name : (dbSmp ? dbSmp.name : "")))
+            const activeSmpIds = override?.subMealPlanId !== undefined ? [override.subMealPlanId] : mappedSmpIds
+            const activeDbSmps = subMealPlans.filter(s => activeSmpIds.includes(s.id))
+            const activeSmpName = override?.subMealPlanName !== undefined ? override.subMealPlanName : (rawSmp || (activeDbSmps.length > 0 ? activeDbSmps.map(s => s.name).join(", ") : (dbSmps.length > 0 ? dbSmps.map(s => s.name).join(", ") : "")))
 
             records.push({
               key: recordKey,
@@ -447,12 +489,13 @@ export default function AITrainingPage() {
               mappedMealPlanId: activeMpId,
               mappedMealPlanName: activeMpName,
               subMealPlan: activeSmpName,
-              mappedSubMealPlanId: activeSmpId,
-              isSubMealPlanFromDb: Boolean(activeSmpId),
+              mappedSubMealPlanId: activeSmpIds[0] || "",
+              mappedSubMealPlanIds: activeSmpIds,
+              isSubMealPlanFromDb: activeSmpIds.length > 0,
               isOverridden: Boolean(override && !override.isDeleted),
-              date: formattedDate,
-              items: String(itemVal).trim(),
-              company: rowCompany,
+              date: override?.date !== undefined ? override.date : formattedDate,
+              items: override?.items !== undefined ? override.items : String(itemVal).trim(),
+              company: override?.company !== undefined ? override.company : rowCompany,
             })
           }
         })
@@ -471,9 +514,9 @@ export default function AITrainingPage() {
           const activeDbMp = mealPlans.find(m => m.id === activeMpId)
           const activeMpName = override?.mealPlanName || activeDbMp?.name || dbMp?.name || rawMp
 
-          const activeSmpId = override?.subMealPlanId !== undefined ? override.subMealPlanId : (mappedSmpId || "")
-          const activeDbSmp = subMealPlans.find(s => s.id === activeSmpId)
-          const activeSmpName = override?.subMealPlanName !== undefined ? override.subMealPlanName : (rawSmp || (activeDbSmp ? activeDbSmp.name : (dbSmp ? dbSmp.name : "")))
+          const activeSmpIds = override?.subMealPlanId !== undefined ? [override.subMealPlanId] : mappedSmpIds
+          const activeDbSmps = subMealPlans.filter(s => activeSmpIds.includes(s.id))
+          const activeSmpName = override?.subMealPlanName !== undefined ? override.subMealPlanName : (rawSmp || (activeDbSmps.length > 0 ? activeDbSmps.map(s => s.name).join(", ") : (dbSmps.length > 0 ? dbSmps.map(s => s.name).join(", ") : "")))
 
           records.push({
             key: recordKey,
@@ -483,16 +526,48 @@ export default function AITrainingPage() {
             mappedMealPlanId: activeMpId,
             mappedMealPlanName: activeMpName,
             subMealPlan: activeSmpName,
-            mappedSubMealPlanId: activeSmpId,
-            isSubMealPlanFromDb: Boolean(activeSmpId),
+            mappedSubMealPlanId: activeSmpIds[0] || "",
+            mappedSubMealPlanIds: activeSmpIds,
+            isSubMealPlanFromDb: activeSmpIds.length > 0,
             isOverridden: Boolean(override && !override.isDeleted),
-            date: formattedDate,
-            items: String(itemVal).trim(),
-            company: rowCompany,
+            date: override?.date !== undefined ? override.date : formattedDate,
+            items: override?.items !== undefined ? override.items : String(itemVal).trim(),
+            company: override?.company !== undefined ? override.company : rowCompany,
           })
         }
       }
     }
+
+    // Merge custom added records
+    customRecords.forEach(cr => {
+      const override = recordOverrides[cr.key]
+      if (override?.isDeleted) return
+
+      const activeMpId = override?.mealPlanId !== undefined ? override.mealPlanId : cr.mappedMealPlanId
+      const activeDbMp = mealPlans.find(m => m.id === activeMpId)
+      const activeMpName = override?.mealPlanName || activeDbMp?.name || cr.mappedMealPlanName
+
+      const activeSmpIds = override?.subMealPlanId !== undefined ? [override.subMealPlanId] : cr.mappedSubMealPlanIds
+      const activeDbSmps = subMealPlans.filter(s => activeSmpIds.includes(s.id))
+      const activeSmpName = override?.subMealPlanName !== undefined ? override.subMealPlanName : (cr.subMealPlan || (activeDbSmps.length > 0 ? activeDbSmps.map(s => s.name).join(", ") : ""))
+
+      const finalItems = override?.items !== undefined ? override.items : cr.items
+      const finalDate = override?.date !== undefined ? override.date : cr.date
+      const finalCompany = override?.company !== undefined ? override.company : cr.company
+
+      records.push({
+        ...cr,
+        mappedMealPlanId: activeMpId,
+        mappedMealPlanName: activeMpName,
+        subMealPlan: activeSmpName,
+        mappedSubMealPlanId: activeSmpIds[0] || "",
+        mappedSubMealPlanIds: activeSmpIds,
+        isOverridden: Boolean(override && !override.isDeleted),
+        date: finalDate,
+        items: finalItems,
+        company: finalCompany,
+      })
+    })
 
     return { allRecords: records, detectedExcelMealPlans: Array.from(uniqueMps) }
   }, [
@@ -507,13 +582,14 @@ export default function AITrainingPage() {
     itemColIdx,
     dateColIdx,
     companyColIdx,
-    selectedCompanyId,
+    selectedCompanyIds,
     mealPlanMapping,
     mealPlans,
     subMealPlans,
     companies,
     detectedHeaders,
     recordOverrides,
+    customRecords,
   ])
 
   // Unique dates in extracted records for filtering
@@ -527,16 +603,60 @@ export default function AITrainingPage() {
 
   // Filtered records for the Live Output Preview
   const filteredRecords = useMemo(() => {
-    return allRecords.filter((r: any) => {
+    let records = allRecords.filter((r: any) => {
       const matchDay = previewDayFilter === "all" || r.date === previewDayFilter
       const matchSearch = !previewSearch || 
         r.items.toLowerCase().includes(previewSearch.toLowerCase()) || 
         r.mealPlan.toLowerCase().includes(previewSearch.toLowerCase()) ||
         r.subMealPlan.toLowerCase().includes(previewSearch.toLowerCase()) ||
         r.mappedMealPlanName.toLowerCase().includes(previewSearch.toLowerCase())
-      return matchDay && matchSearch
+      
+      const matchCompany = previewCompanyFilter === "all" || r.company === previewCompanyFilter
+      const matchMealPlan = previewMealPlanFilter === "all" || r.mappedMealPlanName === previewMealPlanFilter || r.mealPlan === previewMealPlanFilter
+
+      return matchDay && matchSearch && matchCompany && matchMealPlan
     })
-  }, [allRecords, previewDayFilter, previewSearch])
+
+    if (sortColumn) {
+      records = [...records].sort((a, b) => {
+        let valA = a[sortColumn]
+        let valB = b[sortColumn]
+        
+        if (sortColumn === 'trainingDate') {
+          valA = new Date().getTime()
+          valB = new Date().getTime()
+        } else if (sortColumn === 'menuDate') {
+          valA = a.date
+          valB = b.date
+        } else if (sortColumn === 'service') {
+          valA = services.find(s => s.id === selectedServiceId)?.name || ''
+          valB = valA
+        } else if (sortColumn === 'company') {
+          valA = a.company
+          valB = b.company
+        } else if (sortColumn === 'mappedMealPlanName') {
+          valA = a.mappedMealPlanName || a.mealPlan
+          valB = b.mappedMealPlanName || b.mealPlan
+        } else if (sortColumn === 'subMealPlan') {
+          valA = a.subMealPlan
+          valB = b.subMealPlan
+        } else if (sortColumn === 'items') {
+          valA = a.items
+          valB = b.items
+        }
+
+        if (valA < valB) return sortDirection === 'asc' ? -1 : 1
+        if (valA > valB) return sortDirection === 'asc' ? 1 : -1
+        return 0
+      })
+    }
+
+    return records
+  }, [allRecords, previewDayFilter, previewSearch, previewCompanyFilter, previewMealPlanFilter, previewServiceFilter, sortColumn, sortDirection, selectedServiceId, services])
+
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [previewDayFilter, previewSearch, previewCompanyFilter, previewMealPlanFilter, previewServiceFilter])
 
   const overrideCount = useMemo(() => {
     return Object.keys(recordOverrides).filter(k => !recordOverrides[k].isDeleted).length
@@ -562,6 +682,10 @@ export default function AITrainingPage() {
       setEditSmpId("auto")
       setEditCustomSmpName("")
     }
+    setEditItems(record.items || "")
+    setEditDate(record.date || "")
+    setEditCustomDate("")
+    setEditCompany(record.company || "Universal")
     setApplyToMatchingDishes(false)
   }
 
@@ -582,11 +706,34 @@ export default function AITrainingPage() {
       finalSmpName = chosenSmp ? chosenSmp.name : ""
     }
 
+    const finalItems = editItems.trim() || editingRecord.items
+    const finalDate = editDate === "custom" 
+      ? (editCustomDate.trim() || editingRecord.date) 
+      : (editDate || editingRecord.date)
+    const finalCompany = editCompany || editingRecord.company
+
     const overrideObj = {
       mealPlanId: isUnmapped ? "" : editMpId,
       mealPlanName: finalMpName,
       subMealPlanId: finalSmpId,
       subMealPlanName: finalSmpName,
+      items: finalItems,
+      date: finalDate,
+      company: finalCompany,
+    }
+
+    if (editingRecord.key.startsWith("custom_")) {
+      setCustomRecords(prev => prev.map(r => r.key === editingRecord.key ? {
+        ...r,
+        mealPlan: finalMpName,
+        mappedMealPlanId: isUnmapped ? "" : editMpId,
+        mappedMealPlanName: finalMpName,
+        subMealPlan: finalSmpName || "Auto (AI)",
+        mappedSubMealPlanId: finalSmpId,
+        items: finalItems,
+        date: finalDate,
+        company: finalCompany,
+      } : r))
     }
 
     setRecordOverrides(prev => {
@@ -606,8 +753,8 @@ export default function AITrainingPage() {
     toast({
       title: "Record Updated",
       description: applyToMatchingDishes 
-        ? `Updated all '${editingRecord.mealPlan}' dishes on ${editingRecord.date}.`
-        : `Updated dish on ${editingRecord.date}.`
+        ? `Updated all matching dishes for ${editingRecord.mealPlan}.`
+        : `Updated dish entry for ${finalDate}.`
     })
     setEditingRecord(null)
     setApplyToMatchingDishes(false)
@@ -626,13 +773,261 @@ export default function AITrainingPage() {
   }
 
   const handleDeleteRecord = (recordKey: string) => {
-    setRecordOverrides(prev => ({
-      ...prev,
-      [recordKey]: { isDeleted: true }
-    }))
-    toast({ title: "Record Excluded", description: "This dish entry will not be sent to AI training." })
+    if (recordKey.startsWith("custom_")) {
+      setCustomRecords(prev => prev.filter(r => r.key !== recordKey))
+      toast({ title: "Custom Dish Removed", description: "This custom dish entry has been deleted." })
+    } else {
+      setRecordOverrides(prev => ({
+        ...prev,
+        [recordKey]: { isDeleted: true }
+      }))
+      toast({ title: "Record Excluded", description: "This dish entry will not be sent to AI training." })
+    }
     if (editingRecord?.key === recordKey) {
       setEditingRecord(null)
+    }
+  }
+
+  // Combined Excel categories + extra Meal Plans added from DB
+  const allCategories = useMemo(() => {
+    const list = [...detectedExcelMealPlans]
+    extraMealPlanCategories.forEach(cat => {
+      if (!list.includes(cat)) {
+        list.push(cat)
+      }
+    })
+    return list
+  }, [detectedExcelMealPlans, extraMealPlanCategories])
+
+  const handleAddExtraMealPlan = (mpId: string) => {
+    if (!mpId || mpId === "none") return
+    const mp = mealPlans.find(m => m.id === mpId)
+    if (!mp) return
+
+    let catName = mp.name
+    if (detectedExcelMealPlans.includes(catName) || extraMealPlanCategories.includes(catName)) {
+      catName = `${mp.name} (Extra)`
+    }
+
+    if (extraMealPlanCategories.includes(catName)) {
+      toast({ title: "Already Added", description: `Category '${catName}' is already in your customization list.` })
+      return
+    }
+
+    setExtraMealPlanCategories(prev => [...prev, catName])
+    setMealPlanMapping(prev => ({
+      ...prev,
+      [catName]: {
+        mealPlanId: mp.id,
+        subMealPlanIds: [],
+      }
+    }))
+
+    toast({
+      title: "Added Database Meal Plan",
+      description: `Added '${catName}'. You can now select its Sub Meal Plans and add dishes below.`,
+    })
+  }
+
+  const handleRemoveExtraCategory = (catName: string) => {
+    setExtraMealPlanCategories(prev => prev.filter(c => c !== catName))
+    setMealPlanMapping(prev => {
+      const copy = { ...prev }
+      delete copy[catName]
+      return copy
+    })
+    setCustomRecords(prev => prev.filter(r => r.mealPlan !== catName))
+    toast({ title: "Category Removed", description: `Removed '${catName}' and its custom dishes.` })
+  }
+
+  const handleOpenAddDishForCategory = (catName: string) => {
+    const mapping = mealPlanMapping[catName]
+    const mpId = mapping?.mealPlanId || ""
+    setNewDishMpId(mpId)
+    setNewDishSmpIds(mapping?.subMealPlanIds || [])
+    setNewDishCustomSmp("")
+    setNewDishItems("")
+    if (previewDayFilter !== "all") {
+      setNewDishDate(previewDayFilter)
+    } else if (uniqueDates.length > 0) {
+      setNewDishDate(uniqueDates[0])
+    } else {
+      setNewDishDate("Day 1")
+    }
+    setNewDishCustomDate("")
+    setNewDishCompany(selectedCompanyIds.length > 0 && !selectedCompanyIds.includes("universal") 
+      ? companies.find(c => selectedCompanyIds.includes(c.id))?.name || "Universal" 
+      : "Universal")
+    setIsAddDishOpen(true)
+  }
+
+  const handleOpenAddDish = () => {
+    if (mealPlans.length > 0) {
+      const firstMp = mealPlans[0]
+      setNewDishMpId(firstMp.id)
+      setNewDishSmpIds([])
+    }
+    setNewDishCustomSmp("")
+    setNewDishItems("")
+    if (previewDayFilter !== "all") {
+      setNewDishDate(previewDayFilter)
+    } else if (uniqueDates.length > 0) {
+      setNewDishDate(uniqueDates[0])
+    } else {
+      setNewDishDate("Day 1")
+    }
+    setNewDishCustomDate("")
+    setNewDishCompany(selectedCompanyIds.length > 0 && !selectedCompanyIds.includes("universal") 
+      ? companies.find(c => selectedCompanyIds.includes(c.id))?.name || "Universal" 
+      : "Universal")
+    setIsAddDishOpen(true)
+  }
+
+  const handleSaveNewDish = () => {
+    if (!newDishItems.trim()) {
+      toast({ title: "Dish Items Required", description: "Please enter at least one dish name.", variant: "destructive" })
+      return
+    }
+
+    const chosenMp = mealPlans.find(m => m.id === newDishMpId)
+    const mpName = chosenMp ? chosenMp.name : "Custom Meal Plan"
+    const chosenSmps = subMealPlans.filter(s => newDishSmpIds.includes(s.id))
+    let smpDisplay = chosenSmps.map(s => s.name).join(", ")
+    if (newDishCustomSmp.trim()) {
+      smpDisplay = smpDisplay ? `${smpDisplay}, ${newDishCustomSmp.trim()}` : newDishCustomSmp.trim()
+    }
+
+    const finalDate = newDishDate === "custom" 
+      ? (newDishCustomDate.trim() || "Day 1") 
+      : (newDishDate === "all" ? (uniqueDates[0] || "Day 1") : newDishDate)
+
+    const newRecord = {
+      key: `custom_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      rowIdx: -1,
+      colIdx: -1,
+      mealPlan: mpName,
+      mappedMealPlanId: chosenMp?.id || "",
+      mappedMealPlanName: mpName,
+      subMealPlan: smpDisplay || "Auto (AI)",
+      mappedSubMealPlanId: newDishSmpIds[0] || "",
+      mappedSubMealPlanIds: newDishSmpIds,
+      isSubMealPlanFromDb: newDishSmpIds.length > 0,
+      isOverridden: false,
+      isCustomAdded: true,
+      date: finalDate,
+      items: newDishItems.trim(),
+      company: newDishCompany || "Universal",
+    }
+
+    setCustomRecords(prev => [...prev, newRecord])
+
+    // Ensure category is in extraMealPlanCategories if not in Excel
+    if (!detectedExcelMealPlans.includes(mpName) && !extraMealPlanCategories.includes(mpName)) {
+      setExtraMealPlanCategories(prev => [...prev, mpName])
+      setMealPlanMapping(prev => ({
+        ...prev,
+        [mpName]: {
+          mealPlanId: chosenMp?.id || "",
+          subMealPlanIds: newDishSmpIds,
+        }
+      }))
+    }
+
+    toast({ title: "Dish Added to Output", description: `Added "${newDishItems.trim()}" to ${finalDate}.` })
+    setIsAddDishOpen(false)
+    setNewDishItems("")
+    setNewDishCustomSmp("")
+  }
+
+  // Profile & Training Log Actions
+  const handleOpenEditActiveProfile = () => {
+    setEditingLogId(null)
+    setEditProfileText(existingProfile || "")
+    setEditFeedbackText(lastFeedback || "")
+    setEditAdvisoryText(lastAdvisory || "")
+    setEditingProfileOpen(true)
+  }
+
+  const handleDeleteActiveProfile = async () => {
+    if (!confirm("Are you sure you want to remove this active AI training profile? The AI will revert to its baseline behavior for this service.")) {
+      return
+    }
+    const docId = isGlobal ? "GLOBAL_GLOBAL" : `${selectedServiceId}_${selectedSubServiceId}`
+    try {
+      await deleteDoc(doc(db, "aiTrainingProfiles", docId))
+      setExistingProfile(null)
+      setLastFeedback(null)
+      setLastAdvisory(null)
+      toast({ title: "Training Profile Removed", description: "Active training has been reset." })
+    } catch (err: any) {
+      toast({ title: "Failed to Remove Profile", description: err.message, variant: "destructive" })
+    }
+  }
+
+  const handleOpenEditLog = (log: any) => {
+    setEditingLogId(log.id)
+    setEditProfileText(log.profileText || "")
+    setEditFeedbackText(log.feedback || "")
+    setEditAdvisoryText(log.advisory || "")
+    setEditingProfileOpen(true)
+  }
+
+  const handleDeleteLog = async (logId: string) => {
+    if (!confirm("Are you sure you want to delete this training history record?")) return
+    try {
+      await deleteDoc(doc(db, "aiTrainingLogs", logId))
+      setTrainingLogs(prev => prev.filter(l => l.id !== logId))
+      if (viewLog?.id === logId) setViewLog(null)
+      toast({ title: "Log Deleted", description: "Training log record has been removed." })
+    } catch (err: any) {
+      toast({ title: "Delete Failed", description: err.message, variant: "destructive" })
+    }
+  }
+
+  const handleSaveProfileEdit = async () => {
+    setSavingProfileEdit(true)
+    try {
+      if (editingLogId) {
+        await updateDoc(doc(db, "aiTrainingLogs", editingLogId), {
+          profileText: editProfileText,
+          feedback: editFeedbackText,
+          advisory: editAdvisoryText,
+          updatedAt: serverTimestamp(),
+        })
+        setTrainingLogs(prev => prev.map(l => l.id === editingLogId ? {
+          ...l,
+          profileText: editProfileText,
+          feedback: editFeedbackText,
+          advisory: editAdvisoryText,
+        } : l))
+        if (viewLog?.id === editingLogId) {
+          setViewLog((prev: any) => ({
+            ...prev,
+            profileText: editProfileText,
+            feedback: editFeedbackText,
+            advisory: editAdvisoryText,
+          }))
+        }
+        toast({ title: "Training Log Updated", description: "Changes saved successfully." })
+      } else {
+        const docId = isGlobal ? "GLOBAL_GLOBAL" : `${selectedServiceId}_${selectedSubServiceId}`
+        await setDoc(doc(db, "aiTrainingProfiles", docId), {
+          profileText: editProfileText,
+          lastFeedback: editFeedbackText,
+          lastAdvisory: editAdvisoryText,
+          updatedAt: serverTimestamp(),
+        }, { merge: true })
+        setExistingProfile(editProfileText)
+        setLastFeedback(editFeedbackText)
+        setLastAdvisory(editAdvisoryText)
+        toast({ title: "Active Profile Updated", description: "AI fine-tuning rules updated successfully." })
+      }
+      setEditingProfileOpen(false)
+    } catch (err: any) {
+      console.error(err)
+      toast({ title: "Save Failed", description: err.message, variant: "destructive" })
+    } finally {
+      setSavingProfileEdit(false)
     }
   }
 
@@ -652,7 +1047,7 @@ export default function AITrainingPage() {
           })
           updated[emp] = {
             mealPlanId: match ? match.id : "",
-            subMealPlanId: "",
+            subMealPlanIds: [],
           }
         }
       })
@@ -686,7 +1081,7 @@ export default function AITrainingPage() {
           includeDbMenus: trainingSource === "db" ? true : includeDbMenus,
           aiModel,
           mealPlanMapping: trainingSource === "excel" ? mealPlanMapping : undefined,
-          targetCompanyId: selectedCompanyId !== "universal" ? selectedCompanyId : undefined,
+          targetCompanyIds: !selectedCompanyIds.includes("universal") ? selectedCompanyIds : undefined,
         }),
       })
 
@@ -826,18 +1221,76 @@ export default function AITrainingPage() {
                   <Building2 className="w-4 h-4 text-indigo-500" />
                   Target Company / Client (Optional)
                 </Label>
-                <Select value={selectedCompanyId} onValueChange={setSelectedCompanyId}>
-                  <SelectTrigger className="bg-white max-w-md"><SelectValue placeholder="Select Company or Universal" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="universal">🌟 Universal / Master Kitchen Menu (Applies to all clients)</SelectItem>
-                    {companies.map(c => <SelectItem key={c.id} value={c.id}>🏢 {c.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
+                <div className="flex flex-col gap-2 max-w-md max-h-[200px] overflow-y-auto border p-2 rounded-md bg-white">
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id="company-universal"
+                      checked={selectedCompanyIds.includes("universal")}
+                      onCheckedChange={(checked) => {
+                        if (checked) {
+                          setSelectedCompanyIds(["universal"])
+                        } else {
+                          setSelectedCompanyIds([])
+                        }
+                      }}
+                    />
+                    <Label htmlFor="company-universal" className="text-sm">🌟 Universal / Master Kitchen Menu (Applies to all clients)</Label>
+                  </div>
+                  {companies.map(c => (
+                    <div key={c.id} className="flex items-center gap-2">
+                      <Checkbox
+                        id={`company-${c.id}`}
+                        checked={selectedCompanyIds.includes(c.id)}
+                        onCheckedChange={(checked) => {
+                          if (checked) {
+                            setSelectedCompanyIds(prev => [...prev.filter(id => id !== "universal"), c.id])
+                          } else {
+                            setSelectedCompanyIds(prev => prev.filter(id => id !== c.id))
+                          }
+                        }}
+                      />
+                      <Label htmlFor={`company-${c.id}`} className="text-sm">🏢 {c.name}</Label>
+                    </div>
+                  ))}
+                </div>
                 <p className="text-xs text-gray-500">
                   Select a company if you are uploading client-specific menus (e.g. Uber, Google). If training master kitchen menus, leave as Universal.
                 </p>
               </div>
             </div>
+
+            {existingProfile && (
+              <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-lg flex items-center justify-between gap-3 flex-wrap">
+                <div className="space-y-0.5">
+                  <div className="flex items-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                    <span className="text-xs font-bold text-indigo-950">Active Training Profile Found for this Service</span>
+                    <Badge className="bg-emerald-100 text-emerald-800 border-emerald-300 text-[10px]">Active</Badge>
+                  </div>
+                  <p className="text-[11px] text-indigo-800 line-clamp-1">{lastFeedback || existingProfile.slice(0, 120) + "..."}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleOpenEditActiveProfile}
+                    className="h-7 text-xs bg-white text-indigo-700 border-indigo-300 hover:bg-indigo-100 gap-1 font-medium"
+                  >
+                    <Pencil className="w-3 h-3" /> Edit Training
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleDeleteActiveProfile}
+                    className="h-7 text-xs bg-white text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700 gap-1 font-medium"
+                  >
+                    <Trash2 className="w-3 h-3" /> Remove Training
+                  </Button>
+                </div>
+              </div>
+            )}
           </CardContent>
           <CardFooter className="justify-end">
             <Button onClick={() => setCurrentStep(2)} disabled={!isStep1Valid} className="bg-indigo-600 hover:bg-indigo-700">
@@ -1393,6 +1846,15 @@ export default function AITrainingPage() {
                             />
                           </div>
 
+                          <Button
+                            size="sm"
+                            onClick={handleOpenAddDish}
+                            className="h-7 text-xs bg-indigo-600 hover:bg-indigo-700 text-white gap-1 px-2.5 shadow-2xs font-medium"
+                            title="Add extra dish record to preview"
+                          >
+                            <Plus className="w-3.5 h-3.5" /> Add Dish
+                          </Button>
+
                           {(overrideCount > 0 || excludedCount > 0) && (
                             <Button
                               variant="ghost"
@@ -1407,30 +1869,105 @@ export default function AITrainingPage() {
                         </div>
                       </div>
 
-                      <div className="border rounded-md max-h-[380px] overflow-auto bg-white shadow-2xs">
+                      <div className="border rounded-md max-h-[500px] overflow-auto bg-white shadow-2xs">
                         <Table>
                           <TableHeader>
-                            <TableRow className="bg-slate-50">
-                              <TableHead className="text-xs py-2">Meal Plan</TableHead>
-                              <TableHead className="text-xs py-2">Sub Meal Plan</TableHead>
-                              <TableHead className="text-xs py-2">Date / Day</TableHead>
-                              <TableHead className="text-xs py-2">Item(s)</TableHead>
-                              <TableHead className="text-xs py-2 w-[70px] text-right">Action</TableHead>
+                            <TableRow className="bg-slate-50 sticky top-0 z-10 shadow-sm">
+                              <TableHead className="text-xs py-2 w-[40px]">#</TableHead>
+                              <TableHead className="text-xs py-2 cursor-pointer hover:bg-slate-100" onClick={() => { setSortColumn('trainingDate'); setSortDirection(prev => sortColumn === 'trainingDate' && prev === 'asc' ? 'desc' : 'asc') }}>
+                                Training Date {sortColumn === 'trainingDate' ? (sortDirection === 'asc' ? '▲' : '▼') : ''}
+                              </TableHead>
+                              <TableHead className="text-xs py-2 cursor-pointer hover:bg-slate-100" onClick={() => { setSortColumn('menuDate'); setSortDirection(prev => sortColumn === 'menuDate' && prev === 'asc' ? 'desc' : 'asc') }}>
+                                Menu Date {sortColumn === 'menuDate' ? (sortDirection === 'asc' ? '▲' : '▼') : ''}
+                              </TableHead>
+                              <TableHead className="text-xs py-2 cursor-pointer hover:bg-slate-100" onClick={() => { setSortColumn('service'); setSortDirection(prev => sortColumn === 'service' && prev === 'asc' ? 'desc' : 'asc') }}>
+                                Service / Meal Time {sortColumn === 'service' ? (sortDirection === 'asc' ? '▲' : '▼') : ''}
+                              </TableHead>
+                              <TableHead className="text-xs py-2 cursor-pointer hover:bg-slate-100" onClick={() => { setSortColumn('company'); setSortDirection(prev => sortColumn === 'company' && prev === 'asc' ? 'desc' : 'asc') }}>
+                                Company {sortColumn === 'company' ? (sortDirection === 'asc' ? '▲' : '▼') : ''}
+                              </TableHead>
+                              <TableHead className="text-xs py-2 cursor-pointer hover:bg-slate-100" onClick={() => { setSortColumn('mappedMealPlanName'); setSortDirection(prev => sortColumn === 'mappedMealPlanName' && prev === 'asc' ? 'desc' : 'asc') }}>
+                                Meal Plan {sortColumn === 'mappedMealPlanName' ? (sortDirection === 'asc' ? '▲' : '▼') : ''}
+                              </TableHead>
+                              <TableHead className="text-xs py-2 cursor-pointer hover:bg-slate-100" onClick={() => { setSortColumn('subMealPlan'); setSortDirection(prev => sortColumn === 'subMealPlan' && prev === 'asc' ? 'desc' : 'asc') }}>
+                                Sub Meal Plan {sortColumn === 'subMealPlan' ? (sortDirection === 'asc' ? '▲' : '▼') : ''}
+                              </TableHead>
+                              <TableHead className="text-xs py-2 cursor-pointer hover:bg-slate-100" onClick={() => { setSortColumn('items'); setSortDirection(prev => sortColumn === 'items' && prev === 'asc' ? 'desc' : 'asc') }}>
+                                Item(s) {sortColumn === 'items' ? (sortDirection === 'asc' ? '▲' : '▼') : ''}
+                              </TableHead>
+                              <TableHead className="text-xs py-2 w-[80px] text-right">Action</TableHead>
+                            </TableRow>
+                            <TableRow className="bg-slate-50 border-b shadow-sm sticky top-[36px] z-10">
+                              <TableHead></TableHead>
+                              <TableHead></TableHead>
+                              <TableHead></TableHead>
+                              <TableHead>
+                                <Select value={previewServiceFilter} onValueChange={setPreviewServiceFilter}>
+                                  <SelectTrigger className="h-7 text-[10px] bg-white"><SelectValue placeholder="All" /></SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="all">All Services</SelectItem>
+                                    <SelectItem value={services.find(s => s.id === selectedServiceId)?.name || "auto"}>{services.find(s => s.id === selectedServiceId)?.name || "Current"}</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </TableHead>
+                              <TableHead>
+                                <Select value={previewCompanyFilter} onValueChange={setPreviewCompanyFilter}>
+                                  <SelectTrigger className="h-7 text-[10px] bg-white"><SelectValue placeholder="All" /></SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="all">All Companies</SelectItem>
+                                    {Array.from(new Set(allRecords.map((r: any) => r.company))).map((c: any) => (
+                                      <SelectItem key={c} value={c}>{c}</SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </TableHead>
+                              <TableHead>
+                                <Select value={previewMealPlanFilter} onValueChange={setPreviewMealPlanFilter}>
+                                  <SelectTrigger className="h-7 text-[10px] bg-white"><SelectValue placeholder="All" /></SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="all">All Meal Plans</SelectItem>
+                                    {Array.from(new Set(allRecords.map((r: any) => r.mappedMealPlanName || r.mealPlan))).map((mp: any) => (
+                                      <SelectItem key={mp} value={mp}>{mp}</SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </TableHead>
+                              <TableHead></TableHead>
+                              <TableHead></TableHead>
+                              <TableHead></TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
-                            {filteredRecords.slice(0, 100).length > 0 ? filteredRecords.slice(0, 100).map((row, i) => (
+                            {filteredRecords.slice((currentPage - 1) * pageSize, currentPage * pageSize).length > 0 ? filteredRecords.slice((currentPage - 1) * pageSize, currentPage * pageSize).map((row, i) => (
                               <TableRow 
                                 key={row.key || i}
                                 className={`hover:bg-indigo-50/50 transition-colors ${row.isOverridden ? "bg-amber-50/40 border-l-2 border-l-amber-500" : ""}`}
                               >
+                                <TableCell className="text-xs text-gray-500">{(currentPage - 1) * pageSize + i + 1}</TableCell>
+                                <TableCell className="text-xs text-gray-500 whitespace-nowrap">{format(new Date(), "yyyy-MM-dd")}</TableCell>
+                                <TableCell 
+                                  className="text-xs whitespace-nowrap py-1.5 text-gray-600 font-medium cursor-pointer hover:text-indigo-600 hover:underline"
+                                  onClick={() => handleOpenEditRecord(row)}
+                                  title="Click to edit date/day"
+                                >
+                                  {row.date}
+                                </TableCell>
+                                <TableCell className="text-xs text-gray-500">{services.find(s => s.id === selectedServiceId)?.name || 'N/A'}</TableCell>
+                                <TableCell 
+                                  className="text-xs text-gray-600 cursor-pointer hover:text-indigo-600 hover:underline"
+                                  onClick={() => handleOpenEditRecord(row)}
+                                  title="Click to edit company"
+                                >
+                                  {row.company}
+                                </TableCell>
                                 <TableCell 
                                   className="text-xs font-medium py-1.5 max-w-[130px] truncate cursor-pointer group"
                                   onClick={() => handleOpenEditRecord(row)}
                                   title="Click to change Meal Plan for this dish"
                                 >
-                                  <div className="flex items-center gap-1">
+                                  <div className="flex items-center gap-1 flex-wrap">
                                     <span className="group-hover:text-indigo-600 transition-colors">{row.mappedMealPlanName || row.mealPlan}</span>
+                                    {row.isCustomAdded && <Badge className="bg-indigo-100 text-indigo-800 border-indigo-200 text-[9px] px-1 py-0 font-medium">Extra</Badge>}
                                     {row.isOverridden && <span className="text-[10px] text-amber-600 font-bold" title="Manually customized">✏️</span>}
                                   </div>
                                   {row.mappedMealPlanName !== row.mealPlan && (
@@ -1456,10 +1993,11 @@ export default function AITrainingPage() {
                                     <span className="text-slate-400 italic text-[11px]">✨ Auto (AI)</span>
                                   )}
                                 </TableCell>
-                                <TableCell className="text-xs whitespace-nowrap py-1.5 text-gray-500 font-medium">
-                                  {row.date}
-                                </TableCell>
-                                <TableCell className="text-xs py-1.5 max-w-[150px] truncate text-indigo-950 font-medium">
+                                <TableCell 
+                                  className="text-xs py-1.5 max-w-[150px] truncate text-indigo-950 font-medium cursor-pointer hover:text-indigo-600 hover:underline"
+                                  onClick={() => handleOpenEditRecord(row)}
+                                  title="Click to edit dishes"
+                                >
                                   {row.items}
                                 </TableCell>
                                 <TableCell className="text-xs py-1.5 text-right whitespace-nowrap">
@@ -1498,7 +2036,7 @@ export default function AITrainingPage() {
                               </TableRow>
                             )) : (
                               <TableRow>
-                                <TableCell colSpan={5} className="text-center text-xs text-amber-700 bg-amber-50 py-6">
+                                <TableCell colSpan={9} className="text-center text-xs text-amber-700 bg-amber-50 py-6">
                                   <AlertTriangle className="w-5 h-5 mx-auto mb-1 text-amber-500" />
                                   {allRecords.length === 0 
                                     ? "No records detected with current mapping. Click on a column header or row above to adjust!"
@@ -1509,55 +2047,118 @@ export default function AITrainingPage() {
                           </TableBody>
                         </Table>
                       </div>
-                      <p className="text-[11px] text-gray-500 italic">
+                      
+                      {/* Pagination Controls */}
+                      <div className="flex justify-between items-center text-xs text-gray-500 mt-2">
+                        <div>
+                          Showing {filteredRecords.length > 0 ? (currentPage - 1) * pageSize + 1 : 0}-{Math.min(currentPage * pageSize, filteredRecords.length)} of {filteredRecords.length} records (filtered from {allRecords.length} total)
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-1">
+                            <span>Per page:</span>
+                            <Select value={String(pageSize)} onValueChange={(val) => { setPageSize(Number(val)); setCurrentPage(1); }}>
+                              <SelectTrigger className="h-7 w-[60px] text-xs bg-white"><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="10">10</SelectItem>
+                                <SelectItem value="25">25</SelectItem>
+                                <SelectItem value="50">50</SelectItem>
+                                <SelectItem value="100">100</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <Button variant="outline" size="sm" className="h-7 px-2" onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))} disabled={currentPage === 1}>Prev</Button>
+                            <span className="px-1 text-xs">Page {currentPage} of {Math.max(1, Math.ceil(filteredRecords.length / pageSize))}</span>
+                            <Button variant="outline" size="sm" className="h-7 px-2" onClick={() => setCurrentPage(prev => Math.min(prev + 1, Math.ceil(filteredRecords.length / pageSize)))} disabled={currentPage === Math.max(1, Math.ceil(filteredRecords.length / pageSize)) || filteredRecords.length === 0}>Next</Button>
+                          </div>
+                        </div>
+                      </div>
+
+                      <p className="text-[11px] text-gray-500 italic mt-1">
                         💡 Tip: Click any row or the <Pencil className="w-3 h-3 inline mx-0.5 text-indigo-600" /> icon to override the Meal Plan or Sub Meal Plan for that specific day.
                       </p>
                     </div>
 
                     {/* Right: Meal Plan & Sub Meal Plan Database Customization */}
                     <div className="space-y-3">
-                      <div className="flex items-center justify-between">
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
                         <h3 className="font-semibold text-gray-900 text-sm flex items-center gap-1.5">
                           <Sparkles className="w-4 h-4 text-indigo-600" />
-                          Database Customization ({detectedExcelMealPlans.length} categories)
+                          Database Customization ({allCategories.length} categories)
                         </h3>
+                        {/* Add Extra Meal Plan from DB */}
+                        <Select value={extraMpToAdd} onValueChange={(val) => { handleAddExtraMealPlan(val); setExtraMpToAdd("none"); }}>
+                          <SelectTrigger className="h-7 text-xs w-[185px] bg-white border-indigo-200 text-indigo-700 font-medium hover:bg-indigo-50/50">
+                            <Plus className="w-3.5 h-3.5 mr-1 text-indigo-600" />
+                            <SelectValue placeholder="Add Meal Plan from DB" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none" disabled>➕ Add DB Meal Plan...</SelectItem>
+                            {mealPlans.map(mp => (
+                              <SelectItem key={mp.id} value={mp.id}>
+                                {mp.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       </div>
                       <p className="text-xs text-gray-500">
-                        Since your Excel lacks Sub Meal Plans, map each category to your database Meal Plan and optionally pick its Sub Meal Plan:
+                        Map Excel categories to database Meal Plans, pick their Sub Meal Plans, or add extra categories from your database:
                       </p>
 
                       <div className="space-y-3 max-h-[380px] overflow-auto pr-1">
-                        {detectedExcelMealPlans.map((emp: string) => {
-                          const curMapping = mealPlanMapping[emp] || { mealPlanId: "", subMealPlanId: "" }
+                        {allCategories.map((emp: string) => {
+                          const isExtra = extraMealPlanCategories.includes(emp)
+                          const curMapping = mealPlanMapping[emp] || { mealPlanId: "", subMealPlanIds: [] }
                           const selectedMpId = curMapping.mealPlanId
-                          const selectedSmpId = curMapping.subMealPlanId || ""
+                          const selectedSmpIds = curMapping.subMealPlanIds || []
                           const matchingSubPlans = subMealPlans.filter(smp => smp.mealPlanId === selectedMpId)
 
                           return (
-                            <div key={emp} className="bg-white p-3 rounded-lg border border-slate-200 shadow-2xs space-y-2.5">
+                            <div key={emp} className={`p-3 rounded-lg border shadow-2xs space-y-2.5 ${isExtra ? "bg-indigo-50/30 border-indigo-200" : "bg-white border-slate-200"}`}>
                               <div className="flex items-center justify-between">
-                                <Label className="text-indigo-950 font-bold text-xs truncate max-w-[210px]">{emp}</Label>
-                                {selectedMpId ? (
-                                  <Badge className="bg-green-100 text-green-800 text-[10px] hover:bg-green-100">
-                                    {selectedSmpId ? "Fully Mapped" : "Category Mapped"}
-                                  </Badge>
-                                ) : (
-                                  <Badge variant="outline" className="text-amber-700 border-amber-300 text-[10px]">Unmapped</Badge>
-                                )}
+                                <div className="flex items-center gap-1.5">
+                                  <Label className="text-indigo-950 font-bold text-xs truncate max-w-[190px]">{emp}</Label>
+                                  {isExtra && (
+                                    <Badge className="bg-indigo-100 text-indigo-800 border-indigo-200 text-[9px] font-semibold py-0">Extra DB</Badge>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-1.5">
+                                  {selectedMpId ? (
+                                    <Badge className="bg-green-100 text-green-800 text-[10px] hover:bg-green-100">
+                                      {selectedSmpIds.length > 0 ? "Fully Mapped" : "Category Mapped"}
+                                    </Badge>
+                                  ) : (
+                                    <Badge variant="outline" className="text-amber-700 border-amber-300 text-[10px]">Unmapped</Badge>
+                                  )}
+                                  {isExtra && (
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-6 w-6 text-slate-400 hover:text-red-600 hover:bg-red-50"
+                                      onClick={() => handleRemoveExtraCategory(emp)}
+                                      title="Remove extra category"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </Button>
+                                  )}
+                                </div>
                               </div>
 
                               {/* 1. Meal Plan Selector */}
                               <div className="space-y-1">
                                 <Label className="text-[11px] text-slate-500 font-medium">1. Map to Database Meal Plan:</Label>
                                 <Select 
-                                  value={selectedMpId} 
+                                  value={selectedMpId || "none"} 
                                   onValueChange={(mpId) => setMealPlanMapping(prev => ({
                                     ...prev,
-                                    [emp]: { mealPlanId: mpId, subMealPlanId: "" }
+                                    [emp]: { mealPlanId: mpId === "none" ? "" : mpId, subMealPlanIds: [] }
                                   }))}
                                 >
                                   <SelectTrigger className="bg-slate-50 h-8 text-xs"><SelectValue placeholder="Select Database Meal Plan..." /></SelectTrigger>
                                   <SelectContent>
+                                    <SelectItem value="none" disabled>Select Database Meal Plan...</SelectItem>
                                     {mealPlans.map(mp => (
                                       <SelectItem key={mp.id} value={mp.id}>{mp.name}</SelectItem>
                                     ))}
@@ -1570,49 +2171,65 @@ export default function AITrainingPage() {
                                 <div className="space-y-1 pt-1 border-t border-slate-100">
                                   <div className="flex items-center justify-between">
                                     <Label className="text-[11px] text-slate-600 font-medium">2. Select Database Sub Meal Plan (Course):</Label>
-                                    {selectedSmpId && (
+                                    {selectedSmpIds.length > 0 && (
                                       <span 
                                         className="text-[10px] text-indigo-600 font-semibold cursor-pointer hover:underline" 
                                         onClick={() => setMealPlanMapping(prev => ({
                                           ...prev,
-                                          [emp]: { ...prev[emp], subMealPlanId: "" }
+                                          [emp]: { ...prev[emp], subMealPlanIds: [] }
                                         }))}
                                       >
                                         Reset to Auto
                                       </span>
                                     )}
                                   </div>
-                                  <Select 
-                                    value={selectedSmpId || "auto"} 
-                                    onValueChange={(smpId) => setMealPlanMapping(prev => ({
-                                      ...prev,
-                                      [emp]: {
-                                        ...prev[emp],
-                                        subMealPlanId: smpId === "auto" ? "" : smpId
-                                      }
-                                    }))}
-                                  >
-                                    <SelectTrigger className={`h-8 text-xs ${selectedSmpId ? "bg-emerald-50 border-emerald-300 text-emerald-900 font-medium" : "bg-white text-slate-700"}`}>
-                                      <SelectValue placeholder="✨ Auto-classify by item name (or choose specific)" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      <SelectItem value="auto">✨ Auto-Classify (AI analyzes each item)</SelectItem>
-                                      {matchingSubPlans.length > 0 ? (
-                                        matchingSubPlans.map(s => (
-                                          <SelectItem key={s.id} value={s.id}>🏷️ {s.name}</SelectItem>
-                                        ))
-                                      ) : (
-                                        <SelectItem value="none" disabled>No sub-plans defined for this meal plan</SelectItem>
-                                      )}
-                                    </SelectContent>
-                                  </Select>
+                                  <div className="flex flex-col gap-2 max-h-[150px] overflow-y-auto border p-2 rounded-md bg-white">
+                                    {matchingSubPlans.length > 0 ? (
+                                      matchingSubPlans.map(s => (
+                                        <div key={s.id} className="flex items-center gap-2">
+                                          <Checkbox
+                                            id={`smp-${emp}-${s.id}`}
+                                            checked={selectedSmpIds.includes(s.id)}
+                                            onCheckedChange={(checked) => {
+                                              const updated = checked 
+                                                ? [...selectedSmpIds, s.id] 
+                                                : selectedSmpIds.filter(id => id !== s.id);
+                                              setMealPlanMapping(prev => ({
+                                                ...prev,
+                                                [emp]: {
+                                                  ...prev[emp],
+                                                  subMealPlanIds: updated
+                                                }
+                                              }))
+                                            }}
+                                          />
+                                          <Label htmlFor={`smp-${emp}-${s.id}`} className="text-xs">🏷️ {s.name}</Label>
+                                        </div>
+                                      ))
+                                    ) : (
+                                      <div className="text-xs text-gray-500 italic p-1">No sub-plans defined for this meal plan</div>
+                                    )}
+                                  </div>
                                   <p className="text-[10px] text-slate-400">
-                                    {selectedSmpId 
-                                      ? `All items under '${emp}' will be strictly assigned to this sub-meal plan.` 
+                                    {selectedSmpIds.length > 0
+                                      ? `Items will be assigned to these sub-meal plans.` 
                                       : `AI will automatically categorize items into: ${matchingSubPlans.map(s => s.name).join(", ") || "default"}.`}
                                   </p>
                                 </div>
                               )}
+
+                              {/* Inline Add Dish Row Button */}
+                              <div className="pt-2 border-t border-slate-100 flex items-center justify-end">
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleOpenAddDishForCategory(emp)}
+                                  className="h-6 text-[10px] text-indigo-700 hover:bg-indigo-50 hover:text-indigo-900 gap-1 px-2 font-medium"
+                                >
+                                  <Plus className="w-3 h-3 text-indigo-600" /> Add Dish Row
+                                </Button>
+                              </div>
                             </div>
                           )
                         })}
@@ -1653,7 +2270,7 @@ export default function AITrainingPage() {
                       <div><strong>Sub-Service:</strong> {subServices.find(s => s.id === selectedSubServiceId)?.name || selectedSubServiceId}</div>
                     </>
                   )}
-                  <div><strong>Client Scope:</strong> {selectedCompanyId === "universal" ? "🌟 Universal (Master Kitchen)" : `🏢 ${companies.find(c => c.id === selectedCompanyId)?.name}`}</div>
+                  <div><strong>Client Scope:</strong> {selectedCompanyIds.includes("universal") ? "🌟 Universal (Master Kitchen)" : `🏢 ${companies.filter(c => selectedCompanyIds.includes(c.id)).map(c => c.name).join(", ")}`}</div>
                 </div>
               </div>
 
@@ -1699,12 +2316,34 @@ export default function AITrainingPage() {
 
             {/* Existing Profile Accordion / View */}
             {existingProfile && (
-              <div className="border border-slate-200 rounded-lg p-4 bg-white space-y-2">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-xs font-semibold text-slate-700">Current Active Profile Preview</h4>
-                  <Badge variant="outline" className="text-[10px]">Version Active</Badge>
+              <div className="border border-indigo-100 rounded-lg p-4 bg-indigo-50/20 space-y-3 shadow-2xs">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-2">
+                    <h4 className="text-xs font-bold text-slate-800">Current Active Profile Preview</h4>
+                    <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200 text-[10px] font-semibold">Active in AI Brain</Badge>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={handleOpenEditActiveProfile}
+                      className="h-7 text-xs gap-1.5 border-indigo-200 text-indigo-700 hover:bg-indigo-50 bg-white"
+                    >
+                      <Pencil className="w-3.5 h-3.5" /> Edit Training
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={handleDeleteActiveProfile}
+                      className="h-7 text-xs gap-1.5 border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700 bg-white"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" /> Remove Training
+                    </Button>
+                  </div>
                 </div>
-                <div className="text-xs text-slate-600 line-clamp-3">
+                <div className="text-xs text-slate-600 line-clamp-3 bg-white p-2.5 rounded border border-slate-200 font-mono text-[11px]">
                   {existingProfile}
                 </div>
               </div>
@@ -1777,8 +2416,28 @@ export default function AITrainingPage() {
                     <TableCell className="max-w-[320px] truncate text-xs text-gray-600">
                       {log.feedback}
                     </TableCell>
-                    <TableCell className="text-right">
-                      <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setViewLog(log)}>View Details</Button>
+                    <TableCell className="text-right whitespace-nowrap">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setViewLog(log)}>View Details</Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 text-xs text-indigo-700 hover:bg-indigo-50 border-indigo-200 px-2"
+                          onClick={() => handleOpenEditLog(log)}
+                          title="Edit profile & advisory for this log"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 text-xs text-red-600 hover:bg-red-50 hover:text-red-700 border-red-200 px-2"
+                          onClick={() => handleDeleteLog(log.id)}
+                          title="Delete this training log"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -1823,6 +2482,38 @@ export default function AITrainingPage() {
                   </div>
                 </div>
               )}
+
+              <div className="flex items-center justify-between pt-4 border-t mt-4">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleDeleteLog(viewLog.id)}
+                  className="text-xs text-red-600 hover:bg-red-50 hover:text-red-700 border-red-200 h-8 gap-1.5"
+                >
+                  <Trash2 className="w-3.5 h-3.5" /> Delete Log
+                </Button>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleOpenEditLog(viewLog)}
+                    className="text-xs border-indigo-200 text-indigo-700 hover:bg-indigo-50 h-8 gap-1.5"
+                  >
+                    <Pencil className="w-3.5 h-3.5" /> Edit Profile Text
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setViewLog(null)}
+                    className="text-xs h-8"
+                  >
+                    Close
+                  </Button>
+                </div>
+              </div>
             </div>
           )}
         </DialogContent>
@@ -1842,27 +2533,67 @@ export default function AITrainingPage() {
           </DialogHeader>
 
           {editingRecord && (
-            <div className="space-y-4 py-2">
-              {/* Context Summary */}
-              <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-1.5 text-xs text-slate-700">
-                <div className="flex justify-between">
-                  <span className="font-semibold text-slate-500">📅 Day / Date:</span>
-                  <span className="font-bold text-indigo-950">{editingRecord.date}</span>
+            <div className="space-y-3.5 py-2">
+              {/* 1. Dish Item(s) Editable Textarea */}
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-gray-800">
+                  🍲 Dish Item(s) <span className="text-red-500">*</span>
+                </Label>
+                <Textarea
+                  rows={2}
+                  value={editItems}
+                  onChange={(e) => setEditItems(e.target.value)}
+                  placeholder="e.g. Paneer Butter Masala, Butter Naan"
+                  className="text-xs bg-white border-slate-300 font-medium"
+                />
+                <p className="text-[10px] text-gray-400">
+                  Edit dish names, fix spelling, or separate multiple dishes with commas.
+                </p>
+              </div>
+
+              {/* 2. Menu Date / Day & Client Company */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-semibold text-gray-800">
+                    📅 Date / Day
+                  </Label>
+                  <Select value={editDate} onValueChange={setEditDate}>
+                    <SelectTrigger className="bg-white h-9 text-xs">
+                      <SelectValue placeholder="Date/Day..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {uniqueDates.map(d => (
+                        <SelectItem key={d} value={d}>📅 {d}</SelectItem>
+                      ))}
+                      <SelectItem value="custom">✏️ Custom...</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {editDate === "custom" && (
+                    <Input
+                      placeholder="e.g. Monday"
+                      value={editCustomDate}
+                      onChange={(e) => setEditCustomDate(e.target.value)}
+                      className="h-8 text-xs bg-white mt-1"
+                    />
+                  )}
                 </div>
-                <div className="flex justify-between items-start gap-2">
-                  <span className="font-semibold text-slate-500 shrink-0">🍲 Dish Item(s):</span>
-                  <span className="font-medium text-slate-900 text-right">{editingRecord.items}</span>
+
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-semibold text-gray-800">
+                    🏢 Client Company
+                  </Label>
+                  <Select value={editCompany} onValueChange={setEditCompany}>
+                    <SelectTrigger className="bg-white h-9 text-xs">
+                      <SelectValue placeholder="Company..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Universal">🌟 Universal</SelectItem>
+                      {companies.map(c => (
+                        <SelectItem key={c.id} value={c.name}>🏢 {c.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
-                <div className="flex justify-between">
-                  <span className="font-semibold text-slate-500">📄 Excel Category:</span>
-                  <span className="text-slate-600 font-mono text-[11px]">{editingRecord.mealPlan}</span>
-                </div>
-                {editingRecord.company && (
-                  <div className="flex justify-between">
-                    <span className="font-semibold text-slate-500">🏢 Client Company:</span>
-                    <span className="text-slate-600">{editingRecord.company}</span>
-                  </div>
-                )}
               </div>
 
               {/* Meal Plan Select */}
@@ -1994,6 +2725,270 @@ export default function AITrainingPage() {
                 onClick={handleSaveRecordEdit}
                 className="bg-indigo-600 hover:bg-indigo-700 text-xs h-8"
               >
+                Save Changes
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* DIALOG: ADD DISH / RECORD TO LIVE OUTPUT */}
+      <Dialog open={isAddDishOpen} onOpenChange={setIsAddDishOpen}>
+        <DialogContent className="max-w-md bg-white">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold text-gray-900 flex items-center gap-2">
+              <Plus className="w-4 h-4 text-indigo-600" />
+              Add Dish Record to Output
+            </DialogTitle>
+            <DialogDescription className="text-xs text-gray-500">
+              Inject an extra dish record under any database Meal Plan and Sub Meal Plan.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            {/* 1. Date / Day */}
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold text-gray-800">
+                Menu Date / Day <span className="text-red-500">*</span>
+              </Label>
+              <Select
+                value={newDishDate}
+                onValueChange={(val) => setNewDishDate(val)}
+              >
+                <SelectTrigger className="bg-white h-9 text-xs">
+                  <SelectValue placeholder="Select Date or Day..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {uniqueDates.map(d => (
+                    <SelectItem key={d} value={d}>📅 {d}</SelectItem>
+                  ))}
+                  <SelectItem value="custom">✏️ Custom Date / Day...</SelectItem>
+                </SelectContent>
+              </Select>
+              {newDishDate === "custom" && (
+                <div className="pt-1">
+                  <Input
+                    placeholder="e.g. 2026-10-05 (Mon) or Day 1"
+                    value={newDishCustomDate}
+                    onChange={(e) => setNewDishCustomDate(e.target.value)}
+                    className="h-8 text-xs bg-white"
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* 2. Client Company */}
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold text-gray-800">
+                Client Company
+              </Label>
+              <Select
+                value={newDishCompany}
+                onValueChange={setNewDishCompany}
+              >
+                <SelectTrigger className="bg-white h-9 text-xs">
+                  <SelectValue placeholder="Select Company..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Universal">🌟 Universal / Master Kitchen</SelectItem>
+                  {companies.map(c => (
+                    <SelectItem key={c.id} value={c.name}>🏢 {c.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* 3. Meal Plan (from DB) */}
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold text-gray-800">
+                Meal Plan (Food Category) <span className="text-red-500">*</span>
+              </Label>
+              <Select
+                value={newDishMpId || "none"}
+                onValueChange={(val) => {
+                  setNewDishMpId(val === "none" ? "" : val)
+                  setNewDishSmpIds([])
+                }}
+              >
+                <SelectTrigger className="bg-white h-9 text-xs">
+                  <SelectValue placeholder="Select Database Meal Plan..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none" disabled>Select Meal Plan...</SelectItem>
+                  {mealPlans.map(mp => (
+                    <SelectItem key={mp.id} value={mp.id}>
+                      {mp.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* 4. Sub Meal Plan(s) (from DB) */}
+            {newDishMpId && (
+              <div className="space-y-1.5 pt-1 border-t border-slate-100">
+                <Label className="text-xs font-semibold text-gray-800">
+                  Sub Meal Plan(s) (Course Slot)
+                </Label>
+                <div className="flex flex-col gap-1.5 max-h-[130px] overflow-y-auto border p-2 rounded-md bg-white">
+                  {subMealPlans.filter(s => s.mealPlanId === newDishMpId).length > 0 ? (
+                    subMealPlans.filter(s => s.mealPlanId === newDishMpId).map(s => (
+                      <div key={s.id} className="flex items-center gap-2">
+                        <Checkbox
+                          id={`newdish-smp-${s.id}`}
+                          checked={newDishSmpIds.includes(s.id)}
+                          onCheckedChange={(checked) => {
+                            if (checked) {
+                              setNewDishSmpIds(prev => [...prev, s.id])
+                            } else {
+                              setNewDishSmpIds(prev => prev.filter(id => id !== s.id))
+                            }
+                          }}
+                        />
+                        <Label htmlFor={`newdish-smp-${s.id}`} className="text-xs">🏷️ {s.name}</Label>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-xs text-gray-500 italic p-1">No sub-plans defined for this meal plan in DB.</div>
+                  )}
+                </div>
+                <div className="pt-1">
+                  <Input
+                    placeholder="Optional custom sub-meal plan name (e.g. Garlic Naan)..."
+                    value={newDishCustomSmp}
+                    onChange={(e) => setNewDishCustomSmp(e.target.value)}
+                    className="h-8 text-xs bg-white"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* 5. Dish Items */}
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold text-gray-800">
+                Dish Item(s) <span className="text-red-500">*</span>
+              </Label>
+              <Input
+                placeholder="e.g. Paneer Lababdar, Butter Naan, Steamed Rice"
+                value={newDishItems}
+                onChange={(e) => setNewDishItems(e.target.value)}
+                className="h-9 text-xs bg-white"
+              />
+              <p className="text-[10px] text-gray-400">Separate multiple items with commas if needed.</p>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-end gap-2 pt-3 border-t">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => setIsAddDishOpen(false)}
+              className="text-xs h-8"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              onClick={handleSaveNewDish}
+              className="bg-indigo-600 hover:bg-indigo-700 text-xs h-8"
+            >
+              Add to Output
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* DIALOG: EDIT TRAINING PROFILE */}
+      <Dialog open={editingProfileOpen} onOpenChange={setEditingProfileOpen}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto bg-white">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold text-gray-900 flex items-center gap-2">
+              <Pencil className="w-4 h-4 text-indigo-600" />
+              {editingLogId ? "Edit Training Log & Profile" : "Edit Active AI Training Profile"}
+            </DialogTitle>
+            <DialogDescription className="text-xs text-gray-500">
+              Directly edit the AI rules, guidelines, and dietary knowledge for this service.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold text-gray-800">
+                Synthesized OKF Profile (Markdown Rules)
+              </Label>
+              <Textarea
+                rows={16}
+                value={editProfileText}
+                onChange={(e) => setEditProfileText(e.target.value)}
+                placeholder="Markdown formatted OKF training profile and catering rules..."
+                className="font-mono text-xs leading-relaxed bg-slate-50 border-slate-200"
+              />
+              <p className="text-[10px] text-gray-400">
+                Use markdown (# Headings, - Bullet points, **bold**) to define food structure rules.
+              </p>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold text-gray-800">
+                Strategic Advisory (Optional)
+              </Label>
+              <Textarea
+                rows={3}
+                value={editAdvisoryText}
+                onChange={(e) => setEditAdvisoryText(e.target.value)}
+                placeholder="Operational advice, cost suggestions, variety notes..."
+                className="text-xs bg-slate-50 border-slate-200"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold text-gray-800">
+                Analysis Summary / Feedback (Optional)
+              </Label>
+              <Input
+                value={editFeedbackText}
+                onChange={(e) => setEditFeedbackText(e.target.value)}
+                placeholder="Brief summary of what was trained..."
+                className="h-8 text-xs bg-slate-50 border-slate-200"
+              />
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between pt-3 border-t">
+            {!editingLogId && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setEditingProfileOpen(false)
+                  handleDeleteActiveProfile()
+                }}
+                className="text-xs text-red-600 hover:bg-red-50 hover:text-red-700 border-red-200 h-8"
+              >
+                <Trash2 className="w-3.5 h-3.5 mr-1" /> Remove Training
+              </Button>
+            )}
+            <div className="flex items-center gap-2 ml-auto">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setEditingProfileOpen(false)}
+                className="text-xs h-8"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                disabled={savingProfileEdit}
+                onClick={handleSaveProfileEdit}
+                className="bg-indigo-600 hover:bg-indigo-700 text-xs h-8"
+              >
+                {savingProfileEdit ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : null}
                 Save Changes
               </Button>
             </div>
