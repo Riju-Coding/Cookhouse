@@ -34,7 +34,8 @@ import {
   EyeOff,
   FileEdit,
   ShieldCheck,
-  Send
+  Send,
+  Sparkles
 } from 'lucide-react'
 import { toast } from "@/hooks/use-toast"
 import type { Service, MealPlan, SubMealPlan, MenuItem, SubService } from "@/lib/types"
@@ -2984,6 +2985,8 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
   const [activeBottomTab, setActiveBottomTab] = useState<'menu' | 'choices' | 'universal' | 'detailed'>('menu')
   const [choiceTabIndex, setChoiceTabIndex] = useState(0)
   const [inlineChoiceSelections, setInlineChoiceSelections] = useState<Record<string, any[]>>({})
+  const [aiChoiceLoading, setAiChoiceLoading] = useState(false)
+  const [autoSelectChoicesInBatch, setAutoSelectChoicesInBatch] = useState(true)
 
   // Universal aggregate
   const universalData = useMemo(() => {
@@ -5723,6 +5726,111 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
       return
     }
 
+    // Helper: Verify if at least one active building has this cell in its contracted structure for this day
+    const isCellAssignedToAnyBuilding = (dateStr: string, mpId: string, smpId: string) => {
+      const [y, m, dNum] = dateStr.split("-").map(Number)
+      const d = new Date(y, m - 1, dNum, 12, 0, 0)
+      const days = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"]
+      const dayKey = days[d.getDay()]
+
+      if (!mealPlanAssignments || mealPlanAssignments.length === 0) return true
+
+      if (menuType === "company" && menu?.companyId) {
+        const compAssignments = (mealPlanAssignments || []).filter((assignment: any) => {
+          if (assignment.companyId !== menu.companyId) return false
+          if (menu.buildingId && assignment.buildingId && assignment.buildingId !== menu.buildingId) return false
+          if (assignment.status && assignment.status.toLowerCase() !== "active") return false
+          return true
+        })
+
+        // Check if this sub-service has ANY assignments at all for this company
+        const hasSubServiceAssignments = compAssignments.some((a: any) =>
+          Object.values(a.weekStructure || {}).some((svcs: any) =>
+            Array.isArray(svcs) && svcs.some((s: any) =>
+              s.serviceId === selectedService.id &&
+              s.subServices?.some((ss: any) => ss.subServiceId === selectedSubService.id)
+            )
+          )
+        )
+        if (!hasSubServiceAssignments) return true
+
+        return compAssignments.some((assignment: any) => {
+          const dayStructure = assignment.weekStructure?.[dayKey] || []
+          const svc = dayStructure.find((s: any) => s.serviceId === selectedService.id)
+          const ss = svc?.subServices?.find((s: any) => s.subServiceId === selectedSubService.id)
+          if (!ss) return false
+
+          const inRegular = ss?.mealPlans?.some((m: any) =>
+            m.subMealPlans?.some((s: any) => s.subMealPlanId === smpId)
+          )
+          if (inRegular) return true
+
+          const choicesList = Array.isArray(ss?.choices)
+            ? ss.choices
+            : Array.isArray(ss?.choices?.[dayKey])
+              ? ss.choices[dayKey]
+              : Object.values(ss?.choices || {}).flat()
+
+          return Array.isArray(choicesList) && choicesList.some((c: any) =>
+            c.mealPlans?.some((m: any) =>
+              m.subMealPlans?.some((s: any) => s.subMealPlanId === smpId)
+            )
+          )
+        })
+      }
+
+      // Combined menu: must have at least one active building assigned in active assignments
+      const activeBldIds = new Set(
+        (buildings || []).filter((b: any) => b.status === "active" || !b.status).map((b: any) => b.id)
+      )
+      const activeCmpIds = new Set(
+        (companies || []).filter((c: any) => c.status === "active" || !c.status).map((c: any) => c.id)
+      )
+
+      const activeAssignments = (mealPlanAssignments || []).filter((assignment: any) => {
+        if (assignment.status && assignment.status.toLowerCase() !== "active") return false
+        if (activeBldIds.size > 0 && assignment.buildingId && !activeBldIds.has(assignment.buildingId)) return false
+        if (activeCmpIds.size > 0 && assignment.companyId && !activeCmpIds.has(assignment.companyId)) return false
+        return true
+      })
+
+      // Check if this sub-service has ANY contracted assignments at all across all buildings/days
+      const hasSubServiceAssignments = activeAssignments.some((a: any) =>
+        Object.values(a.weekStructure || {}).some((svcs: any) =>
+          Array.isArray(svcs) && svcs.some((s: any) =>
+            s.serviceId === selectedService.id &&
+            s.subServices?.some((ss: any) => ss.subServiceId === selectedSubService.id)
+          )
+        )
+      )
+      // If this sub-service has zero contracts anywhere (e.g. Party, Special, or unassigned), allow all active cells
+      if (!hasSubServiceAssignments) return true
+
+      return activeAssignments.some((assignment: any) => {
+        const dayStructure = assignment.weekStructure?.[dayKey] || []
+        const svc = dayStructure.find((s: any) => s.serviceId === selectedService.id)
+        const ss = svc?.subServices?.find((s: any) => s.subServiceId === selectedSubService.id)
+        if (!ss) return false
+
+        const inRegular = ss?.mealPlans?.some((m: any) =>
+          m.subMealPlans?.some((s: any) => s.subMealPlanId === smpId)
+        )
+        if (inRegular) return true
+
+        const choicesList = Array.isArray(ss?.choices)
+          ? ss.choices
+          : Array.isArray(ss?.choices?.[dayKey])
+            ? ss.choices[dayKey]
+            : Object.values(ss?.choices || {}).flat()
+
+        return Array.isArray(choicesList) && choicesList.some((c: any) =>
+          c.mealPlans?.some((m: any) =>
+            m.subMealPlans?.some((s: any) => s.subMealPlanId === smpId)
+          )
+        )
+      })
+    }
+
     setAiSuggestError(null)
     setAiSuggestLoading(true)
     setAiGenerationProgress(0)
@@ -5733,17 +5841,52 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
       // Calculate all dates in range
       const start = new Date(startDate)
       const end = new Date(endDate)
-      const allDates = []
+      const allDates: string[] = []
       for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
         allDates.push(d.toISOString().split("T")[0])
       }
 
-      // Group dates into batches of 1 to reduce token load on LLM
-      const BATCH_SIZE = 1
-      const batches = []
+      // Group dates into batches of 7 days (weekly) so the AI plans with multi-day awareness and avoids repetitions
+      const BATCH_SIZE = 7
+      const batches: string[][] = []
       for (let i = 0; i < allDates.length; i += BATCH_SIZE) {
         batches.push(allDates.slice(i, i + BATCH_SIZE))
       }
+
+      // Pre-calculate allowed cells for each date (ONLY cells with active buildings assigned)
+      const allowedCellsByDate: Record<string, string[]> = {}
+      for (const d of allDates) {
+        allowedCellsByDate[d] = []
+        for (const mp of (mealPlans || [])) {
+          const smps = (subMealPlans || []).filter((s: any) => s.mealPlanId === mp.id)
+          for (const smp of smps) {
+            if (isCellAssignedToAnyBuilding(d, mp.id, smp.id)) {
+              allowedCellsByDate[d].push(`${mp.id}|${smp.id}`)
+              allowedCellsByDate[d].push(smp.id)
+            }
+          }
+        }
+      }
+
+      // Track items already used per subMealPlan across the menu to prevent repetitions
+      const usedItemIdsTracker: Record<string, string[]> = {}
+      for (const d of allDates) {
+        const daySlice = menuData[d]?.[selectedService.id]?.[selectedSubService.id] || {}
+        for (const mpId of Object.keys(daySlice)) {
+          for (const smpId of Object.keys(daySlice[mpId] || {})) {
+            const ids = daySlice[mpId][smpId]?.menuItemIds || []
+            if (!usedItemIdsTracker[smpId]) usedItemIdsTracker[smpId] = []
+            ids.forEach((id: string) => {
+              if (!usedItemIdsTracker[smpId].includes(id)) {
+                usedItemIdsTracker[smpId].push(id)
+              }
+            })
+          }
+        }
+      }
+
+      // Track accumulated menu data across batches for choice suggestion
+      const runningMenuData = JSON.parse(JSON.stringify(menuData || {}))
 
       // Process batches sequentially
       for (let i = 0; i < batches.length; i++) {
@@ -5772,6 +5915,11 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
             datesToGenerate: batchDates,
             currentMenuData: currentMenuSlice,
             aiModel,
+            companyId: menu?.companyId || null,
+            companyName: menu?.companyName || null,
+            menuType,
+            allowedCellsByDate,
+            usedItemIdsBySubMealPlan: usedItemIdsTracker,
           }),
         })
 
@@ -5784,7 +5932,23 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
 
         const suggestedMenuData = data.menuDataSlice
         console.log(`[AI Suggest Frontend] Batch ${i+1} suggestedMenuData:`, JSON.stringify(suggestedMenuData))
-        
+
+        // Update used items tracker with newly generated items so subsequent batches know about them
+        for (const date of Object.keys(suggestedMenuData || {})) {
+          const ssObj = suggestedMenuData[date]?.[selectedService.id]?.[selectedSubService.id] || {}
+          for (const mpId of Object.keys(ssObj)) {
+            for (const smpId of Object.keys(ssObj[mpId] || {})) {
+              const ids = ssObj[mpId][smpId]?.menuItemIds || []
+              if (!usedItemIdsTracker[smpId]) usedItemIdsTracker[smpId] = []
+              ids.forEach((id: string) => {
+                if (!usedItemIdsTracker[smpId].includes(id)) {
+                  usedItemIdsTracker[smpId].push(id)
+                }
+              })
+            }
+          }
+        }
+
         // Deep merge the returned slice into the live menuData state
         setMenuData((prev: any) => {
           const updated = JSON.parse(JSON.stringify(prev || {}))
@@ -5809,11 +5973,22 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
                   if (!updated[date][serviceId][subServiceId][mealPlanId]) updated[date][serviceId][subServiceId][mealPlanId] = {}
 
                   for (const subMealPlanId of Object.keys(smpObj)) {
+                    // CRITICAL: If no building is assigned to this cell on this date, NEVER map any item!
+                    if (!isCellAssignedToAnyBuilding(date, mealPlanId, subMealPlanId)) {
+                      console.warn(`[AI Suggest Frontend] Cell ${date}|${mealPlanId}|${subMealPlanId} has NO building assigned, skipping mapping.`)
+                      continue
+                    }
+
                     const cell = smpObj[subMealPlanId]
-                    
                     const existing = updated[date][serviceId][subServiceId][mealPlanId][subMealPlanId] || {}
+                    const existingItems: string[] = existing.menuItemIds || []
+                    const newItems: string[] = cell.menuItemIds || []
                     
-                    const mergedItemIds = Array.from(new Set([...(existing.menuItemIds || []), ...(cell.menuItemIds || [])]))
+                    // If existing cell is empty, adopt AI items. If cell already has items, merge but keep existing items priority
+                    const mergedItemIds = existingItems.length === 0
+                      ? newItems
+                      : Array.from(new Set([...existingItems, ...newItems])).slice(0, Math.max(existingItems.length, 3))
+
                     const newAiMarks = (cell.menuItemIds || []).reduce((acc: any, id: string) => { acc[id] = true; return acc; }, {})
 
                     updated[date][serviceId][subServiceId][mealPlanId][subMealPlanId] = {
@@ -5830,6 +6005,43 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
           }
           return updated
         })
+
+        // Also update runningMenuData directly for choice suggestion
+        for (const date of Object.keys(suggestedMenuData)) {
+          const day = suggestedMenuData[date]
+          if (!day || typeof day !== "object") continue
+          if (!runningMenuData[date]) runningMenuData[date] = {}
+          for (const serviceId of Object.keys(day)) {
+            const ssObj = day[serviceId]
+            if (!ssObj || typeof ssObj !== "object") continue
+            if (!runningMenuData[date][serviceId]) runningMenuData[date][serviceId] = {}
+            for (const subServiceId of Object.keys(ssObj)) {
+              const mpObj = ssObj[subServiceId]
+              if (!mpObj || typeof mpObj !== "object") continue
+              if (!runningMenuData[date][serviceId][subServiceId]) runningMenuData[date][serviceId][subServiceId] = {}
+              for (const mealPlanId of Object.keys(mpObj)) {
+                const smpObj = mpObj[mealPlanId]
+                if (!smpObj || typeof smpObj !== "object") continue
+                if (!runningMenuData[date][serviceId][subServiceId][mealPlanId]) runningMenuData[date][serviceId][subServiceId][mealPlanId] = {}
+                for (const subMealPlanId of Object.keys(smpObj)) {
+                  if (!isCellAssignedToAnyBuilding(date, mealPlanId, subMealPlanId)) continue
+                  const cell = smpObj[subMealPlanId]
+                  const existing = runningMenuData[date][serviceId][subServiceId][mealPlanId][subMealPlanId] || {}
+                  const existingItems: string[] = existing.menuItemIds || []
+                  const newItems: string[] = cell.menuItemIds || []
+                  const mergedItemIds = existingItems.length === 0
+                    ? newItems
+                    : Array.from(new Set([...existingItems, ...newItems])).slice(0, Math.max(existingItems.length, 3))
+                  runningMenuData[date][serviceId][subServiceId][mealPlanId][subMealPlanId] = {
+                    ...(existing || {}),
+                    menuItemIds: mergedItemIds,
+                    customAssignments: cell.customAssignments || existing.customAssignments || {},
+                  }
+                }
+              }
+            }
+          }
+        }
         
         // Respect rate limits with a short pause between batches
         if (i < batches.length - 1) {
@@ -5837,9 +6049,46 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
         }
       }
 
+      // Automatically auto-select choices if companies have choices and user enabled it
+      if (autoSelectChoicesInBatch && companiesWithChoices.length > 0) {
+        setAiGenerationStatusText("Auto-selecting choices according to OKF training profile...")
+        try {
+          const assocObj: Record<string, any[]> = {}
+          if (universalData.associations instanceof Map) {
+            universalData.associations.forEach((v, k) => { assocObj[k] = v })
+          }
+          const choiceRes = await fetch("/api/ai/suggest-choices", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              serviceId: selectedService.id,
+              subServiceId: selectedSubService.id,
+              dateRange,
+              companiesWithChoices,
+              universalChoices: universalData.building.choices,
+              universalAssociations: assocObj,
+              menuData: runningMenuData,
+              mode: menuType === "combined" ? "universal" : "all_companies",
+              aiModel,
+              existingSelections: inlineChoiceSelections,
+            }),
+          })
+          const choiceData = await choiceRes.json()
+          if (choiceData?.success && choiceData?.selections) {
+            setInlineChoiceSelections((prev) => ({
+              ...prev,
+              ...choiceData.selections,
+            }))
+            console.log("[AI Suggest Frontend] Choices auto-selected:", choiceData.summary)
+          }
+        } catch (choiceErr) {
+          console.warn("[AI Suggest Frontend] Choice auto-selection non-fatal error:", choiceErr)
+        }
+      }
+
       setAiGenerationProgress(100)
       setAiGenerationStatusText("Generation Complete!")
-      toast({ title: "AI Generation Complete", description: "The OKF profile has filled the menu." })
+      toast({ title: "AI Generation Complete", description: "The OKF profile has filled the menu and resolved choices." })
       setTimeout(() => setShowAiSuggestModal(false), 1500)
 
     } catch (e: any) {
@@ -5847,7 +6096,140 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
     } finally {
       setAiSuggestLoading(false)
     }
-  }, [menu?.startDate, menu?.endDate, createStartDate, createEndDate, selectedService?.id, selectedSubService?.id, menuData, aiModel])
+  }, [
+    menu?.startDate,
+    menu?.endDate,
+    createStartDate,
+    createEndDate,
+    selectedService?.id,
+    selectedSubService?.id,
+    menuData,
+    aiModel,
+    menu?.companyId,
+    menu?.companyName,
+    menu?.buildingId,
+    menuType,
+    mealPlanAssignments,
+    buildings,
+    companies,
+    mealPlans,
+    subMealPlans,
+    companiesWithChoices,
+    universalData,
+    inlineChoiceSelections,
+    autoSelectChoicesInBatch,
+  ])
+
+  // Handler to manually run AI Choice Suggestion for Universal Choices tab
+  const handleAiSuggestUniversalChoices = async () => {
+    if (!selectedService || !selectedSubService) return
+    try {
+      setAiChoiceLoading(true)
+      const assocObj: Record<string, any[]> = {}
+      if (universalData.associations instanceof Map) {
+        universalData.associations.forEach((v, k) => { assocObj[k] = v })
+      }
+      const res = await fetch("/api/ai/suggest-choices", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          serviceId: selectedService.id,
+          subServiceId: selectedSubService.id,
+          dateRange,
+          companiesWithChoices,
+          universalChoices: universalData.building.choices,
+          universalAssociations: assocObj,
+          menuData,
+          mode: "universal",
+          aiModel,
+          existingSelections: inlineChoiceSelections,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok || !data.success) {
+        throw new Error(data?.error || "Failed to auto-select universal choices")
+      }
+      if (data.totalChoicesResolved === 0) {
+        toast({
+          title: "No Choices Resolved",
+          description: data.summary || "No menu items were found in the menu grid for these choices. Please add or generate menu items first.",
+        })
+        return
+      }
+      setInlineChoiceSelections((prev) => ({
+        ...prev,
+        ...data.selections,
+      }))
+      toast({
+        title: "AI Choices Selected!",
+        description: data.summary || "Universal choices populated according to OKF training profile.",
+      })
+    } catch (err: any) {
+      toast({
+        title: "Choice Selection Failed",
+        description: err.message || "Failed to select choices",
+        variant: "destructive",
+      })
+    } finally {
+      setAiChoiceLoading(false)
+    }
+  }
+
+  // Handler to manually run AI Choice Suggestion for Choice Selection tab
+  const handleAiSuggestCompanyChoices = async (target: "current" | "all") => {
+    if (!selectedService || !selectedSubService) return
+    try {
+      setAiChoiceLoading(true)
+      const filteredComps = companiesWithChoices.filter(c => 
+        (c.companyName || "").toLowerCase().includes(choiceTabSearch.toLowerCase()) || 
+        (c.buildingName || "").toLowerCase().includes(choiceTabSearch.toLowerCase())
+      )
+      const activeCompany = filteredComps[choiceTabIndex]
+      const res = await fetch("/api/ai/suggest-choices", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          serviceId: selectedService.id,
+          subServiceId: selectedSubService.id,
+          dateRange,
+          companiesWithChoices,
+          menuData,
+          mode: target === "current" ? "company" : "all_companies",
+          targetCompanyId: target === "current" && activeCompany ? activeCompany.companyId : undefined,
+          targetBuildingId: target === "current" && activeCompany ? activeCompany.buildingId : undefined,
+          aiModel,
+          existingSelections: inlineChoiceSelections,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok || !data.success) {
+        throw new Error(data?.error || "Failed to auto-select company choices")
+      }
+      if (data.totalChoicesResolved === 0) {
+        toast({
+          title: "No Choices Resolved",
+          description: data.summary || "No menu items were found in the menu grid for these choices. Please add or generate menu items first.",
+        })
+        return
+      }
+      setInlineChoiceSelections((prev) => ({
+        ...prev,
+        ...data.selections,
+      }))
+      toast({
+        title: "AI Choices Selected!",
+        description: data.summary || `Choices populated for ${target === "current" ? activeCompany?.companyName : "all companies"} according to training.`,
+      })
+    } catch (err: any) {
+      toast({
+        title: "Choice Selection Failed",
+        description: err.message || "Failed to select choices",
+        variant: "destructive",
+      })
+    } finally {
+      setAiChoiceLoading(false)
+    }
+  }
 
   const applyAiMenuToDraft = useCallback(() => {
     // This function is kept for signature compatibility if used elsewhere, but does nothing now
@@ -5871,6 +6253,18 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
       // For COMBINED menu: Use ALL company assignments
       : mealPlanAssignments;
 
+    // Check if this sub-service has ANY assignments at all in relevantAssignments
+    const hasSubServiceAssignments = relevantAssignments.some((a: any) =>
+      Object.values(a.weekStructure || {}).some((svcs: any) =>
+        Array.isArray(svcs) && svcs.some((s: any) =>
+          s.serviceId === selectedService.id &&
+          s.subServices?.some((ss: any) => ss.subServiceId === selectedSubService.id)
+        )
+      )
+    );
+    // If no building contracts exist for this sub-service (e.g. Party, Special, or unassigned), keep all rows visible so user can edit
+    if (!hasSubServiceAssignments) return true;
+
     // Check if this meal plan/sub meal plan exists in ANY day of the week
     // within the relevant assignments for the selected service/sub-service.
     return dateRange.some(({ day }) => {
@@ -5881,9 +6275,24 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
         // Navigate the structure tree to find a match
         const sInDay = dayStructure.find((s: any) => s.serviceId === selectedService.id);
         const ssInDay = sInDay?.subServices?.find((ss: any) => ss.subServiceId === selectedSubService.id);
-        const mpInDay = ssInDay?.mealPlans?.find((mp: any) => mp.mealPlanId === mealPlanId);
+        if (!ssInDay) return false;
 
-        return mpInDay?.subMealPlans?.some((smp: any) => smp.subMealPlanId === subMealPlanId);
+        const inRegular = ssInDay?.mealPlans?.some((mp: any) =>
+          mp.subMealPlans?.some((smp: any) => smp.subMealPlanId === subMealPlanId)
+        );
+        if (inRegular) return true;
+
+        const choicesList = Array.isArray(ssInDay?.choices)
+          ? ssInDay.choices
+          : Array.isArray(ssInDay?.choices?.[dayKey])
+            ? ssInDay.choices[dayKey]
+            : Object.values(ssInDay?.choices || {}).flat();
+
+        return Array.isArray(choicesList) && choicesList.some((c: any) =>
+          c.mealPlans?.some((mp: any) =>
+            mp.subMealPlans?.some((smp: any) => smp.subMealPlanId === subMealPlanId)
+          )
+        );
       });
     });
   }, [mealPlanAssignments, menuType, menu?.companyId, dateRange, selectedService, selectedSubService]);
@@ -6615,9 +7024,9 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
                   <div className="flex flex-col h-full">
                     {/* Building Tabs for Choices */}
                     <div className="shrink-0 bg-white border-b border-gray-200 shadow-sm">
-                      {/* Search Bar */}
-                      <div className="px-4 pt-3 pb-1">
-                        <div className="relative w-full">
+                      {/* Search Bar & AI Action Buttons */}
+                      <div className="px-4 pt-3 pb-1 flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                        <div className="relative flex-1">
                           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                           <input
                             type="text"
@@ -6629,6 +7038,27 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
                             }}
                             className="w-full pl-9 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all outline-none"
                           />
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleAiSuggestCompanyChoices("current")}
+                            disabled={aiChoiceLoading || filteredCompaniesWithChoices.length === 0}
+                            className="border-indigo-300 text-indigo-700 hover:bg-indigo-50 flex items-center gap-1.5 text-xs h-9 px-3"
+                          >
+                            {aiChoiceLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+                            AI Suggest (Current Company)
+                          </Button>
+                          <Button
+                            size="sm"
+                            onClick={() => handleAiSuggestCompanyChoices("all")}
+                            disabled={aiChoiceLoading || filteredCompaniesWithChoices.length === 0}
+                            className="bg-indigo-600 hover:bg-indigo-700 text-white flex items-center gap-1.5 text-xs h-9 px-3 shadow-sm"
+                          >
+                            {aiChoiceLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+                            AI Suggest (All Companies)
+                          </Button>
                         </div>
                       </div>
                       <div className="flex items-center px-4 gap-1">
@@ -6718,12 +7148,27 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
                 {universalData.building.choices.length > 0 ? (
                   <div className="flex flex-col h-full">
                     <div className="shrink-0 bg-blue-50 border-b border-blue-200 shadow-sm px-4 py-3 flex items-center justify-between">
-                       <div className="flex items-center gap-2">
-                         <Globe2 className="h-5 w-5 text-blue-600" />
-                         <span className="font-semibold text-blue-800">Universal Choices</span>
-                         <span className="text-xs text-blue-600 font-medium ml-2 bg-white px-2 py-0.5 rounded-full border border-blue-200">
-                           {universalData.building.choices.length} choices across {companiesWithChoices.length} companies
-                         </span>
+                       <div className="flex items-center gap-3">
+                         <div className="flex items-center gap-2">
+                           <Globe2 className="h-5 w-5 text-blue-600" />
+                           <span className="font-semibold text-blue-800">Universal Choices</span>
+                           <span className="text-xs text-blue-600 font-medium ml-1 bg-white px-2 py-0.5 rounded-full border border-blue-200">
+                             {universalData.building.choices.length} choices across {companiesWithChoices.length} companies
+                           </span>
+                         </div>
+                         <Button
+                           size="sm"
+                           onClick={handleAiSuggestUniversalChoices}
+                           disabled={aiChoiceLoading || universalData.building.choices.length === 0}
+                           className="bg-indigo-600 hover:bg-indigo-700 text-white font-medium flex items-center gap-1.5 shadow-sm text-xs h-7 px-3"
+                         >
+                           {aiChoiceLoading ? (
+                             <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                           ) : (
+                             <Sparkles className="h-3.5 w-3.5" />
+                           )}
+                           {aiChoiceLoading ? "Auto-Selecting Choices..." : "AI Suggest Choices"}
+                         </Button>
                        </div>
                        <div className="text-xs text-blue-500 font-medium italic flex items-center gap-1">
                           <AlertCircle className="h-3.5 w-3.5" />
@@ -6854,9 +7299,31 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
           )}
 
           <div className="flex gap-2">
-            {menuType === "combined" && ( <><div className="flex items-center space-x-2 mr-2"><select value={aiModel} onChange={(e) => setAiModel(e.target.value)} className="text-xs border-blue-300 text-blue-700 rounded p-2 focus:ring-blue-500 bg-white"><option value="gemini">Gemini</option><option value="nara">Nara</option><option value="ollama">Local</option></select></div><Button variant="outline" onClick={fetchAiMenuSuggestion} disabled={saving || loading} className="border-blue-300 text-blue-700 hover:bg-blue-50">
-                {aiSuggestLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Zap className="h-4 w-4 mr-2" />}
-                AI Suggest</Button></>)}
+            {(menuType === "combined" || menuType === "company") && (
+              <>
+                <div className="flex items-center space-x-2 mr-2">
+                  <select
+                    value={aiModel}
+                    onChange={(e) => setAiModel(e.target.value)}
+                    className="text-xs border-blue-300 text-blue-700 rounded p-2 focus:ring-blue-500 bg-white"
+                  >
+                    <option value="gemini">Gemini</option>
+                    <option value="aws">AWS Bedrock</option>
+                    <option value="nara">Nara</option>
+                    <option value="ollama">Local</option>
+                  </select>
+                </div>
+                <Button
+                  variant="outline"
+                  onClick={fetchAiMenuSuggestion}
+                  disabled={saving || loading}
+                  className="border-blue-300 text-blue-700 hover:bg-blue-50"
+                >
+                  {aiSuggestLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Zap className="h-4 w-4 mr-2" />}
+                  AI Suggest
+                </Button>
+              </>
+            )}
             
             {(() => {
               const isDirectEditor = isSuperAdmin || hasPermission('CAN_DIRECT_EDIT');
@@ -6934,6 +7401,24 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
             <div className="py-6 flex justify-center items-center">
               <LoadingProgress progress={aiGenerationProgress} message={aiGenerationStatusText} />
             </div>
+
+            {companiesWithChoices.length > 0 && (
+              <div className="mt-2 pt-3 border-t flex items-center justify-between text-xs text-gray-700 bg-indigo-50/50 px-3 py-2 rounded-lg border border-indigo-100">
+                <label className="flex items-center gap-2 cursor-pointer font-medium text-indigo-900">
+                  <input
+                    type="checkbox"
+                    checked={autoSelectChoicesInBatch}
+                    onChange={(e) => setAutoSelectChoicesInBatch(e.target.checked)}
+                    disabled={aiSuggestLoading}
+                    className="rounded border-indigo-300 text-indigo-600 focus:ring-indigo-500 h-3.5 w-3.5"
+                  />
+                  <span>Auto-resolve choices via OKF training profile</span>
+                </label>
+                <span className="text-[10px] text-indigo-600 font-semibold bg-white px-2 py-0.5 rounded-full border border-indigo-200">
+                  {companiesWithChoices.length} companies
+                </span>
+              </div>
+            )}
 
             {aiSuggestError && (
               <div className="mt-4 text-xs text-red-600 bg-red-50 p-3 rounded-md whitespace-pre-wrap font-mono overflow-auto max-h-64">

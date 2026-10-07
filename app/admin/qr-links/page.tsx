@@ -6,8 +6,8 @@ import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Download, Plus, Link as LinkIcon, Trash2, Building2, QrCode, Settings2, User, Mail, IdCard, CheckCircle, XCircle, Loader2, Eye } from "lucide-react"
-import { qrLinksService, QRLink } from "@/lib/firestore/qrLinksService"
+import { Download, Plus, Link as LinkIcon, Trash2, Building2, QrCode, Settings2, User, Mail, IdCard, CheckCircle, XCircle, Loader2, Eye, Pencil, Check, X, RotateCcw, Tag, FolderPlus } from "lucide-react"
+import { qrLinksService, QRLink, QRLinkCustomization } from "@/lib/firestore/qrLinksService"
 import { companiesService, buildingsService, Company, Building } from "@/lib/firestore"
 import { cafeteriasService, Cafeteria } from "@/lib/firestore/cafeteriasService"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -18,18 +18,323 @@ import ReportPreview from "./ReportPreview"
 
 // --- Customization Form Helper ---
 function CustomizationFields({ data, onChange }: { data: any, onChange: (d: any) => void }) {
+  const [newCategoryName, setNewCategoryName] = useState("")
+  const [editingCategory, setEditingCategory] = useState<{ original: string; current: string } | null>(null)
+
+  // Combined unique list of categories (all known categories + defaults)
+  const allCategories: string[] = Array.from(new Set([
+    ...(data.allCategories || []),
+    ...(data.issueCategories || []),
+    ...COMPLAINT_CATEGORIES
+  ]))
+
+  const activeCategories: string[] = data.issueCategories || COMPLAINT_CATEGORIES
+
   const toggleCategory = (cat: string) => {
-    const cats = data.issueCategories || []
-    if (cats.includes(cat)) {
-      onChange({ ...data, issueCategories: cats.filter((c: string) => c !== cat) })
+    if (activeCategories.includes(cat)) {
+      onChange({ ...data, issueCategories: activeCategories.filter((c: string) => c !== cat) })
     } else {
-      onChange({ ...data, issueCategories: [...cats, cat] })
+      onChange({ ...data, issueCategories: [...activeCategories, cat] })
     }
   }
 
+  const handleAddCategory = () => {
+    const trimmed = newCategoryName.trim()
+    if (!trimmed) {
+      toast({ title: "Category name required", description: "Please enter a category name.", variant: "destructive" })
+      return
+    }
+    if (allCategories.some(c => c.toLowerCase() === trimmed.toLowerCase())) {
+      toast({ title: "Duplicate category", description: "A category with this name already exists.", variant: "destructive" })
+      return
+    }
+
+    const updatedAll = [...allCategories, trimmed]
+    const updatedActive = [...activeCategories, trimmed]
+    onChange({
+      ...data,
+      allCategories: updatedAll,
+      issueCategories: updatedActive
+    })
+    setNewCategoryName("")
+    toast({ title: "Category Added", description: `Added "${trimmed}" to available feedback categories.` })
+  }
+
+  const handleDeleteCategory = (catToDelete: string) => {
+    const updatedAll = allCategories.filter(c => c !== catToDelete)
+    const updatedActive = activeCategories.filter(c => c !== catToDelete)
+    onChange({
+      ...data,
+      allCategories: updatedAll,
+      issueCategories: updatedActive
+    })
+    toast({ title: "Category Removed", description: `Removed "${catToDelete}".` })
+  }
+
+  const handleStartEdit = (cat: string) => {
+    setEditingCategory({ original: cat, current: cat })
+  }
+
+  const handleSaveEdit = () => {
+    if (!editingCategory) return
+    const trimmed = editingCategory.current.trim()
+    if (!trimmed) {
+      toast({ title: "Invalid Name", description: "Category name cannot be empty.", variant: "destructive" })
+      return
+    }
+    if (trimmed !== editingCategory.original && allCategories.some(c => c.toLowerCase() === trimmed.toLowerCase())) {
+      toast({ title: "Duplicate Name", description: "Another category already has this name.", variant: "destructive" })
+      return
+    }
+
+    const updatedAll = allCategories.map(c => c === editingCategory.original ? trimmed : c)
+    const updatedActive = activeCategories.map(c => c === editingCategory.original ? trimmed : c)
+    onChange({
+      ...data,
+      allCategories: updatedAll,
+      issueCategories: updatedActive
+    })
+    setEditingCategory(null)
+    toast({ title: "Category Updated", description: `Renamed to "${trimmed}".` })
+  }
+
+  const handleSelectAll = () => {
+    onChange({ ...data, issueCategories: [...allCategories] })
+  }
+
+  const handleDeselectAll = () => {
+    onChange({ ...data, issueCategories: [] })
+  }
+
+  const handleResetDefaults = () => {
+    onChange({
+      ...data,
+      allCategories: [...COMPLAINT_CATEGORIES],
+      issueCategories: [...COMPLAINT_CATEGORIES]
+    })
+    toast({ title: "Reset", description: "Restored default feedback categories." })
+  }
+
   return (
-    <div className="pt-4 border-t space-y-4">
-      <h4 className="text-sm font-semibold">UI Customization</h4>
+    <div className="pt-4 border-t space-y-5">
+      {/* ── Category Management Section ────────────────────────────────────────── */}
+      <div className="space-y-4 bg-slate-50/70 p-4 rounded-2xl border border-slate-200">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center">
+              <Tag className="w-4 h-4 text-blue-600" />
+            </div>
+            <div>
+              <h4 className="text-sm font-bold text-slate-800">Feedback Categories (Location Specific)</h4>
+              <p className="text-[11px] text-slate-500">Assigned for this company, building & cafe.</p>
+            </div>
+          </div>
+          <span className="text-xs font-semibold px-2.5 py-1 bg-blue-50 text-blue-700 rounded-full border border-blue-200">
+            {activeCategories.length} Active / {allCategories.length} Total
+          </span>
+        </div>
+
+        {/* Reports Page UI: Issue Category Section Controls */}
+        <div className="bg-white p-3.5 rounded-xl border border-slate-200 space-y-3">
+          <p className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+            <Settings2 className="w-3.5 h-3.5 text-slate-500" />
+            Reports Page UI - Category Options
+          </p>
+
+          <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+            <div>
+              <span className="text-xs font-semibold text-slate-700">Show Category Field on Form</span>
+              <p className="text-[10px] text-slate-400">Enable issue category dropdown on the report submission page</p>
+            </div>
+            <ToggleSwitch enabled={data.showIssueCategory !== false} onChange={v => onChange({...data, showIssueCategory: v})} />
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label className="text-[11px] font-semibold text-slate-600">Category Section Title / Label</Label>
+              <Input
+                value={data.issueCategoryLabel ?? "Issue Category"}
+                onChange={e => onChange({...data, issueCategoryLabel: e.target.value})}
+                placeholder="e.g. Issue Category, Feedback Type"
+                className="h-8 text-xs bg-slate-50/50"
+                disabled={data.showIssueCategory === false}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-[11px] font-semibold text-slate-600">Dropdown Placeholder Text</Label>
+              <Input
+                value={data.issueCategoryPlaceholder ?? "Select the type of issue"}
+                onChange={e => onChange({...data, issueCategoryPlaceholder: e.target.value})}
+                placeholder="e.g. Select the type of issue"
+                className="h-8 text-xs bg-slate-50/50"
+                disabled={data.showIssueCategory === false}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Create New Feedback Category */}
+        <div className="bg-white p-3.5 rounded-xl border border-slate-200 space-y-2">
+          <Label className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
+            <FolderPlus className="w-3.5 h-3.5 text-blue-600" />
+            Create Feedback Category
+          </Label>
+          <div className="flex gap-2">
+            <Input
+              value={newCategoryName}
+              onChange={e => setNewCategoryName(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddCategory(); } }}
+              placeholder="e.g. Hygiene, Ambience, Food Temperature, Billing, Cutlery..."
+              className="h-9 text-xs"
+            />
+            <Button
+              type="button"
+              onClick={handleAddCategory}
+              size="sm"
+              className="h-9 gap-1.5 bg-blue-600 hover:bg-blue-700 shrink-0 text-xs font-semibold"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              Add Category
+            </Button>
+          </div>
+        </div>
+
+        {/* Categories List */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <Label className="text-xs font-bold text-slate-600 uppercase tracking-wider">Assigned Categories</Label>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleSelectAll}
+                className="text-[11px] text-blue-600 hover:text-blue-800 font-semibold cursor-pointer"
+              >
+                Select All
+              </button>
+              <span className="text-slate-300">•</span>
+              <button
+                type="button"
+                onClick={handleDeselectAll}
+                className="text-[11px] text-slate-500 hover:text-slate-700 font-semibold cursor-pointer"
+              >
+                Deselect All
+              </button>
+              <span className="text-slate-300">•</span>
+              <button
+                type="button"
+                onClick={handleResetDefaults}
+                className="text-[11px] text-amber-600 hover:text-amber-700 font-semibold flex items-center gap-1 cursor-pointer"
+                title="Restore default categories"
+              >
+                <RotateCcw className="w-3 h-3" /> Reset
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[220px] overflow-y-auto pr-1">
+            {allCategories.map(cat => {
+              const isChecked = activeCategories.includes(cat)
+              const isEditing = editingCategory?.original === cat
+              const isDefault = COMPLAINT_CATEGORIES.includes(cat)
+
+              return (
+                <div
+                  key={cat}
+                  className={`flex items-center justify-between p-2.5 rounded-xl border transition-all ${
+                    isChecked
+                      ? "bg-white border-blue-200 shadow-sm"
+                      : "bg-slate-100/70 border-slate-200 opacity-60"
+                  }`}
+                >
+                  {isEditing ? (
+                    <div className="flex items-center gap-1.5 w-full">
+                      <Input
+                        value={editingCategory.current}
+                        onChange={e => setEditingCategory({ ...editingCategory, current: e.target.value })}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter') { e.preventDefault(); handleSaveEdit(); }
+                          if (e.key === 'Escape') { setEditingCategory(null); }
+                        }}
+                        autoFocus
+                        className="h-7 text-xs py-0"
+                      />
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="ghost"
+                        onClick={handleSaveEdit}
+                        className="h-7 w-7 text-emerald-600 hover:bg-emerald-50 shrink-0"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                      </Button>
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="ghost"
+                        onClick={() => setEditingCategory(null)}
+                        className="h-7 w-7 text-slate-400 hover:bg-slate-100 shrink-0"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex items-center space-x-2 min-w-0 pr-1">
+                        <Checkbox
+                          id={`cat-${cat}`}
+                          checked={isChecked}
+                          onCheckedChange={() => toggleCategory(cat)}
+                        />
+                        <label
+                          htmlFor={`cat-${cat}`}
+                          className={`text-xs font-semibold cursor-pointer truncate ${
+                            isChecked ? "text-slate-800" : "text-slate-500"
+                          }`}
+                        >
+                          {cat}
+                        </label>
+                        {isDefault ? (
+                          <span className="text-[9px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-medium shrink-0">
+                            Default
+                          </span>
+                        ) : (
+                          <span className="text-[9px] bg-purple-50 text-purple-700 px-1.5 py-0.5 rounded font-semibold border border-purple-100 shrink-0">
+                            Custom
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleStartEdit(cat)}
+                          className="h-6 w-6 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded"
+                          title="Rename Category"
+                        >
+                          <Pencil className="w-3 h-3" />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleDeleteCategory(cat)}
+                          className="h-6 w-6 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded"
+                          title="Delete Category"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </Button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      </div>
+
+      <h4 className="text-sm font-semibold">General UI Customization</h4>
       
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="space-y-2">
@@ -65,18 +370,6 @@ function CustomizationFields({ data, onChange }: { data: any, onChange: (d: any)
             <ToggleSwitch enabled={data.showFeedbackFormSubHeader !== false} onChange={v => onChange({...data, showFeedbackFormSubHeader: v})} />
           </div>
           <Input value={data.feedbackFormSubHeaderText} onChange={e => onChange({...data, feedbackFormSubHeaderText: e.target.value})} disabled={data.showFeedbackFormSubHeader === false} />
-        </div>
-      </div>
-
-      <div className="space-y-2">
-        <Label className="text-xs text-gray-500">Allowed Categories</Label>
-        <div className="flex flex-wrap gap-2">
-          {COMPLAINT_CATEGORIES.map(cat => (
-            <div key={cat} className="flex items-center space-x-2 bg-gray-50 p-2 rounded border">
-              <Checkbox id={`cat-${cat}`} checked={(data.issueCategories || []).includes(cat)} onCheckedChange={() => toggleCategory(cat)} />
-              <label htmlFor={`cat-${cat}`} className="text-xs">{cat}</label>
-            </div>
-          ))}
         </div>
       </div>
 
@@ -151,7 +444,7 @@ const COMPLAINT_CATEGORIES = [
   "Staff"
 ]
 
-const initialCustomization = {
+const initialCustomization: QRLinkCustomization = {
   headerText: "Facility Feedback",
   showHeader: true,
   showReportingIssueAt: true,
@@ -163,7 +456,11 @@ const initialCustomization = {
   showTrackTicket: true,
   showPriority: true,
   showRemarks: true,
+  showIssueCategory: true,
+  issueCategoryLabel: "Issue Category",
+  issueCategoryPlaceholder: "Select the type of issue",
   issueCategories: COMPLAINT_CATEGORIES,
+  allCategories: COMPLAINT_CATEGORIES,
   submitButtonText: "Submit Feedback",
   feedbackFormHeaderText: "Today's Meal Feedback",
   feedbackFormSubHeaderText: "How was your meal? 🍽️"
@@ -328,7 +625,21 @@ export default function QRLinksPage() {
     setEditRequireName(!!link.requireName)
     setEditRequireEmail(!!link.requireEmail)
     setEditRequireEmployeeId(!!link.requireEmployeeId)
-    setEditCustomization(link.customization || initialCustomization)
+    const existingActive = link.customization?.issueCategories || COMPLAINT_CATEGORIES
+    const allKnown = Array.from(new Set([
+      ...COMPLAINT_CATEGORIES,
+      ...(link.customization?.allCategories || []),
+      ...existingActive
+    ]))
+    setEditCustomization({
+      ...initialCustomization,
+      ...(link.customization || {}),
+      issueCategories: existingActive,
+      allCategories: allKnown,
+      showIssueCategory: link.customization?.showIssueCategory !== false,
+      issueCategoryLabel: link.customization?.issueCategoryLabel || "Issue Category",
+      issueCategoryPlaceholder: link.customization?.issueCategoryPlaceholder || "Select the type of issue"
+    })
     setEditSelectedCompanyId(link.companyId)
     setEditSelectedBuildingId(link.buildingId)
     setEditSelectedCafeId(link.cafeId)

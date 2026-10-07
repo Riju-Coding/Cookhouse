@@ -52,7 +52,7 @@ export function OKFGenerateModal({ open, onOpenChange, onSuccess }: OKFGenerateM
   }
 
   const validSubServices = subServices.filter(ss => ss.serviceId === selectedService)
-  const validMealPlans = mealPlans.filter(mp => mp.subServiceId === selectedSubService)
+  const validMealPlans = mealPlans.filter(mp => mp.status === "active" || !mp.status).sort((a, b) => (a.order || 0) - (b.order || 0))
 
   const handleGenerate = async () => {
     if (!selectedService || !selectedSubService || !selectedMealPlan || !startDate || !endDate) {

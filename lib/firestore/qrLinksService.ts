@@ -3,13 +3,24 @@ import { db } from '../firebase'
 
 export interface QRLinkCustomization {
   headerText?: string;
+  showHeader?: boolean;
   showCompanyName?: boolean;
   showBuildingName?: boolean;
   showTrackTicket?: boolean;
   issueCategories?: string[]; 
+  allCategories?: string[];
   submitButtonText?: string;
   feedbackFormHeaderText?: string;
   feedbackFormSubHeaderText?: string;
+  showReportingIssueAt?: boolean;
+  reportingIssueAtText?: string;
+  showFeedbackFormHeader?: boolean;
+  showFeedbackFormSubHeader?: boolean;
+  showPriority?: boolean;
+  showRemarks?: boolean;
+  showIssueCategory?: boolean;
+  issueCategoryLabel?: string;
+  issueCategoryPlaceholder?: string;
 }
 
 export interface QRLink {

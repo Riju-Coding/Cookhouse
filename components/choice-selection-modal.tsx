@@ -30,6 +30,7 @@ import {
   Link2,
   Globe2,
   Search,
+  Sparkles,
 } from "lucide-react"
 import { Spinner } from "@/components/ui/spinner"
 import { calculateFrequencyViolations } from "@/lib/frequency-validator"
@@ -158,6 +159,47 @@ export function ChoiceSelectionModal({
     }
   }, [filteredAndSortedCompanies.length, activeTabIndex])
 
+  const [aiSuggestLoading, setAiSuggestLoading] = useState(false)
+
+  const handleAiSuggestInModal = async (target: "current" | "all") => {
+    try {
+      setAiSuggestLoading(true)
+      const activeCompany = filteredAndSortedCompanies[activeTabIndex]
+      const res = await fetch("/api/ai/suggest-choices", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          serviceId: activeCompany?.choices?.[0]?.serviceId || "GLOBAL",
+          subServiceId: activeCompany?.choices?.[0]?.subServiceId || "GLOBAL",
+          dateRange,
+          companiesWithChoices: companies,
+          menuData,
+          mode: target === "current" ? "company" : "all_companies",
+          targetCompanyId: target === "current" && activeCompany ? activeCompany.companyId : undefined,
+          targetBuildingId: target === "current" && activeCompany ? activeCompany.buildingId : undefined,
+          existingSelections: selections,
+        }),
+      })
+      const data = await res.json()
+      if (data?.success) {
+        if (data.totalChoicesResolved === 0) {
+          alert(data.summary || "No dishes found in the menu grid for these choices. Please generate or add menu items first.")
+        } else if (data.selections) {
+          setSelections((prev: any) => ({
+            ...prev,
+            ...data.selections,
+          }))
+        }
+      } else if (data?.error) {
+        alert(`AI Suggest failed: ${data.error}`)
+      }
+    } catch (e) {
+      console.warn("AI Suggest in modal failed:", e)
+    } finally {
+      setAiSuggestLoading(false)
+    }
+  }
+
   const hasAnySelection = useMemo(
     () => Object.values(selections).some((items) => items.length > 0),
     [selections]
@@ -236,7 +278,7 @@ export function ChoiceSelectionModal({
         )}
 
         {/* ─── Search Bar ─── */}
-        <div className="shrink-0 bg-gray-50 border-b border-gray-200 px-4 py-2 flex items-center justify-between">
+        <div className="shrink-0 bg-gray-50 border-b border-gray-200 px-4 py-2 flex items-center justify-between gap-3">
           <div className="relative w-full max-w-sm">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
             <input
@@ -246,6 +288,27 @@ export function ChoiceSelectionModal({
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-9 pr-3 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
             />
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => handleAiSuggestInModal("current")}
+              disabled={aiSuggestLoading || filteredAndSortedCompanies.length === 0}
+              className="border-indigo-300 text-indigo-700 hover:bg-indigo-50 flex items-center gap-1.5 text-xs h-8 px-2.5"
+            >
+              {aiSuggestLoading ? <Spinner className="h-3 w-3" /> : <Sparkles className="h-3.5 w-3.5" />}
+              AI Suggest (Current)
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => handleAiSuggestInModal("all")}
+              disabled={aiSuggestLoading || filteredAndSortedCompanies.length === 0}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white flex items-center gap-1.5 text-xs h-8 px-2.5 shadow-sm"
+            >
+              {aiSuggestLoading ? <Spinner className="h-3 w-3" /> : <Sparkles className="h-3.5 w-3.5" />}
+              AI Suggest (All)
+            </Button>
           </div>
         </div>
 
@@ -509,8 +572,8 @@ export function BuildingMenuGrid({
   setSelections,
   isUniversal = false,
   universalAssociations = null,
-  hasGlobalPhantoms,
-  setHasGlobalPhantoms,
+  hasGlobalPhantoms = false,
+  setHasGlobalPhantoms = () => {},
 }: any) {
   const menuItemMap = useMemo(
     () => new Map(allMenuItems.map((item: any) => [item.id, item])),
@@ -717,10 +780,62 @@ export function BuildingMenuGrid({
     mealPlanId: string,
     subMealPlanId: string
   ) => {
-    const cell =
+    let cell =
       menuData?.[date]?.[serviceId]?.[subServiceId]?.[mealPlanId]?.[
         subMealPlanId
       ]
+
+    // Fallback: If cell is empty under this subServiceId, search other subServices in the same service (e.g. Buffet),
+    // and if still not found, search across any service on that date.
+    if (!cell?.menuItemIds || cell.menuItemIds.length === 0) {
+      const daySlice = menuData?.[date]
+      if (daySlice) {
+        // 1. Search other subServices in the same service (e.g. Buffet)
+        if (serviceId && daySlice[serviceId]) {
+          for (const ssId of Object.keys(daySlice[serviceId])) {
+            if (ssId === subServiceId) continue
+            // Direct mpId + smpId match
+            let candidate = daySlice[serviceId][ssId]?.[mealPlanId]?.[subMealPlanId]
+            if (Array.isArray(candidate?.menuItemIds) && candidate.menuItemIds.length > 0) {
+              cell = candidate
+              break
+            }
+            // Any mpId within this subService with matching subMealPlanId
+            for (const mpKey of Object.keys(daySlice[serviceId][ssId] || {})) {
+              candidate = daySlice[serviceId][ssId][mpKey]?.[subMealPlanId]
+              if (Array.isArray(candidate?.menuItemIds) && candidate.menuItemIds.length > 0) {
+                cell = candidate
+                break
+              }
+            }
+            if (cell?.menuItemIds && cell.menuItemIds.length > 0) break
+          }
+        }
+        // 2. Search across any service on that date (fallback)
+        if (!cell?.menuItemIds || cell.menuItemIds.length === 0) {
+          for (const sId of Object.keys(daySlice)) {
+            if (sId === serviceId) continue
+            for (const ssId of Object.keys(daySlice[sId] || {})) {
+              let candidate = daySlice[sId][ssId]?.[mealPlanId]?.[subMealPlanId]
+              if (Array.isArray(candidate?.menuItemIds) && candidate.menuItemIds.length > 0) {
+                cell = candidate
+                break
+              }
+              for (const mpKey of Object.keys(daySlice[sId][ssId] || {})) {
+                candidate = daySlice[sId][ssId][mpKey]?.[subMealPlanId]
+                if (Array.isArray(candidate?.menuItemIds) && candidate.menuItemIds.length > 0) {
+                  cell = candidate
+                  break
+                }
+              }
+              if (cell?.menuItemIds && cell.menuItemIds.length > 0) break
+            }
+            if (cell?.menuItemIds && cell.menuItemIds.length > 0) break
+          }
+        }
+      }
+    }
+
     if (!cell?.menuItemIds) return []
 
     // If universal, we don't apply company-specific filtering in getCellItems
@@ -858,7 +973,7 @@ export function BuildingMenuGrid({
           mp.mealPlanId,
           smp.subMealPlanId
         )
-        items.forEach((item: any) => allItems.set(item.id, item))
+        items.forEach((item: any) => allItems.set(item.id, { ...item, _isIncluded: true }))
       })
     })
     return Array.from(allItems.values())
@@ -1726,7 +1841,7 @@ export function BuildingMenuGrid({
                                       const realSelectedCount = selectedItemsForChoice.length - phantomSelections.length
                                       const effectiveAtLimit = (choice.quantity > 0) && (realSelectedCount >= choice.quantity)
 
-                                      if (hasPhantoms && !hasGlobalPhantoms) {
+                                      if (hasPhantoms && !hasGlobalPhantoms && typeof setHasGlobalPhantoms === 'function') {
                                         setTimeout(() => setHasGlobalPhantoms(true), 0)
                                       }
 

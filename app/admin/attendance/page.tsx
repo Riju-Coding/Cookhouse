@@ -19,7 +19,8 @@ import {
   MapPin, Users, Clock, TrendingUp, AlertTriangle,
   Building2, Search, Filter, Download, RefreshCw,
   CheckCircle, LogIn, LogOut, Smartphone, Shield, Plus,
-  UtensilsCrossed, Navigation, Edit2, Settings, Monitor, Bell, Activity
+  UtensilsCrossed, Navigation, Edit2, Settings, Monitor, Bell, Activity,
+  Mail, Send
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -37,6 +38,7 @@ import type { MapPickerLocation } from "@/components/google-map-picker"
 import { ShiftsAndBreaksTab } from "@/components/attendance/shifts-breaks-tab"
 import { PoliciesTab } from "@/components/attendance/policies-tab"
 import { LiveMonitorTab } from "@/components/attendance/live-monitor-tab"
+import { AttendanceEmailModal } from "@/components/attendance/attendance-email-modal"
 
 import ExcelJS from "exceljs"
 import { saveAs } from "file-saver"
@@ -470,6 +472,10 @@ export default function AttendanceAdminPage() {
   const [editCafeteria, setEditCafeteria] = useState<Cafeteria | null>(null)
   const [locationFilter, setLocationFilter] = useState("all")
 
+  // Email modal & auto-shoot state
+  const [emailModalOpen, setEmailModalOpen] = useState(false)
+  const [emailModalTab, setEmailModalTab] = useState<"shoot" | "settings" | "history">("shoot")
+
   const fetchAll = useCallback(async () => {
     setLoading(true)
     try {
@@ -520,6 +526,62 @@ export default function AttendanceAdminPage() {
   useEffect(() => {
     fetchAll()
   }, [fetchAll])
+
+  // 3:00 PM Auto-Shoot Check (runs every 60 seconds if page is open)
+  useEffect(() => {
+    let isChecking = false
+    const checkAutoShoot = async () => {
+      if (isChecking) return
+      isChecking = true
+      try {
+        const now = new Date()
+        const currentHours = now.getHours()
+        const currentMinutes = now.getMinutes()
+        const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`
+
+        const res = await fetch("/api/attendance/smtp-settings")
+        if (!res.ok) return
+        const data = await res.json()
+        const cfg = data.settings
+        if (!cfg?.autoShootEnabled) return
+
+        const [targetH = 15, targetM = 0] = (cfg.autoShootTime || "15:00").split(":").map(Number)
+        const isTimeReached = currentHours > targetH || (currentHours === targetH && currentMinutes >= targetM)
+
+        if (isTimeReached && data.lastShotDate !== todayStr && data.lastShotStatus !== "success") {
+          console.log("⏰ 3:00 PM Auto-Shoot triggered from admin dashboard...")
+          const shootRes = await fetch("/api/attendance/shoot-mail", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              date: todayStr,
+              records: records.length > 0 ? records : undefined,
+              companies: companies.length > 0 ? companies : undefined,
+              triggeredBy: "auto_3pm",
+            }),
+          })
+          const shootData = await shootRes.json()
+          if (shootRes.ok && shootData.success) {
+            toast({
+              title: "⏰ 3:00 PM Daily Attendance Report Dispatched!",
+              description: `Report successfully emailed to Sanjiv, Siddharth & Bheem with today's Excel workbook.`,
+            })
+          }
+        }
+      } catch (err) {
+        console.warn("Auto-shoot timer error:", err)
+      } finally {
+        isChecking = false
+      }
+    }
+
+    const initialTimeout = setTimeout(checkAutoShoot, 5000)
+    const interval = setInterval(checkAutoShoot, 60000)
+    return () => {
+      clearTimeout(initialTimeout)
+      clearInterval(interval)
+    }
+  }, [records, companies])
 
   // Enriched cafeterias with company/building names
   const enrichedCafeterias = useMemo(
@@ -841,12 +903,36 @@ export default function AttendanceAdminPage() {
             Location-based geo-fenced attendance tracking
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap items-center">
           <Button variant="outline" size="sm" onClick={fetchAll}>
             <RefreshCw className="h-4 w-4 mr-1" /> Refresh
           </Button>
           <Button variant="outline" size="sm" onClick={exportXLSX}>
             <Download className="h-4 w-4 mr-1" /> Export XLSX
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="border-green-600 text-green-700 hover:bg-green-50 font-medium"
+            onClick={() => {
+              setEmailModalTab("shoot")
+              setEmailModalOpen(true)
+            }}
+            title="Shoot Daily Attendance Report Email to Sanjiv, Siddharth & Bheem"
+          >
+            <Mail className="h-4 w-4 mr-1 text-green-600" /> Shoot Mail
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="text-slate-700 hover:bg-slate-100"
+            onClick={() => {
+              setEmailModalTab("settings")
+              setEmailModalOpen(true)
+            }}
+            title="Configure Google Workspace SMTP & 3:00 PM Auto-Shoot Schedule"
+          >
+            <Settings className="h-4 w-4 mr-1 text-slate-500" /> SMTP &amp; 3 PM Schedule
           </Button>
           <Button
             size="sm"
@@ -1364,6 +1450,16 @@ export default function AttendanceAdminPage() {
         buildings={buildings}
         cafeterias={cafeterias}
         editCafeteria={editCafeteria}
+      />
+
+      {/* Attendance Email & SMTP / 3 PM Schedule Modal */}
+      <AttendanceEmailModal
+        open={emailModalOpen}
+        onClose={() => setEmailModalOpen(false)}
+        records={filteredRecords.length > 0 ? filteredRecords : records}
+        companies={companies}
+        initialTab={emailModalTab}
+        onMailSent={fetchAll}
       />
     </div>
   )

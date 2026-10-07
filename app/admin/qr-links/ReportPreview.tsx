@@ -58,13 +58,21 @@ export default function ReportPreview({ customization, companyName, buildingName
         {/* Mock Form */}
         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-4 space-y-4">
           
-          <div className="space-y-1.5">
-            <label className="text-[11px] font-bold text-slate-700">Issue Category <span className="text-red-500">*</span></label>
-            <div className="w-full bg-white border-2 border-blue-500/20 ring-4 ring-blue-500/10 rounded-xl p-2.5 text-xs font-semibold text-slate-700 flex justify-between items-center">
-              <span>{category}</span>
-              <div className="w-2 h-2 border-b-2 border-r-2 border-slate-400 rotate-45 mr-1" />
+          {customization?.showIssueCategory !== false && (
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-bold text-slate-700">
+                {customization?.issueCategoryLabel || "Issue Category"} <span className="text-red-500">*</span>
+              </label>
+              <div className="w-full bg-white border-2 border-blue-500/20 ring-4 ring-blue-500/10 rounded-xl p-2.5 text-xs font-semibold text-slate-700 flex justify-between items-center">
+                <span>
+                  {customization?.issueCategories && customization.issueCategories.length > 0
+                    ? customization.issueCategories[0]
+                    : (customization?.issueCategoryPlaceholder || "Select the type of issue")}
+                </span>
+                <div className="w-2 h-2 border-b-2 border-r-2 border-slate-400 rotate-45 mr-1" />
+              </div>
             </div>
-          </div>
+          )}
 
           {customization.showPriority !== false && (
             <div className="space-y-1.5">

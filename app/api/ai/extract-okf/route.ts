@@ -43,10 +43,11 @@ export async function POST(req: Request) {
     }
 
     // --- Fetch reference data ---
-    const [mealPlansSnap, subMealPlansSnap, menuItemsSnap] = await Promise.all([
+    const [mealPlansSnap, subMealPlansSnap, menuItemsSnap, structAssignSnap] = await Promise.all([
       getDocs(collection(db, "mealPlans")),
       getDocs(collection(db, "subMealPlans")),
       getDocs(collection(db, "menuItems")),
+      getDocs(collection(db, "mealPlanStructureAssignments")),
     ])
 
     const mealPlans = mealPlansSnap.docs
@@ -60,6 +61,66 @@ export async function POST(req: Request) {
     const menuItems = menuItemsSnap.docs
       .map(d => ({ id: d.id, name: (d.data() as any).name, category: (d.data() as any).category }))
 
+    const activeStructAssignments = structAssignSnap.docs
+      .map(d => ({ id: d.id, ...(d.data() as any) }))
+      .filter((a: any) => a.status === "active" || a.status === undefined)
+
+    // Detect all active choices across companies, services, and days
+    const detectedChoices: Array<{
+      companyName: string
+      buildingName: string
+      day: string
+      serviceId?: string
+      subServiceId?: string
+      quantity: number
+      choiceOptions: Array<{ mealPlanName: string; subMealPlanName: string; subMealPlanId: string }>
+    }> = []
+
+    activeStructAssignments.forEach(assignment => {
+      const companyName = assignment.companyName || "Company"
+      const buildingName = assignment.buildingName || "Building"
+      const weekStructure = assignment.weekStructure || {}
+
+      for (const [day, services] of Object.entries(weekStructure)) {
+        if (!Array.isArray(services)) continue
+        for (const service of services as any[]) {
+          if (serviceId !== "GLOBAL" && service.serviceId !== serviceId) continue
+          for (const subService of (service.subServices || [])) {
+            if (subServiceId !== "GLOBAL" && subService.subServiceId !== subServiceId) continue
+            if (!subService.choices || typeof subService.choices !== 'object') continue
+            for (const [choiceDay, choicesArray] of Object.entries(subService.choices)) {
+              if (!Array.isArray(choicesArray)) continue
+              for (const choice of choicesArray) {
+                const options: Array<{ mealPlanName: string; subMealPlanName: string; subMealPlanId: string }> = []
+                for (const mp of (choice.mealPlans || [])) {
+                  const mpDoc = mealPlans.find((m: any) => m.id === mp.mealPlanId)
+                  for (const smp of (mp.subMealPlans || [])) {
+                    const smpDoc = subMealPlans.find((s: any) => s.id === smp.subMealPlanId)
+                    options.push({
+                      mealPlanName: mpDoc?.name || mp.mealPlanName || "Meal Plan",
+                      subMealPlanName: smpDoc?.name || smp.subMealPlanName || "Sub Meal Plan",
+                      subMealPlanId: smp.subMealPlanId,
+                    })
+                  }
+                }
+                if (options.length >= 2) {
+                  detectedChoices.push({
+                    companyName,
+                    buildingName,
+                    day: choiceDay,
+                    serviceId: service.serviceId,
+                    subServiceId: subService.subServiceId,
+                    quantity: choice.quantity || 1,
+                    choiceOptions: options,
+                  })
+                }
+              }
+            }
+          }
+        }
+      }
+    })
+
     // Build reference: MealPlan hierarchy (compact names)
     const mealPlanHierarchy = mealPlans.map(mp => ({
       category: mp.name,
@@ -70,6 +131,15 @@ export async function POST(req: Request) {
 
     // --- Gather training data ---
     let combinedTrainingData: any[] = []
+
+    if (detectedChoices.length > 0) {
+      combinedTrainingData.push({
+        source: "Contracted Choice Structures & Conditions",
+        description: "These client companies have contracted Choice Conditions where they select a limited quantity (e.g. choose 1 of 2 or 1 of 3) between competing SubMealPlans on specific days of the week.",
+        totalConfiguredChoices: detectedChoices.length,
+        choiceDefinitions: detectedChoices.slice(0, 30),
+      })
+    }
 
     if (trainingData && Array.isArray(trainingData)) {
       trainingData.forEach((td: any) => {
@@ -291,7 +361,7 @@ AVAILABLE MENU ITEMS (sample):
 ${JSON.stringify(menuItems.slice(0, 80).map(i => ({ id: i.id, name: i.name, category: i.category })))}
 
 YOUR TASKS:
-1. Analyze the training data for quality and patterns.
+1. Analyze the training data for quality, patterns, and choice selections.
 2. Extract SPECIFIC, ACTIONABLE rules:
    - Which items commonly appear in which SubMealPlan?
    - What are the typical item counts per SubMealPlan per day?
@@ -299,14 +369,19 @@ YOUR TASKS:
    - Are there items that always appear together?
    - Are there items that NEVER appear on the same day?
    - Which cells (MealPlan+SubMealPlan combos) are typically EMPTY on which days?
+   - CHOICE SELECTION & PREFERENCE RULES:
+     * When client companies have choices between competing SubMealPlans (e.g. Non-Veg Gravy vs Egg Gravy, Paneer vs Mixed Veg, or Rice variations):
+     * Identify which SubMealPlan or dishes each company historically selects on each day of the week.
+     * What choice conditions apply (max selection quantity, alternation rules, client dietary preferences)?
+     * Extract precise rules mapping company and day to their preferred choice option so AI Suggest can automatically click the right choice!
 3. Merge with Previous Knowledge to create an updated OKF profile.
 4. Generate strategic advice.
 
 OUTPUT FORMAT — You MUST return a valid JSON object:
 {
   "status": "success",
-  "feedback": "Your analysis of the training data quality and what you learned",
-  "profileText": "The updated OKF Markdown profile with SPECIFIC rules. Include:\n## Item Distribution Rules\n## Day-of-Week Patterns\n## Blank Cell Rules\n## Repetition Rules\n## Item Compatibility Rules",
+  "feedback": "Your analysis of the training data quality, choice patterns, and what you learned",
+  "profileText": "The updated OKF Markdown profile with SPECIFIC rules. Include:\n## Item Distribution Rules\n## Day-of-Week Patterns\n## Blank Cell Rules\n## Repetition Rules\n## Item Compatibility Rules\n## Choice Selection & Preference Rules",
   "advisory": "Strategic advice for menu improvement"
 }
 

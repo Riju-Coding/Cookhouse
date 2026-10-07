@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { 
-  Eye, Search, Loader2, ArrowLeft, Edit, Trash2, ChevronRight, X, Building2, MousePointer2, Database 
+  Eye, Search, Loader2, ArrowLeft, Edit, Trash2, ChevronRight, X, Building2, MousePointer2, Database, Repeat, Plus, Sparkles 
 } from 'lucide-react'
 import { ScrollArea } from "@/components/ui/scroll-area"
 import {
@@ -21,6 +21,7 @@ import Link from "next/link"
 import { useSearchParams, useRouter, usePathname } from 'next/navigation'
 import { MenuViewModal } from "@/components/menu-view-modal"
 import { MenuEditModal } from "@/components/menu-edit-modal"
+import { RecurringMonthlyMenuModal } from "@/components/recurring-monthly-menu-modal"
 import type { MenuItem, Service, SubService } from "@/lib/types"
 import { menuItemsService, servicesService, subServicesService } from "@/lib/services"
 import React from "react" 
@@ -35,6 +36,9 @@ interface CompanyMenu {
   endDate: string
   status: string
   combinedMenuId: string
+  isStandaloneMonthly?: boolean
+  menuType?: string
+  masterTemplate?: any
 }
 
 interface MenuGroup {
@@ -62,6 +66,9 @@ export default function CompanyMenusPage() {
 
   const [detailsModalOpen, setDetailsModalOpen] = useState(false)
   const [selectedGroup, setSelectedGroup] = useState<MenuGroup | null>(null)
+  
+  const [recurringModalOpen, setRecurringModalOpen] = useState(false)
+  const [editingRecurringMenu, setEditingRecurringMenu] = useState<CompanyMenu | null>(null)
   
   const [deleteAlertOpen, setDeleteAlertOpen] = useState(false)
   const [groupToDelete, setGroupToDelete] = useState<MenuGroup | null>(null)
@@ -192,6 +199,13 @@ export default function CompanyMenusPage() {
           <Link href="/combined-menus"><Button variant="outline" size="sm"><ArrowLeft className="h-4 w-4 mr-2" />Back</Button></Link>
           <h1 className="text-2xl font-bold text-gray-900">Company-wise Menus</h1>
         </div>
+        <Button 
+          onClick={() => { setEditingRecurringMenu(null); setRecurringModalOpen(true); }}
+          className="gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-sm shadow-blue-500/20"
+        >
+          <Repeat className="h-4 w-4" />
+          + Create 4-Week Recurring Menu
+        </Button>
       </div>
 
       <Card className="bg-slate-50 border-slate-200">
@@ -235,21 +249,44 @@ export default function CompanyMenusPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {groupedMenus.map((group) => (
-                <TableRow key={group.id} className="cursor-pointer hover:bg-slate-50" onClick={() => { setSelectedGroup(group); navigateTo('preview', ""); setDetailsModalOpen(true); }}>
-                  <TableCell className="pl-6 font-medium text-blue-600">{formatDate(group.startDate)}</TableCell>
-                  <TableCell>{formatDate(group.endDate)}</TableCell>
-                  <TableCell>7 days</TableCell>
-                  <TableCell><span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-700">{group.menus.length} Menus</span></TableCell>
-                  <TableCell className="text-gray-500 text-sm">{group.menus.slice(0, 3).map(m => m.companyName).join(", ")} +{group.menus.length - 3} more</TableCell>
-                  <TableCell className="text-right pr-6">
-                    <div className="flex justify-end items-center gap-4">
-                      <Button variant="ghost" size="sm" className="text-gray-400 hover:text-blue-600">View Details <ChevronRight className="ml-1 h-4 w-4" /></Button>
-                      <Trash2 className="h-4 w-4 text-red-300 hover:text-red-500" onClick={(e) => { e.stopPropagation(); setGroupToDelete(group); setDeleteAlertOpen(true); }} />
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
+              {groupedMenus.map((group) => {
+                const isRecurring = group.menus.some(m => m.isStandaloneMonthly)
+                const daysDiff = Math.max(1, Math.round((new Date(group.endDate).getTime() - new Date(group.startDate).getTime()) / (1000 * 60 * 60 * 24)) + 1)
+                return (
+                  <TableRow key={group.id} className="cursor-pointer hover:bg-slate-50" onClick={() => { setSelectedGroup(group); navigateTo('preview', ""); setDetailsModalOpen(true); }}>
+                    <TableCell className="pl-6 font-medium text-blue-600">{formatDate(group.startDate)}</TableCell>
+                    <TableCell>{formatDate(group.endDate)}</TableCell>
+                    <TableCell>
+                      {isRecurring ? (
+                        <span className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-200">
+                          <Repeat className="h-3 w-3" /> Monthly ({daysDiff}d)
+                        </span>
+                      ) : (
+                        <span className="text-sm text-slate-600">{daysDiff} days</span>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex flex-col gap-1 items-start">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-700">
+                          {group.menus.length} Menus
+                        </span>
+                        {isRecurring && (
+                          <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.2 rounded border border-blue-200">
+                            🔁 Standalone Cycle
+                          </span>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-gray-500 text-sm">{group.menus.slice(0, 3).map(m => m.companyName).join(", ")} +{group.menus.length - 3} more</TableCell>
+                    <TableCell className="text-right pr-6">
+                      <div className="flex justify-end items-center gap-4">
+                        <Button variant="ghost" size="sm" className="text-gray-400 hover:text-blue-600">View Details <ChevronRight className="ml-1 h-4 w-4" /></Button>
+                        <Trash2 className="h-4 w-4 text-red-300 hover:text-red-500" onClick={(e) => { e.stopPropagation(); setGroupToDelete(group); setDeleteAlertOpen(true); }} />
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                )
+              })}
             </TableBody>
           </Table>
         </CardContent>
@@ -313,9 +350,16 @@ export default function CompanyMenusPage() {
                         )}
 
                         <div className="flex flex-col gap-0.5 pl-1 overflow-hidden">
-                          <span className={`text-sm font-bold truncate ${selectedMenuId === menu.id ? 'text-blue-700' : 'text-slate-700'}`}>
-                            {menu.buildingName}
-                          </span>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className={`text-sm font-bold truncate ${selectedMenuId === menu.id ? 'text-blue-700' : 'text-slate-700'}`}>
+                              {menu.buildingName}
+                            </span>
+                            {menu.isStandaloneMonthly && (
+                              <span className="px-1.5 py-0.5 text-[9px] font-bold bg-indigo-100 text-indigo-700 rounded-md shrink-0">
+                                🔁 4-Week
+                              </span>
+                            )}
+                          </div>
                           <span className="text-[9px] text-slate-400 font-medium">Click to manage items</span>
                         </div>
                         
@@ -323,7 +367,20 @@ export default function CompanyMenusPage() {
                            <Button variant="ghost" size="icon" className="h-7 w-7 text-blue-600 hover:bg-blue-50 rounded-md" onClick={(e) => { e.stopPropagation(); navigateTo('view', menu.id); }}>
                              <Eye className="h-3.5 w-3.5" />
                            </Button>
-                          <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-400 hover:bg-slate-50 rounded-md" onClick={(e) => { e.stopPropagation(); navigateTo('edit', menu.id); }}>
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="h-7 w-7 text-slate-400 hover:bg-slate-50 rounded-md" 
+                            onClick={(e) => { 
+                              e.stopPropagation(); 
+                              if (menu.isStandaloneMonthly) {
+                                setEditingRecurringMenu(menu);
+                                setRecurringModalOpen(true);
+                              } else {
+                                navigateTo('edit', menu.id); 
+                              }
+                            }}
+                          >
                             <Edit className="h-3.5 w-3.5" />
                           </Button>
                         </div>
@@ -375,12 +432,22 @@ export default function CompanyMenusPage() {
                                 <span className="text-slate-400 text-[10px] mt-1">Verify items</span>
                             </button>
 
-                            <button onClick={() => navigateTo('edit')} className="group flex flex-col items-center justify-center p-10 bg-white border-2 border-slate-100 rounded-[2rem] hover:border-blue-600 hover:shadow-lg transition-all">
+                            <button onClick={() => {
+                              const curMenu = menus.find(m => m.id === selectedMenuId)
+                              if (curMenu?.isStandaloneMonthly) {
+                                setEditingRecurringMenu(curMenu)
+                                setRecurringModalOpen(true)
+                              } else {
+                                navigateTo('edit')
+                              }
+                            }} className="group flex flex-col items-center justify-center p-10 bg-white border-2 border-slate-100 rounded-[2rem] hover:border-blue-600 hover:shadow-lg transition-all">
                                 <div className="h-16 w-16 bg-slate-50 rounded-2xl flex items-center justify-center mb-4 group-hover:bg-blue-600 transition-colors">
                                   <Edit className="h-8 w-8 text-slate-600 group-hover:text-white transition-colors" />
                                 </div>
                                 <span className="text-xl font-bold text-slate-800">Edit Menu</span>
-                                <span className="text-slate-400 text-[10px] mt-1">Update prices</span>
+                                <span className="text-slate-400 text-[10px] mt-1">
+                                  {menus.find(m => m.id === selectedMenuId)?.isStandaloneMonthly ? "Edit 4-Week Cycle" : "Update items & prices"}
+                                </span>
                             </button>
 
                             <button onClick={() => navigateTo('debug')} className="group flex flex-col items-center justify-center p-10 bg-white border-2 border-slate-100 rounded-[2rem] hover:border-orange-600 hover:shadow-lg transition-all">
@@ -553,6 +620,19 @@ export default function CompanyMenusPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* 4-Week Recurring Monthly Menu Modal */}
+      <RecurringMonthlyMenuModal 
+        isOpen={recurringModalOpen} 
+        onClose={() => {
+          setRecurringModalOpen(false)
+          setEditingRecurringMenu(null)
+        }} 
+        onSuccess={() => {
+          loadCompanyMenus()
+        }} 
+        editMenu={editingRecurringMenu} 
+      />
 
     </div>
   )

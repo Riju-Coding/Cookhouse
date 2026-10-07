@@ -32,7 +32,9 @@ export default function PublicReportPage({ params }: { params: { id: string } })
   const [successTicketId, setSuccessTicketId] = useState<string | null>(null)
 
   // Form State
-  const activeCategories = linkInfo?.customization?.issueCategories || COMPLAINT_CATEGORIES
+  const activeCategories = linkInfo?.customization?.issueCategories?.length 
+    ? linkInfo.customization.issueCategories 
+    : COMPLAINT_CATEGORIES
   const [name, setName] = useState("")
   const [contact, setContact] = useState("")
   const [employeeId, setEmployeeId] = useState("")
@@ -97,8 +99,11 @@ export default function PublicReportPage({ params }: { params: { id: string } })
           setError(true)
         } else {
           setLinkInfo(data)
-          if (data.customization?.issueCategories?.length === 1) {
-            setCategory(data.customization.issueCategories[0])
+          const cats = data.customization?.issueCategories?.length 
+            ? data.customization.issueCategories 
+            : COMPLAINT_CATEGORIES
+          if (cats.length === 1) {
+            setCategory(cats[0])
           }
         }
       } catch (e) {
@@ -303,8 +308,12 @@ export default function PublicReportPage({ params }: { params: { id: string } })
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!category) {
-      toast({ title: "Required Fields", description: "Category is required.", variant: "destructive" })
+    if (linkInfo?.customization?.showIssueCategory !== false && !category) {
+      toast({ 
+        title: "Required Fields", 
+        description: `${linkInfo?.customization?.issueCategoryLabel || "Category"} is required.`, 
+        variant: "destructive" 
+      })
       return
     }
     
@@ -547,14 +556,14 @@ ${description}
           )}
         </div>
 
-        {activeCategories.length > 1 && (
+        {linkInfo.customization?.showIssueCategory !== false && activeCategories.length > 0 && (
         <div className="space-y-2.5">
           <Label className="text-sm font-bold text-slate-700 flex items-center gap-2">
-            Issue Category <span className="text-red-500">*</span>
+            {linkInfo.customization?.issueCategoryLabel || "Issue Category"} <span className="text-red-500">*</span>
           </Label>
           <Select value={category} onValueChange={setCategory}>
             <SelectTrigger className={`rounded-xl h-12 px-4 transition-all hover:bg-white ${category ? "bg-white border-blue-200 ring-2 ring-blue-500/10" : "bg-slate-50/50 border-slate-200"}`}>
-              <SelectValue placeholder="Select the type of issue" />
+              <SelectValue placeholder={linkInfo.customization?.issueCategoryPlaceholder || "Select the type of issue"} />
             </SelectTrigger>
             <SelectContent className="rounded-xl overflow-hidden shadow-xl border-slate-100">
               {activeCategories.map((c: string) => <SelectItem key={c} value={c} className="py-2.5 cursor-pointer font-medium">{c}</SelectItem>)}

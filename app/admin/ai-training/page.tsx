@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Checkbox } from "@/components/ui/checkbox"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
-import { Loader2, Upload, BrainCircuit, FileSpreadsheet, CheckCircle2, ChevronRight, ChevronLeft, SlidersHorizontal, Eye, Building2, AlertTriangle, MousePointerClick, Sparkles, Calendar, Layers, Pencil, Trash2, RotateCcw, Search, Filter, Plus, FileText, Copy, Printer, Check, TrendingUp, AlertCircle, RefreshCw, Download, LayoutGrid, Maximize2 } from "lucide-react"
+import { Loader2, Upload, BrainCircuit, FileSpreadsheet, CheckCircle2, ChevronRight, ChevronLeft, SlidersHorizontal, Eye, Building2, AlertTriangle, MousePointerClick, Sparkles, Calendar, Layers, Pencil, Trash2, RotateCcw, Search, Filter, Plus, FileText, Copy, Printer, Check, TrendingUp, AlertCircle, RefreshCw, Download, LayoutGrid, Maximize2, X } from "lucide-react"
 import { toast } from "@/hooks/use-toast"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -132,6 +132,8 @@ export default function AITrainingPage() {
   const [extraMealPlanCategories, setExtraMealPlanCategories] = useState<string[]>([])
   const [customRecords, setCustomRecords] = useState<any[]>([])
   const [extraMpToAdd, setExtraMpToAdd] = useState<string>("none")
+  const [removedCategories, setRemovedCategories] = useState<string[]>([])
+  const [mpToRemove, setMpToRemove] = useState<string>("none")
 
   // Add Dish Dialog state
   const [isAddDishOpen, setIsAddDishOpen] = useState(false)
@@ -436,6 +438,7 @@ export default function AITrainingPage() {
       }
 
       if (!rawMp && !rawSmp && nonEmptyCells.length === 0) continue
+      if (rawMp && removedCategories.includes(rawMp)) continue
       if (rawMp) uniqueMps.add(rawMp)
 
       // Get DB Mapping
@@ -559,6 +562,7 @@ export default function AITrainingPage() {
 
     // Merge custom added records
     customRecords.forEach(cr => {
+      if (cr.mealPlan && removedCategories.includes(cr.mealPlan)) return
       const override = recordOverrides[cr.key]
       if (override?.isDeleted) return
 
@@ -610,6 +614,7 @@ export default function AITrainingPage() {
     detectedHeaders,
     recordOverrides,
     customRecords,
+    removedCategories,
   ])
 
   // Unique dates in extracted records for filtering
@@ -712,14 +717,18 @@ export default function AITrainingPage() {
 
   const handleSaveRecordEdit = () => {
     if (!editingRecord) return
+    const isNoneMp = editMpId === "none"
     const isUnmapped = editMpId === "unmapped" || !editMpId
-    const chosenMp = isUnmapped ? null : mealPlans.find(m => m.id === editMpId)
-    const finalMpName = chosenMp ? chosenMp.name : editingRecord.mappedMealPlanName
+    const chosenMp = isNoneMp || isUnmapped ? null : mealPlans.find(m => m.id === editMpId)
+    const finalMpName = isNoneMp ? "Unassigned" : (chosenMp ? chosenMp.name : editingRecord.mappedMealPlanName)
 
     let finalSmpId = ""
     let finalSmpName = ""
 
-    if (editSmpId === "custom") {
+    if (editSmpId === "none") {
+      finalSmpId = ""
+      finalSmpName = "None"
+    } else if (editSmpId === "custom") {
       finalSmpName = editCustomSmpName.trim()
     } else if (editSmpId !== "auto" && editSmpId) {
       const chosenSmp = subMealPlans.find(s => s.id === editSmpId)
@@ -809,16 +818,16 @@ export default function AITrainingPage() {
     }
   }
 
-  // Combined Excel categories + extra Meal Plans added from DB
+  // Combined Excel categories + extra Meal Plans added from DB (excluding removed categories)
   const allCategories = useMemo(() => {
-    const list = [...detectedExcelMealPlans]
+    const list = [...detectedExcelMealPlans].filter(cat => !removedCategories.includes(cat))
     extraMealPlanCategories.forEach(cat => {
-      if (!list.includes(cat)) {
+      if (!list.includes(cat) && !removedCategories.includes(cat)) {
         list.push(cat)
       }
     })
     return list
-  }, [detectedExcelMealPlans, extraMealPlanCategories])
+  }, [detectedExcelMealPlans, extraMealPlanCategories, removedCategories])
 
   // Filtered categories for quick search in Database Settings card
   const filteredCategories = useMemo(() => {
@@ -842,6 +851,8 @@ export default function AITrainingPage() {
       return
     }
 
+    // Un-remove if it was previously removed
+    setRemovedCategories(prev => prev.filter(c => c !== catName && c !== mp.name))
     setExtraMealPlanCategories(prev => [...prev, catName])
     setMealPlanMapping(prev => ({
       ...prev,
@@ -857,15 +868,53 @@ export default function AITrainingPage() {
     })
   }
 
-  const handleRemoveExtraCategory = (catName: string) => {
-    setExtraMealPlanCategories(prev => prev.filter(c => c !== catName))
+  const handleRemoveCategory = (catName: string) => {
+    if (!catName || catName === "none") return
+    if (!confirm(`Are you sure you want to remove the Meal Plan "${catName}" from this training session? All dishes under this category will be excluded.`)) {
+      return
+    }
+
+    setRemovedCategories(prev => prev.includes(catName) ? prev : [...prev, catName])
+    if (extraMealPlanCategories.includes(catName)) {
+      setExtraMealPlanCategories(prev => prev.filter(c => c !== catName))
+    }
     setMealPlanMapping(prev => {
       const copy = { ...prev }
       delete copy[catName]
       return copy
     })
     setCustomRecords(prev => prev.filter(r => r.mealPlan !== catName))
-    toast({ title: "Category Removed", description: `Removed '${catName}' and its custom dishes.` })
+    toast({
+      title: "Meal Plan Category Removed",
+      description: `"${catName}" has been removed. You can restore it using the Restore dropdown.`,
+    })
+  }
+
+  const handleRestoreCategory = (catName: string) => {
+    if (!catName || catName === "none") return
+    setRemovedCategories(prev => prev.filter(c => c !== catName))
+    toast({
+      title: "Meal Plan Restored",
+      description: `"${catName}" has been restored to training.`,
+    })
+  }
+
+  const handleRemoveSubMealPlans = (catName: string) => {
+    setMealPlanMapping(prev => ({
+      ...prev,
+      [catName]: {
+        ...(prev[catName] || { mealPlanId: "" }),
+        subMealPlanIds: [],
+      }
+    }))
+    toast({
+      title: "Sub Meal Plans Cleared",
+      description: `Cleared all sub meal plans for "${catName}". Dishes will be automatically classified by AI.`,
+    })
+  }
+
+  const handleRemoveExtraCategory = (catName: string) => {
+    handleRemoveCategory(catName)
   }
 
   const handleOpenAddDishForCategory = (catName: string) => {
@@ -1258,6 +1307,29 @@ export default function AITrainingPage() {
         logging: false,
         backgroundColor: "#ffffff",
         windowWidth: 800,
+        onclone: (clonedDoc) => {
+          // 1. Remove or clean all style tags containing oklch
+          const styleTags = clonedDoc.querySelectorAll("style")
+          styleTags.forEach((s) => {
+            if (s.textContent && s.textContent.includes("oklch")) {
+              s.textContent = s.textContent.replace(/oklch\([^)]*\)/g, "#64748b")
+            }
+          })
+          // 2. Remove or sanitize any elements with oklch in computed or inline styles
+          const allElements = clonedDoc.querySelectorAll("*")
+          allElements.forEach((el) => {
+            const htmlEl = el as HTMLElement
+            if (htmlEl.style) {
+              for (let i = 0; i < htmlEl.style.length; i++) {
+                const prop = htmlEl.style[i]
+                const val = htmlEl.style.getPropertyValue(prop)
+                if (val && val.includes("oklch")) {
+                  htmlEl.style.setProperty(prop, "#64748b")
+                }
+              }
+            }
+          })
+        },
       })
 
       const pdf = new jsPDF("p", "mm", "a4")
@@ -1297,6 +1369,176 @@ export default function AITrainingPage() {
       })
     } finally {
       setDownloadingPdf(false)
+    }
+  }
+
+  const handleDownloadExcel = () => {
+    if (!combinedReport) return
+    try {
+      const wb = XLSX.utils.book_new()
+
+      // 1. Executive Overview Sheet
+      const overviewData: any[] = [
+        ["Report Title", combinedReport.reportTitle || "Combined AI Training Audit"],
+        ["Period Covered", combinedReport.periodCovered || ""],
+        ["AI Engine Used", combinedReport.aiModelUsed || "Gemini"],
+        ["Export Date", format(new Date(), "yyyy-MM-dd HH:mm")],
+        [""],
+        ["EXECUTIVE CULINARY SYNTHESIS"],
+        [combinedReport.executiveSummary || ""],
+        [""],
+        ["KEY METRICS"],
+        ["Sessions Analyzed", selectedLogIds.length],
+        ["Positive Strengths", combinedReport.goodThings?.length || 0],
+        ["Areas to Change", combinedReport.whatCanBeChanged?.length || 0],
+        ["Menu Fatigue Risk", combinedReport.repetitionAnalysis?.fatigueRisk || "Medium"],
+        [""],
+        ["REPETITION ANALYSIS (Staples Exempted)"],
+        ["Palate Fatigue Assessment", combinedReport.repetitionAnalysis?.recommendation || ""],
+        ["Frequently Clustered Entrees", (combinedReport.repetitionAnalysis?.repeatedDishes || []).join(", ") || "None (Balanced)"],
+        ["Exempted Daily Staples", (combinedReport.repetitionAnalysis?.exemptedStaples || ["Rice", "Roti", "Dal Tadka", "Salad", "Curd"]).join(", ")],
+        [""],
+        ["IMMEDIATE ACTION CHECKLIST"],
+      ]
+      ;(combinedReport.actionChecklist || []).forEach((item: string, idx: number) => {
+        overviewData.push([`Step ${idx + 1}`, item])
+      })
+      const wsOverview = XLSX.utils.aoa_to_sheet(overviewData)
+      XLSX.utils.book_append_sheet(wb, wsOverview, "Executive Overview")
+
+      // 2. AI Trained Knowledge Sheet
+      if (combinedReport.trainedKnowledgeBase) {
+        const kb = combinedReport.trainedKnowledgeBase
+        const kbData: any[] = [
+          ["SECTION", "AI TRAINED CULINARY KNOWLEDGE"],
+          ["Core Culinary Profile", kb.culinaryProfile || ""],
+          ["Flavor & Gravy Rotation Rules", kb.flavorAndGravyRules || ""],
+          ["Kitchen Station Feasibility", kb.kitchenPrepFeasibility || ""],
+          ["Nutritional & Dietary Balance", kb.nutritionBalance || ""],
+        ]
+        const wsKb = XLSX.utils.aoa_to_sheet(kbData)
+        XLSX.utils.book_append_sheet(wb, wsKb, "AI Trained Knowledge")
+      }
+
+      // 3. Future Menu Strategy Sheet
+      if (combinedReport.futureMenuStrategy) {
+        const strat = combinedReport.futureMenuStrategy
+        const stratData: any[] = [
+          ["DIMENSION", "FUTURE MENU GENERATION PLAYBOOK"],
+          ["Company-Wise Strategy", strat.companyWiseApproach || ""],
+          ["Central Combined Kitchen Strategy", strat.combinedKitchenApproach || ""],
+          ["4-Week Cycle Architecture", strat.cycleArchitecture || ""],
+        ]
+        const wsStrat = XLSX.utils.aoa_to_sheet(stratData)
+        XLSX.utils.book_append_sheet(wb, wsStrat, "Future Menu Playbook")
+      }
+
+      // 4. Good Things Sheet
+      const goodThingsRows = (combinedReport.goodThings || []).map((g: any, i: number) => ({
+        "#": i + 1,
+        "Strength / Best Practice": g.title,
+        "Category": g.category || "",
+        "Details": g.details || "",
+        "Observed Evidence": g.evidence || "",
+      }))
+      const wsGood = XLSX.utils.json_to_sheet(goodThingsRows)
+      XLSX.utils.book_append_sheet(wb, wsGood, "Good Things")
+
+      // 5. What Can Be Changed Sheet
+      const changesRows = (combinedReport.whatCanBeChanged || []).map((w: any, i: number) => ({
+        "#": i + 1,
+        "Priority / Severity": w.severity || "Suggested",
+        "Issue / Flaw": w.issue || "",
+        "Actionable Recommendation": w.recommendedChange || "",
+        "Suggested Dish Swaps": (w.suggestedDishes || []).join(", "),
+        "Category": w.category || "",
+      }))
+      const wsChanges = XLSX.utils.json_to_sheet(changesRows)
+      XLSX.utils.book_append_sheet(wb, wsChanges, "Areas to Change")
+
+      // 6. Master Rules Sheet
+      if (combinedReport.consolidatedRules) {
+        const rulesRows = combinedReport.consolidatedRules.split("\n").map((line: string) => [line])
+        const wsRules = XLSX.utils.aoa_to_sheet([["MASTER OPERATIONAL RULES"], ...rulesRows])
+        XLSX.utils.book_append_sheet(wb, wsRules, "Master Rules")
+      }
+
+      // 7. Combined Dishes & Company-Wise Sheets
+      const combinedDishes: any[] = []
+      if (allRecords.length > 0) {
+        allRecords.forEach(r => {
+          combinedDishes.push({
+            date: r.date || "General",
+            service: services.find(s => s.id === selectedServiceId)?.name || "Lunch",
+            company: r.company || "Universal",
+            mealPlan: r.mappedMealPlanName || r.mealPlan || "N/A",
+            subMealPlan: r.subMealPlan || "Auto",
+            items: r.items || "",
+          })
+        })
+      } else {
+        trainingLogs.filter(l => selectedLogIds.includes(l.id)).forEach((l, lIdx) => {
+          const svcName = services.find(s => s.id === l.serviceId)?.name || l.serviceId || "Lunch"
+          const dateStr = l.timestamp ? format(l.timestamp.toDate(), "yyyy-MM-dd") : `Day ${lIdx + 1}`
+          const snapshot = l.dataSnapshot || ""
+          const lines = snapshot.split("\n").filter((ln: string) => ln.trim())
+          lines.forEach((ln: string) => {
+            combinedDishes.push({
+              date: dateStr,
+              service: svcName,
+              company: l.companyName || "Universal",
+              mealPlan: "Audited Menu",
+              subMealPlan: "Course",
+              items: ln.trim(),
+            })
+          })
+        })
+      }
+
+      if (combinedDishes.length > 0) {
+        const allDishesRows = combinedDishes.map((d, idx) => ({
+          "#": idx + 1,
+          "Menu Date": d.date,
+          "Service": d.service,
+          "Company / Client": d.company,
+          "Meal Plan": d.mealPlan,
+          "Sub Meal Plan": d.subMealPlan,
+          "Dish Item(s)": d.items,
+        }))
+        const wsAllDishes = XLSX.utils.json_to_sheet(allDishesRows)
+        XLSX.utils.book_append_sheet(wb, wsAllDishes, "Combined Trained Menu")
+
+        // Group by Company
+        const companiesMap: Record<string, any[]> = {}
+        combinedDishes.forEach(d => {
+          const compName = d.company || "Universal"
+          if (!companiesMap[compName]) companiesMap[compName] = []
+          companiesMap[compName].push(d)
+        })
+
+        Object.keys(companiesMap).forEach(compName => {
+          const compDishes = companiesMap[compName]
+          const compRows = compDishes.map((d, idx) => ({
+            "#": idx + 1,
+            "Date": d.date,
+            "Service": d.service,
+            "Meal Plan": d.mealPlan,
+            "Sub Meal Plan": d.subMealPlan,
+            "Dish Items": d.items,
+          }))
+          const safeSheetName = (compName.replace(/[:\\/?*\[\]]/g, "_").slice(0, 25) || "Company") + " Menu"
+          const wsComp = XLSX.utils.json_to_sheet(compRows)
+          XLSX.utils.book_append_sheet(wb, wsComp, safeSheetName)
+        })
+      }
+
+      const timestamp = format(new Date(), "yyyyMMdd_HHmm")
+      const filename = `AI_Training_Report_MultiCompany_${timestamp}.xlsx`
+      XLSX.writeFile(wb, filename)
+      toast({ title: "Excel Report Downloaded!", description: `Exported multi-sheet workbook with company-wise sheets: ${filename}` })
+    } catch (err: any) {
+      console.error("Excel export error:", err)
+      toast({ title: "Excel Export Failed", description: err.message, variant: "destructive" })
     }
   }
 
@@ -2101,9 +2343,9 @@ export default function AITrainingPage() {
                   </div>
 
                   {/* LIVE PREVIEW & MEAL PLAN DATABASE CUSTOMIZATION CONTAINER */}
-                  <div className={step3ViewMode === "split" ? "grid grid-cols-1 xl:grid-cols-12 gap-6 items-start" : "space-y-6"}>
+                  <div className={step3ViewMode === "split" ? "grid grid-cols-1 lg:grid-cols-12 gap-5 items-start" : "space-y-6"}>
                     {/* LIVE OUTPUT PREVIEW BOX */}
-                    <div className={step3ViewMode === "split" ? "xl:col-span-7 space-y-3" : "space-y-3"}>
+                    <div className={step3ViewMode === "split" ? "lg:col-span-7 space-y-3" : "space-y-3"}>
                       <Card className="border-slate-200 bg-white shadow-sm overflow-hidden">
                         <CardHeader className="py-3 px-4 bg-slate-50/70 border-b border-slate-200">
                           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
@@ -2349,7 +2591,7 @@ export default function AITrainingPage() {
                     </div>
 
                     {/* MEAL PLAN & SUB MEAL PLAN DATABASE CUSTOMIZATION BOX */}
-                    <div className={step3ViewMode === "split" ? "xl:col-span-5 space-y-3" : "space-y-3"}>
+                    <div className={step3ViewMode === "split" ? "lg:col-span-5 space-y-3 lg:sticky lg:top-4" : "space-y-3"}>
                       <Card className="border-indigo-200 bg-white shadow-sm overflow-hidden">
                         <CardHeader className="py-3 px-4 bg-gradient-to-r from-indigo-50/70 to-blue-50/40 border-b border-indigo-100">
                           <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -2363,29 +2605,109 @@ export default function AITrainingPage() {
                               </Badge>
                             </div>
 
-                            {/* Add Extra Meal Plan from DB */}
-                            <Select 
-                              value={extraMpToAdd} 
-                              onValueChange={(val) => { 
-                                if (val && val !== "none") {
-                                  handleAddExtraMealPlan(val); 
-                                  setExtraMpToAdd("none"); 
-                                }
-                              }}
-                            >
-                              <SelectTrigger className="h-7 text-xs w-[185px] bg-white border-indigo-200 text-indigo-700 font-medium hover:bg-indigo-50/50 shadow-2xs">
-                                <Plus className="w-3.5 h-3.5 mr-1 text-indigo-600" />
-                                <SelectValue placeholder="Add Meal Plan from DB" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="none" disabled>➕ Add DB Meal Plan...</SelectItem>
-                                {mealPlans.filter(mp => Boolean(mp.id)).map(mp => (
-                                  <SelectItem key={mp.id} value={mp.id}>
-                                    {mp.name}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              {/* Add Extra Meal Plan from DB */}
+                              <Select 
+                                value={extraMpToAdd} 
+                                onValueChange={(val) => { 
+                                  if (val && val !== "none") {
+                                    handleAddExtraMealPlan(val); 
+                                    setExtraMpToAdd("none"); 
+                                  }
+                                }}
+                              >
+                                <SelectTrigger className="h-7 text-xs w-[170px] bg-white border-indigo-200 text-indigo-700 font-medium hover:bg-indigo-50/50 shadow-2xs">
+                                  <Plus className="w-3.5 h-3.5 mr-1 text-indigo-600" />
+                                  <SelectValue placeholder="Add Meal Plan" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="none" disabled>➕ Add DB Meal Plan...</SelectItem>
+                                  {mealPlans.filter(mp => Boolean(mp.id)).map(mp => (
+                                    <SelectItem key={mp.id} value={mp.id}>
+                                      {mp.name}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+
+                              {/* Remove Meal Plan Selector */}
+                              {allCategories.length > 0 && (
+                                <Select
+                                  value={mpToRemove}
+                                  onValueChange={(val) => {
+                                    if (val && val !== "none") {
+                                      handleRemoveCategory(val);
+                                      setMpToRemove("none");
+                                    }
+                                  }}
+                                >
+                                  <SelectTrigger className="h-7 text-xs w-[165px] bg-white border-red-200 text-red-700 font-medium hover:bg-red-50/50 shadow-2xs">
+                                    <Trash2 className="w-3.5 h-3.5 mr-1 text-red-600" />
+                                    <SelectValue placeholder="Remove Meal Plan" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="none" disabled>🗑️ Remove Meal Plan...</SelectItem>
+                                    {allCategories.map(cat => (
+                                      <SelectItem key={cat} value={cat}>
+                                        ❌ {cat}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              )}
+
+                              {/* Remove Sub Meal Plans Selector */}
+                              {allCategories.some(cat => (mealPlanMapping[cat]?.subMealPlanIds || []).length > 0) && (
+                                <Select
+                                  value="none"
+                                  onValueChange={(val) => {
+                                    if (val && val !== "none") {
+                                      handleRemoveSubMealPlans(val);
+                                    }
+                                  }}
+                                >
+                                  <SelectTrigger className="h-7 text-xs w-[180px] bg-white border-amber-200 text-amber-700 font-medium hover:bg-amber-50/50 shadow-2xs">
+                                    <Trash2 className="w-3.5 h-3.5 mr-1 text-amber-600" />
+                                    <span>Remove Sub Meal Plans</span>
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="none" disabled>🗑️ Remove Sub Plans from...</SelectItem>
+                                    {allCategories
+                                      .filter(cat => (mealPlanMapping[cat]?.subMealPlanIds || []).length > 0)
+                                      .map(cat => (
+                                        <SelectItem key={cat} value={cat}>
+                                          ❌ Clear {cat} ({mealPlanMapping[cat]?.subMealPlanIds?.length || 0} plans)
+                                        </SelectItem>
+                                      ))}
+                                  </SelectContent>
+                                </Select>
+                              )}
+
+                              {/* Restore Removed Meal Plans */}
+                              {removedCategories.length > 0 && (
+                                <Select
+                                  value="none"
+                                  onValueChange={(val) => {
+                                    if (val && val !== "none") {
+                                      handleRestoreCategory(val);
+                                    }
+                                  }}
+                                >
+                                  <SelectTrigger className="h-7 text-xs w-[130px] bg-white border-slate-200 text-slate-600 font-medium hover:bg-slate-50 shadow-2xs">
+                                    <RotateCcw className="w-3 h-3 mr-1 text-slate-500" />
+                                    <span>Restore ({removedCategories.length})</span>
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="none" disabled>↩️ Restore Meal Plan...</SelectItem>
+                                    {removedCategories.map(cat => (
+                                      <SelectItem key={cat} value={cat}>
+                                        ✓ Restore {cat}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              )}
+                            </div>
                           </div>
                           <CardDescription className="text-xs text-gray-500 mt-1">
                             Map each Excel food category to a Database Meal Plan, choose multiple Sub Meal Plans (courses), or add extra categories directly from your database.
@@ -2435,24 +2757,38 @@ export default function AITrainingPage() {
                                         ) : (
                                           <Badge variant="outline" className="text-amber-700 border-amber-300 text-[10px]">Unmapped</Badge>
                                         )}
-                                        {isExtra && (
-                                          <Button
-                                            type="button"
-                                            variant="ghost"
-                                            size="icon"
-                                            className="h-6 w-6 text-slate-400 hover:text-red-600 hover:bg-red-50"
-                                            onClick={() => handleRemoveExtraCategory(emp)}
-                                            title="Remove extra category"
-                                          >
-                                            <Trash2 className="w-3.5 h-3.5" />
-                                          </Button>
-                                        )}
+                                        <Button
+                                          type="button"
+                                          variant="ghost"
+                                          size="sm"
+                                          className="h-6 px-1.5 text-xs text-red-500 hover:text-red-700 hover:bg-red-50 gap-1 font-medium"
+                                          onClick={() => handleRemoveCategory(emp)}
+                                          title={`Remove "${emp}" Meal Plan category`}
+                                        >
+                                          <Trash2 className="w-3.5 h-3.5" />
+                                          <span className="text-[10px]">Remove</span>
+                                        </Button>
                                       </div>
                                     </div>
 
                                     {/* 1. Meal Plan Selector */}
                                     <div className="space-y-1">
-                                      <Label className="text-[11px] text-slate-500 font-medium">1. Map to Database Meal Plan:</Label>
+                                      <div className="flex items-center justify-between">
+                                        <Label className="text-[11px] text-slate-500 font-medium">1. Map to Database Meal Plan:</Label>
+                                        {selectedMpId && (
+                                          <button
+                                            type="button"
+                                            onClick={() => setMealPlanMapping(prev => ({
+                                              ...prev,
+                                              [emp]: { mealPlanId: "", subMealPlanIds: [] }
+                                            }))}
+                                            className="text-[10px] text-red-500 hover:text-red-700 font-medium hover:underline flex items-center gap-1"
+                                            title="Remove / Clear Meal Plan mapping"
+                                          >
+                                            <Trash2 className="w-2.5 h-2.5" /> Clear Meal Plan
+                                          </button>
+                                        )}
+                                      </div>
                                       <Select 
                                         value={selectedMpId || "none"} 
                                         onValueChange={(mpId) => setMealPlanMapping(prev => ({
@@ -2462,7 +2798,7 @@ export default function AITrainingPage() {
                                       >
                                         <SelectTrigger className="bg-slate-50 h-8 text-xs"><SelectValue placeholder="Select Database Meal Plan..." /></SelectTrigger>
                                         <SelectContent>
-                                          <SelectItem value="none" disabled>Select Database Meal Plan...</SelectItem>
+                                          <SelectItem value="none">❌ -- No Meal Plan / Clear (Unmapped) --</SelectItem>
                                           {mealPlans.filter(mp => Boolean(mp.id)).map(mp => (
                                             <SelectItem key={mp.id} value={mp.id}>{mp.name}</SelectItem>
                                           ))}
@@ -2478,17 +2814,48 @@ export default function AITrainingPage() {
                                             2. Select Sub Meal Plans (Courses):
                                           </Label>
                                           {selectedSmpIds.length > 0 && (
-                                            <span 
-                                              className="text-[10px] text-indigo-600 font-semibold cursor-pointer hover:underline" 
-                                              onClick={() => setMealPlanMapping(prev => ({
-                                                ...prev,
-                                                [emp]: { ...prev[emp], subMealPlanIds: [] }
-                                              }))}
+                                            <Button
+                                              type="button"
+                                              variant="ghost"
+                                              size="sm"
+                                              className="h-5 px-1.5 text-[10px] text-red-600 hover:text-red-800 hover:bg-red-50 font-semibold gap-1"
+                                              onClick={() => handleRemoveSubMealPlans(emp)}
+                                              title="Remove all selected Sub Meal Plans"
                                             >
-                                              Reset to Auto
-                                            </span>
+                                              <Trash2 className="w-2.5 h-2.5" /> Remove Sub Meal Plans
+                                            </Button>
                                           )}
                                         </div>
+
+                                        {selectedSmpIds.length > 0 && (
+                                          <div className="flex flex-wrap gap-1 py-0.5">
+                                            {matchingSubPlans.filter(s => selectedSmpIds.includes(s.id)).map(s => (
+                                              <span
+                                                key={s.id}
+                                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-indigo-50 text-indigo-700 border border-indigo-200"
+                                              >
+                                                {s.name}
+                                                <button
+                                                  type="button"
+                                                  onClick={() => {
+                                                    setMealPlanMapping(prev => ({
+                                                      ...prev,
+                                                      [emp]: {
+                                                        ...prev[emp],
+                                                        subMealPlanIds: selectedSmpIds.filter(id => id !== s.id)
+                                                      }
+                                                    }))
+                                                  }}
+                                                  className="hover:text-red-600 hover:bg-indigo-100 rounded-full p-0.5 transition-colors"
+                                                  title={`Remove ${s.name}`}
+                                                >
+                                                  <X className="w-2.5 h-2.5" />
+                                                </button>
+                                              </span>
+                                            ))}
+                                          </div>
+                                        )}
+
                                         <div className="flex flex-col gap-2 max-h-[150px] overflow-y-auto border p-2 rounded-md bg-white">
                                           {matchingSubPlans.length > 0 ? (
                                             matchingSubPlans.map(s => (
@@ -3008,6 +3375,16 @@ export default function AITrainingPage() {
                   type="button"
                   variant="default"
                   size="sm"
+                  onClick={handleDownloadExcel}
+                  className="h-8 text-xs gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-medium shadow-2xs"
+                  title="Download multi-sheet Excel report with company-wise menu sheets"
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5" /> Download Excel
+                </Button>
+                <Button
+                  type="button"
+                  variant="default"
+                  size="sm"
                   onClick={() => handleDownloadPdf(true)}
                   disabled={downloadingPdf}
                   className="h-8 text-xs gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-medium shadow-2xs"
@@ -3059,6 +3436,12 @@ export default function AITrainingPage() {
                 <TabsList className="bg-slate-100 p-1 rounded-lg w-full justify-start overflow-x-auto h-auto flex flex-wrap gap-1">
                   <TabsTrigger value="overview" className="text-xs py-1.5 px-3 data-[state=active]:bg-white data-[state=active]:text-indigo-700 data-[state=active]:font-semibold data-[state=active]:shadow-2xs">
                     📊 Executive Overview
+                  </TabsTrigger>
+                  <TabsTrigger value="trainedKnowledge" className="text-xs py-1.5 px-3 data-[state=active]:bg-white data-[state=active]:text-indigo-700 data-[state=active]:font-semibold data-[state=active]:shadow-2xs flex items-center gap-1.5">
+                    🤖 AI Trained Knowledge
+                  </TabsTrigger>
+                  <TabsTrigger value="futureStrategy" className="text-xs py-1.5 px-3 data-[state=active]:bg-white data-[state=active]:text-indigo-700 data-[state=active]:font-semibold data-[state=active]:shadow-2xs flex items-center gap-1.5">
+                    🔮 Future Menu Playbook
                   </TabsTrigger>
                   <TabsTrigger value="goodThings" className="text-xs py-1.5 px-3 data-[state=active]:bg-white data-[state=active]:text-emerald-700 data-[state=active]:font-semibold data-[state=active]:shadow-2xs flex items-center gap-1.5">
                     🌟 Good Things
@@ -3117,17 +3500,17 @@ export default function AITrainingPage() {
 
                   {/* Repetition & Menu Fatigue Analysis */}
                   {combinedReport.repetitionAnalysis && (
-                    <div className="bg-white border border-slate-200 rounded-lg p-4 space-y-2 shadow-2xs">
+                    <div className="bg-white border border-slate-200 rounded-lg p-4 space-y-2.5 shadow-2xs">
                       <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
                         <AlertCircle className="w-4 h-4 text-amber-600" />
-                        Repetition & Dish Overlap Analysis
+                        Repetition &amp; Dish Overlap Analysis
                       </h4>
                       <p className="text-xs text-slate-600">
                         {combinedReport.repetitionAnalysis.recommendation}
                       </p>
                       {combinedReport.repetitionAnalysis.repeatedDishes?.length > 0 && (
                         <div className="flex items-center gap-1.5 flex-wrap pt-1">
-                          <span className="text-[11px] font-semibold text-slate-500">Frequently Clustered Items:</span>
+                          <span className="text-[11px] font-semibold text-slate-500">Frequently Clustered Non-Staple Entrees:</span>
                           {combinedReport.repetitionAnalysis.repeatedDishes.map((dish: string, dIdx: number) => (
                             <Badge key={dIdx} variant="outline" className="bg-rose-50 text-rose-700 border-rose-200 text-xs">
                               {dish}
@@ -3135,6 +3518,14 @@ export default function AITrainingPage() {
                           ))}
                         </div>
                       )}
+                      <div className="flex items-center gap-1.5 flex-wrap pt-2 border-t border-slate-100">
+                        <span className="text-[11px] font-semibold text-emerald-800">Daily Exempted Staples:</span>
+                        {(combinedReport.repetitionAnalysis.exemptedStaples || ["Steamed Rice", "Roti / Phulka", "Dal Tadka", "Green Salad", "Curd / Raita", "Papad"]).map((staple: string, sIdx: number) => (
+                          <Badge key={sIdx} variant="outline" className="bg-emerald-50 text-emerald-800 border-emerald-200 text-[10px]">
+                            ✓ {staple}
+                          </Badge>
+                        ))}
+                      </div>
                     </div>
                   )}
 
@@ -3143,7 +3534,7 @@ export default function AITrainingPage() {
                     <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 space-y-2.5 shadow-2xs">
                       <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
                         <Check className="w-4 h-4 text-emerald-600" />
-                        Immediate Action Checklist for Kitchen & Menu Planners
+                        Immediate Action Checklist for Kitchen &amp; Menu Planners
                       </h4>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                         {combinedReport.actionChecklist.map((item: string, cIdx: number) => (
@@ -3157,6 +3548,125 @@ export default function AITrainingPage() {
                       </div>
                     </div>
                   )}
+                </TabsContent>
+
+                {/* TAB: AI TRAINED KNOWLEDGE */}
+                <TabsContent value="trainedKnowledge" className="space-y-4 pt-3 focus:outline-none">
+                  <div className="bg-indigo-50/70 border border-indigo-200 p-3 rounded-lg text-xs text-indigo-950 flex items-start gap-2">
+                    <BrainCircuit className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
+                    <div>
+                      <strong>🤖 What the AI Learned &amp; Trained On:</strong>
+                      <p className="text-[11px] text-indigo-800 mt-0.5">
+                        Deep culinary profile, flavor/gravy rotation logic, kitchen preparation balance, and dietary standards assimilated across your selected training sessions.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <Card className="border-indigo-100 shadow-2xs">
+                      <CardHeader className="py-3 px-4 bg-indigo-50/40 border-b border-indigo-100">
+                        <CardTitle className="text-xs font-bold text-indigo-950 flex items-center gap-2">
+                          🥘 Core Culinary Identity &amp; Profile
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="p-4 text-xs text-slate-700 leading-relaxed font-normal">
+                        {combinedReport.trainedKnowledgeBase?.culinaryProfile || "Corporate catering profile with homestyle seasoning, medium spice intensity, and balanced daily appeal."}
+                      </CardContent>
+                    </Card>
+
+                    <Card className="border-indigo-100 shadow-2xs">
+                      <CardHeader className="py-3 px-4 bg-indigo-50/40 border-b border-indigo-100">
+                        <CardTitle className="text-xs font-bold text-indigo-950 flex items-center gap-2">
+                          🧅 Flavor &amp; Gravy Rotation Architecture
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="p-4 text-xs text-slate-700 leading-relaxed font-normal">
+                        {combinedReport.trainedKnowledgeBase?.flavorAndGravyRules || "Rotation of core mother gravies (Onion-Tomato, Cashew-White, Kadhi, Spinach/Greens) avoiding back-to-back heavy creams."}
+                      </CardContent>
+                    </Card>
+
+                    <Card className="border-indigo-100 shadow-2xs">
+                      <CardHeader className="py-3 px-4 bg-indigo-50/40 border-b border-indigo-100">
+                        <CardTitle className="text-xs font-bold text-indigo-950 flex items-center gap-2">
+                          🍳 Kitchen Station &amp; Prep Feasibility
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="p-4 text-xs text-slate-700 leading-relaxed font-normal">
+                        {combinedReport.trainedKnowledgeBase?.kitchenPrepFeasibility || "Balances tandoor oven throughput with bulk pulse simmering and cold salad pantry assembly."}
+                      </CardContent>
+                    </Card>
+
+                    <Card className="border-indigo-100 shadow-2xs">
+                      <CardHeader className="py-3 px-4 bg-indigo-50/40 border-b border-indigo-100">
+                        <CardTitle className="text-xs font-bold text-indigo-950 flex items-center gap-2">
+                          🥗 Nutritional Standards &amp; Dietary Balance
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="p-4 text-xs text-slate-700 leading-relaxed font-normal">
+                        {combinedReport.trainedKnowledgeBase?.nutritionBalance || "Complete protein pairing (dairy, legumes, soya) with complex carbohydrates and raw dietary fiber."}
+                      </CardContent>
+                    </Card>
+                  </div>
+                </TabsContent>
+
+                {/* TAB: FUTURE MENU PLAYBOOK */}
+                <TabsContent value="futureStrategy" className="space-y-4 pt-3 focus:outline-none">
+                  <div className="bg-purple-50/70 border border-purple-200 p-3 rounded-lg text-xs text-purple-950 flex items-start gap-2">
+                    <Sparkles className="w-4 h-4 text-purple-600 shrink-0 mt-0.5" />
+                    <div>
+                      <strong>🔮 Future Menu Generation Playbook (Company-Wise &amp; Central Master Kitchen):</strong>
+                      <p className="text-[11px] text-purple-800 mt-0.5">
+                        Operational guide on how the trained AI will build forthcoming weekly and monthly menus tailored per company client and consolidated for central master kitchen execution.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <Card className="border-blue-100 shadow-2xs">
+                      <CardHeader className="py-3 px-4 bg-blue-50/50 border-b border-blue-100">
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
+                          <CardTitle className="text-xs font-bold text-blue-950 flex items-center gap-2">
+                            <Building2 className="w-4 h-4 text-blue-600" />
+                            🏢 Company-Wise Tailored Menu Approach
+                          </CardTitle>
+                          <Badge className="bg-blue-100 text-blue-800 text-[10px]">Client Customization</Badge>
+                        </div>
+                      </CardHeader>
+                      <CardContent className="p-4 text-xs text-slate-700 leading-relaxed font-normal">
+                        {combinedReport.futureMenuStrategy?.companyWiseApproach || "Tailors spice levels, regional profiles (North/South/Continental), and VIP enhancements per company contract while respecting unique headcount budgets."}
+                      </CardContent>
+                    </Card>
+
+                    <Card className="border-emerald-100 shadow-2xs">
+                      <CardHeader className="py-3 px-4 bg-emerald-50/50 border-b border-emerald-100">
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
+                          <CardTitle className="text-xs font-bold text-emerald-950 flex items-center gap-2">
+                            <Layers className="w-4 h-4 text-emerald-600" />
+                            🍳 Central Combined Kitchen Batching Blueprint
+                          </CardTitle>
+                          <Badge className="bg-emerald-100 text-emerald-800 text-[10px]">Operational Efficiency</Badge>
+                        </div>
+                      </CardHeader>
+                      <CardContent className="p-4 text-xs text-slate-700 leading-relaxed font-normal">
+                        {combinedReport.futureMenuStrategy?.combinedKitchenApproach || "Centralizes mother gravy bases and staples across clients, bifurcating at the finishing line via distinct tadkas, garnishes, and protein portions."}
+                      </CardContent>
+                    </Card>
+
+                    <Card className="border-purple-100 shadow-2xs">
+                      <CardHeader className="py-3 px-4 bg-purple-50/50 border-b border-purple-100">
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
+                          <CardTitle className="text-xs font-bold text-purple-950 flex items-center gap-2">
+                            <RotateCcw className="w-4 h-4 text-purple-600" />
+                            🔄 4-Week Rotational Cycle Architecture
+                          </CardTitle>
+                          <Badge className="bg-purple-100 text-purple-800 text-[10px]">Anti-Fatigue System</Badge>
+                        </div>
+                      </CardHeader>
+                      <CardContent className="p-4 text-xs text-slate-700 leading-relaxed font-normal">
+                        {combinedReport.futureMenuStrategy?.cycleArchitecture || "Structured 20-working-day cycle with a mandatory 72-hour buffer between identical protein preparations and zero dessert repeats within the week."}
+                      </CardContent>
+                    </Card>
+                  </div>
                 </TabsContent>
 
                 {/* TAB 2: WHAT ARE GOOD THINGS */}
@@ -3202,8 +3712,15 @@ export default function AITrainingPage() {
 
                 {/* TAB 3: WHAT CAN BE CHANGED */}
                 <TabsContent value="whatCanBeChanged" className="space-y-3 pt-3 focus:outline-none">
-                  <div className="bg-amber-50/70 border border-amber-200 p-3 rounded-lg text-xs text-amber-950">
-                    <strong>⚠️ Strategic Improvements & Fixes:</strong> Specific dishes, gravies, or pairings that are repeated too frequently, heavy on kitchen prep, or at risk of guest menu fatigue.
+                  <div className="bg-amber-50/70 border border-amber-200 p-3.5 rounded-lg text-xs text-amber-950 space-y-1.5">
+                    <div className="flex items-center gap-1.5">
+                      <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                      <strong>⚠️ Strategic Improvements &amp; Fixes:</strong> Specific dishes, gravies, or pairings that are repeated too frequently, heavy on kitchen prep, or at risk of guest menu fatigue.
+                    </div>
+                    <div className="bg-white/80 p-2 rounded border border-amber-100 text-[11px] text-emerald-800 flex items-center gap-1.5 font-medium">
+                      <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                      <span><strong>Daily Staple Exemption:</strong> Standard daily accompaniments (Rice, Roti, Dal Tadka, Green Salad, Curd/Raita, Papad) are intentionally repeated daily as meal anchors and are not penalized.</span>
+                    </div>
                   </div>
 
                   <div className="space-y-3">
@@ -3365,6 +3882,16 @@ export default function AITrainingPage() {
                 type="button"
                 variant="default"
                 size="sm"
+                onClick={handleDownloadExcel}
+                className="text-xs h-8 gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-medium shadow-2xs"
+                title="Download multi-sheet Excel report with company-wise sheets"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5" /> Download Excel
+              </Button>
+              <Button
+                type="button"
+                variant="default"
+                size="sm"
                 onClick={() => handleDownloadPdf(true)}
                 disabled={downloadingPdf}
                 className="text-xs h-8 gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-medium shadow-2xs"
@@ -3480,6 +4007,14 @@ export default function AITrainingPage() {
                       ))}
                     </div>
                   )}
+                  <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "6px", marginTop: "8px", paddingTop: "8px", borderTop: "1px solid #f1f5f9" }}>
+                    <span style={{ fontSize: "10px", fontWeight: 600, color: "#059669" }}>Daily Exempted Staples:</span>
+                    {(combinedReport.repetitionAnalysis.exemptedStaples || ["Steamed Rice", "Roti / Phulka", "Dal Tadka", "Green Salad", "Curd / Raita", "Papad"]).map((staple: string, sIdx: number) => (
+                      <span key={sIdx} style={{ backgroundColor: "#ecfdf5", color: "#065f46", border: "1px solid #a7f3d0", borderRadius: "4px", padding: "1px 6px", fontSize: "9.5px", fontWeight: 500 }}>
+                        ✓ {staple}
+                      </span>
+                    ))}
+                  </div>
                 </div>
               )}
 
@@ -3491,12 +4026,94 @@ export default function AITrainingPage() {
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
                     {combinedReport.actionChecklist.map((item: string, cIdx: number) => (
                       <div key={cIdx} style={{ display: "flex", alignItems: "flex-start", gap: "8px", backgroundColor: "#ffffff", padding: "8px", borderRadius: "6px", border: "1px solid #e2e8f0", fontSize: "11px", color: "#334155" }}>
-                        <span style={{ backgroundColor: "#e0e7ff", color: "#3730a3", borderRadius: "50%", width: "16px", height: "16px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "9px", fontWeight: "bold", shrink: 0 }}>
+                        <span style={{ backgroundColor: "#e0e7ff", color: "#3730a3", borderRadius: "50%", width: "16px", height: "16px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "9px", fontWeight: "bold", flexShrink: 0 }}>
                           {cIdx + 1}
                         </span>
                         <span>{item}</span>
                       </div>
                     ))}
+                  </div>
+                </div>
+              )}
+
+              {/* 3B. Section: AI Trained Culinary Knowledge */}
+              {combinedReport.trainedKnowledgeBase && (
+                <div style={{ marginBottom: "24px" }}>
+                  <div style={{ borderBottom: "2px solid #6366f1", paddingBottom: "6px", marginBottom: "12px" }}>
+                    <h2 style={{ fontSize: "15px", fontWeight: "bold", color: "#312e81", margin: 0 }}>
+                      🤖 AI Trained Culinary Knowledge Base
+                    </h2>
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                    <div style={{ backgroundColor: "#ffffff", border: "1px solid #c7d2fe", borderRadius: "8px", padding: "12px" }}>
+                      <div style={{ fontSize: "11px", fontWeight: "bold", color: "#3730a3", marginBottom: "4px" }}>
+                        🥘 Core Culinary Identity &amp; Profile
+                      </div>
+                      <div style={{ fontSize: "10.5px", color: "#334155", lineHeight: "1.5" }}>
+                        {combinedReport.trainedKnowledgeBase.culinaryProfile}
+                      </div>
+                    </div>
+                    <div style={{ backgroundColor: "#ffffff", border: "1px solid #c7d2fe", borderRadius: "8px", padding: "12px" }}>
+                      <div style={{ fontSize: "11px", fontWeight: "bold", color: "#3730a3", marginBottom: "4px" }}>
+                        🧅 Flavor &amp; Gravy Rotation Architecture
+                      </div>
+                      <div style={{ fontSize: "10.5px", color: "#334155", lineHeight: "1.5" }}>
+                        {combinedReport.trainedKnowledgeBase.flavorAndGravyRules}
+                      </div>
+                    </div>
+                    <div style={{ backgroundColor: "#ffffff", border: "1px solid #c7d2fe", borderRadius: "8px", padding: "12px" }}>
+                      <div style={{ fontSize: "11px", fontWeight: "bold", color: "#3730a3", marginBottom: "4px" }}>
+                        🍳 Kitchen Station &amp; Prep Feasibility
+                      </div>
+                      <div style={{ fontSize: "10.5px", color: "#334155", lineHeight: "1.5" }}>
+                        {combinedReport.trainedKnowledgeBase.kitchenPrepFeasibility}
+                      </div>
+                    </div>
+                    <div style={{ backgroundColor: "#ffffff", border: "1px solid #c7d2fe", borderRadius: "8px", padding: "12px" }}>
+                      <div style={{ fontSize: "11px", fontWeight: "bold", color: "#3730a3", marginBottom: "4px" }}>
+                        🥗 Nutritional Standards &amp; Dietary Balance
+                      </div>
+                      <div style={{ fontSize: "10.5px", color: "#334155", lineHeight: "1.5" }}>
+                        {combinedReport.trainedKnowledgeBase.nutritionBalance}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* 3C. Section: Future Menu Generation Playbook */}
+              {combinedReport.futureMenuStrategy && (
+                <div style={{ marginBottom: "24px" }}>
+                  <div style={{ borderBottom: "2px solid #8b5cf6", paddingBottom: "6px", marginBottom: "12px" }}>
+                    <h2 style={{ fontSize: "15px", fontWeight: "bold", color: "#5b21b6", margin: 0 }}>
+                      🔮 Future Menu Generation Playbook (Company-Wise &amp; Master Kitchen)
+                    </h2>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                    <div style={{ backgroundColor: "#ffffff", border: "1px solid #bfdbfe", borderLeft: "4px solid #3b82f6", borderRadius: "8px", padding: "12px" }}>
+                      <div style={{ fontSize: "12px", fontWeight: "bold", color: "#1e3a8a", marginBottom: "4px" }}>
+                        🏢 Company-Wise Tailored Menu Approach
+                      </div>
+                      <div style={{ fontSize: "10.5px", color: "#334155", lineHeight: "1.5" }}>
+                        {combinedReport.futureMenuStrategy.companyWiseApproach}
+                      </div>
+                    </div>
+                    <div style={{ backgroundColor: "#ffffff", border: "1px solid #a7f3d0", borderLeft: "4px solid #10b981", borderRadius: "8px", padding: "12px" }}>
+                      <div style={{ fontSize: "12px", fontWeight: "bold", color: "#065f46", marginBottom: "4px" }}>
+                        🍳 Central Combined Kitchen Batching Blueprint
+                      </div>
+                      <div style={{ fontSize: "10.5px", color: "#334155", lineHeight: "1.5" }}>
+                        {combinedReport.futureMenuStrategy.combinedKitchenApproach}
+                      </div>
+                    </div>
+                    <div style={{ backgroundColor: "#ffffff", border: "1px solid #e9d5ff", borderLeft: "4px solid #a855f7", borderRadius: "8px", padding: "12px" }}>
+                      <div style={{ fontSize: "12px", fontWeight: "bold", color: "#581c87", marginBottom: "4px" }}>
+                        🔄 4-Week Rotational Cycle Architecture
+                      </div>
+                      <div style={{ fontSize: "10.5px", color: "#334155", lineHeight: "1.5" }}>
+                        {combinedReport.futureMenuStrategy.cycleArchitecture}
+                      </div>
+                    </div>
                   </div>
                 </div>
               )}
@@ -3738,6 +4355,9 @@ export default function AITrainingPage() {
                     <SelectItem value="unmapped">
                       -- Keep Original ({editingRecord.mealPlan}) --
                     </SelectItem>
+                    <SelectItem value="none">
+                      ❌ Remove / Clear Meal Plan (Unassigned)
+                    </SelectItem>
                     {mealPlans.filter(mp => Boolean(mp.id)).map(mp => (
                       <SelectItem key={mp.id} value={mp.id}>
                         {mp.name}
@@ -3756,9 +4376,11 @@ export default function AITrainingPage() {
                   value={editSmpId || "auto"}
                   onValueChange={(val) => {
                     setEditSmpId(val)
-                    if (val !== "custom" && val !== "auto") {
+                    if (val !== "custom" && val !== "auto" && val !== "none") {
                       const smp = subMealPlans.find(s => s.id === val)
                       if (smp) setEditCustomSmpName(smp.name)
+                    } else if (val === "none") {
+                      setEditCustomSmpName("")
                     }
                   }}
                 >
@@ -3767,6 +4389,7 @@ export default function AITrainingPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="auto">✨ Auto-classify (Let AI assign)</SelectItem>
+                    <SelectItem value="none">❌ Remove / Clear Sub Meal Plan (None)</SelectItem>
                     {subMealPlans
                       .filter(smp => Boolean(smp.id) && (!editMpId || editMpId === "unmapped" || smp.mealPlanId === editMpId))
                       .map(smp => (

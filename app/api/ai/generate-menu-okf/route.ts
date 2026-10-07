@@ -22,13 +22,32 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
     }
 
-    const geminiKey = getEnv("GEMINI_API_KEY")
-    const apiKey = geminiKey ?? getEnv("AWS_BEARER_TOKEN_BEDROCK") ?? getEnv("OPENAI_API_KEY")
-    const baseURL = geminiKey ? "https://generativelanguage.googleapis.com/v1beta/openai/" : (getEnv("OPENAI_BASE_URL") ?? "https://bedrock-mantle.ap-south-1.api.aws/v1")
-    const model = geminiKey ? "gemini-3.8-flash" : (getEnv("BEDROCK_MANTLE_MODEL") ?? "openai.gpt-oss-120b")
+    const geminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || ""
+    const geminiURL = "https://generativelanguage.googleapis.com/v1beta/openai/"
+    const naraKey = process.env.NARA_API_KEY || ""
+    const bedrockKey = process.env.AWS_BEARER_TOKEN_BEDROCK || process.env.OPENAI_API_KEY || ""
+    const bedrockURL = process.env.OPENAI_BASE_URL || "https://bedrock-mantle.ap-south-1.api.aws/v1"
+    const bedrockModel = process.env.BEDROCK_MANTLE_MODEL || "openai.gpt-oss-120b"
 
-    if (!apiKey) {
-      return NextResponse.json({ error: "No API key configured" }, { status: 500 })
+    const candidateModels: { model: string; apiKey: string; baseURL: string }[] = []
+    if (geminiKey) {
+      candidateModels.push(
+        { model: "gemini-2.5-flash", apiKey: geminiKey, baseURL: geminiURL },
+        { model: "gemini-2.0-flash", apiKey: geminiKey, baseURL: geminiURL },
+        { model: "gemini-1.5-flash", apiKey: geminiKey, baseURL: geminiURL },
+        { model: "gemini-3.5-flash-lite", apiKey: geminiKey, baseURL: geminiURL },
+      )
+    }
+    if (bedrockKey) {
+      candidateModels.push({ model: bedrockModel, apiKey: bedrockKey, baseURL: bedrockURL })
+    }
+    if (naraKey) {
+      candidateModels.push({ model: "claude-sonnet-5", apiKey: naraKey, baseURL: "https://router.bynara.id/v1" })
+    }
+    candidateModels.push({ model: "llama3.1", apiKey: "ollama", baseURL: "http://127.0.0.1:11434/v1" })
+
+    if (candidateModels.length === 0) {
+      return NextResponse.json({ error: "No AI model or API key configured" }, { status: 500 })
     }
 
     // Fetch OKF Knowledge
@@ -68,8 +87,6 @@ export async function POST(req: Request) {
     const availableItems = itemsSnap.docs.map(d => ({id: d.id, name: (d.data() as any).name})).slice(0, 200)
     const itemsString = JSON.stringify(availableItems)
 
-    const openai = new OpenAI({ apiKey, baseURL })
-
     const systemPrompt = `You are an expert autonomous AI Menu Planner.
 You are tasked with generating a "Combined Master Menu" for a corporate catering service from ${startDate} to ${endDate}.
 
@@ -108,14 +125,37 @@ Output ONLY valid JSON. No markdown wrappers. Just the JSON array.`
 
     const userPrompt = `Generate the menu from ${startDate} to ${endDate}.`
 
-    const completion = await openai.chat.completions.create({
-      model: model,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt }
-      ],
-      temperature: 0.4,
-    })
+    let completion: any = null
+    let lastError: any = null
+
+    for (const candidate of candidateModels) {
+      console.log(`[AI OKF Menu] Attempting model: ${candidate.model} via ${candidate.baseURL}...`)
+      try {
+        const client = new OpenAI({ apiKey: candidate.apiKey, baseURL: candidate.baseURL })
+        completion = await client.chat.completions.create({
+          model: candidate.model,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt }
+          ],
+          temperature: 0.3,
+        })
+        console.log(`[AI OKF Menu] Successfully generated with model: ${candidate.model}`)
+        break
+      } catch (err: any) {
+        lastError = err
+        console.warn(`[AI OKF Menu] Model ${candidate.model} failed with ${err.status || err.message}. Trying next candidate...`)
+        if (err.status === 429 || err.status === 503) {
+          await new Promise(r => setTimeout(r, 1200))
+        }
+      }
+    }
+
+    if (!completion) {
+      return NextResponse.json({
+        error: `AI Error: ${lastError?.message || "Failed to generate menu across all AI model candidates."}`
+      }, { status: 500 })
+    }
 
     let generatedJsonString = completion.choices[0].message.content
     if (!generatedJsonString) throw new Error("Empty response from AI")
