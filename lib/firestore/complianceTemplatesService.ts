@@ -53,6 +53,9 @@ export interface ComplianceTemplate {
   menuSourceType?: 'combined' | 'company'   // Which menu to pull items from
   serviceId?: string                        // Filter menu items by service
   subServiceId?: string                     // Filter menu items by sub-service
+  scopeMode?: 'food_service' | 'hotel_facility' // Food Service vs Hotel/Facility/Housekeeping
+  department?: string                       // Hotel Department (e.g. Housekeeping, Front Office)
+  category?: string                         // Inspection Category / Area
   vehicleCheckFields?: VehicleCheckField[]  // For dispatch type only
   status: 'active' | 'inactive'
   createdAt?: any

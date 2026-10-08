@@ -1,16 +1,15 @@
 "use client"
 
-import React, { useState, useEffect, useMemo, useCallback } from "react"
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { toast } from "@/hooks/use-toast"
 import { 
   Calendar, Repeat, Copy, Check, Plus, Trash2, Search, ArrowRight, 
-  Sparkles, Building2, AlertCircle, Info, ChevronRight, CheckCircle2, 
+  Sparkles, Building2, AlertCircle, Info, ChevronRight, ChevronDown, CheckCircle2, 
   Loader2, X, Eye, FileText, Layers, Utensils, RefreshCw
 } from "lucide-react"
 import { db } from "@/lib/firebase"
@@ -53,18 +52,145 @@ const MONTHS = [
   { value: "11", label: "December" }
 ]
 
+interface SearchableDropdownProps {
+  label: string
+  placeholder: string
+  searchPlaceholder?: string
+  value: string
+  onChange: (val: string) => void
+  options: Array<{ id: string; name: string }>
+  disabled?: boolean
+  loading?: boolean
+}
+
+function SearchableDropdown({
+  label,
+  placeholder,
+  searchPlaceholder = "Search...",
+  value,
+  onChange,
+  options,
+  disabled = false,
+  loading = false,
+}: SearchableDropdownProps) {
+  const [isOpen, setIsOpen] = useState(false)
+  const [search, setSearch] = useState("")
+  const dropdownRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setIsOpen(false)
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside)
+    return () => document.removeEventListener("mousedown", handleClickOutside)
+  }, [])
+
+  const selectedItem = options.find(o => o.id === value)
+
+  const filteredOptions = useMemo(() => {
+    if (!search.trim()) return options
+    const q = search.toLowerCase().trim()
+    return options.filter(o => (o.name || "").toLowerCase().includes(q))
+  }, [options, search])
+
+  return (
+    <div className="space-y-1 relative" ref={dropdownRef}>
+      <Label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{label}</Label>
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => {
+          if (!disabled) {
+            setIsOpen(prev => !prev)
+            setSearch("")
+          }
+        }}
+        className={`w-full h-9 px-3 text-xs font-semibold rounded-md border flex items-center justify-between text-left transition-all ${
+          disabled 
+            ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed" 
+            : isOpen 
+              ? "bg-white border-blue-500 ring-2 ring-blue-500/20 text-slate-800 shadow-sm" 
+              : "bg-slate-50 hover:bg-white border-slate-200 text-slate-700"
+        }`}
+      >
+        <span className="truncate">
+          {loading ? (
+            <span className="text-slate-400 flex items-center gap-1.5">
+              <Loader2 className="w-3 h-3 animate-spin text-blue-600" /> Loading...
+            </span>
+          ) : selectedItem ? (
+            selectedItem.name
+          ) : (
+            <span className="text-slate-400">{placeholder}</span>
+          )}
+        </span>
+        <ChevronDown className={`w-3.5 h-3.5 text-slate-400 shrink-0 ml-1 transition-transform duration-150 ${isOpen ? "rotate-180" : ""}`} />
+      </button>
+
+      {isOpen && (
+        <div className="absolute left-0 top-full mt-1 w-full min-w-[240px] max-w-[340px] z-[100] bg-white rounded-xl border border-slate-200 shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-100">
+          <div className="p-2 border-b border-slate-100 bg-slate-50/70">
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+              <input
+                type="text"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder={searchPlaceholder}
+                className="w-full pl-8 pr-3 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                autoFocus
+              />
+            </div>
+          </div>
+
+          <div className="max-h-56 overflow-y-auto custom-scrollbar p-1">
+            {filteredOptions.length === 0 ? (
+              <div className="py-4 text-center text-xs text-slate-400">
+                {options.length === 0 ? "No options available" : "No matches found"}
+              </div>
+            ) : (
+              filteredOptions.map(opt => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => {
+                    onChange(opt.id)
+                    setIsOpen(false)
+                  }}
+                  className={`w-full px-2.5 py-2 text-left text-xs font-medium rounded-lg flex items-center justify-between transition-colors ${
+                    opt.id === value 
+                      ? "bg-blue-50 text-blue-700 font-bold" 
+                      : "text-slate-700 hover:bg-slate-100"
+                  }`}
+                >
+                  <span className="truncate pr-2">{opt.name}</span>
+                  {opt.id === value && <Check className="w-3.5 h-3.5 text-blue-600 shrink-0" />}
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 interface RecurringMonthlyMenuModalProps {
   isOpen: boolean
   onClose: () => void
   onSuccess?: () => void
   editMenu?: any | null
+  preloadedCompanies?: Array<{ id: string; name: string }>
 }
 
 export function RecurringMonthlyMenuModal({
   isOpen,
   onClose,
   onSuccess,
-  editMenu
+  editMenu,
+  preloadedCompanies
 }: RecurringMonthlyMenuModalProps) {
   // Selection State
   const now = new Date()
@@ -103,25 +229,49 @@ export function RecurringMonthlyMenuModal({
   useEffect(() => {
     if (!isOpen) return
 
+    // Immediately show preloaded companies if provided
+    if (preloadedCompanies && preloadedCompanies.length > 0) {
+      setCompanies(preloadedCompanies)
+    }
+
     async function loadData() {
       try {
         setLoadingInitial(true)
-        const [comps, bldgs, srvs, subs, mps, smps, items] = await Promise.all([
-          companiesService.getAll(),
-          buildingsService.getAll(),
-          servicesService.getAll(),
-          subServicesService.getAll(),
-          mealPlansService.getAll(),
-          subMealPlansService.getAll(),
-          menuItemsService.getAll()
+
+        // 1. Fetch companies and buildings FIRST for immediate responsiveness
+        const [compsRes, bldgsRes] = await Promise.allSettled([
+          companiesService.getAll().catch(async (e) => {
+            console.warn("companiesService.getAll() failed, trying Firestore:", e)
+            const snap = await getDocs(collection(db, "companies"))
+            return snap.docs.map(d => ({ id: d.id, ...d.data() }))
+          }),
+          buildingsService.getAll().catch(async (e) => {
+            console.warn("buildingsService.getAll() failed, trying Firestore:", e)
+            const snap = await getDocs(collection(db, "buildings"))
+            return snap.docs.map(d => ({ id: d.id, ...d.data() }))
+          })
         ])
-        setCompanies(comps || [])
-        setBuildings(bldgs || [])
-        setServices(srvs || [])
-        setSubServices(subs || [])
-        setMealPlans(mps || [])
-        setSubMealPlans(smps || [])
-        setMenuItems(items || [])
+
+        const loadedComps = compsRes.status === "fulfilled" && Array.isArray(compsRes.value) ? compsRes.value : []
+        const loadedBldgs = bldgsRes.status === "fulfilled" && Array.isArray(bldgsRes.value) ? bldgsRes.value : []
+
+        // Merge with preloadedCompanies to ensure no duplicates
+        const mergedCompsMap = new Map<string, any>()
+        if (preloadedCompanies) {
+          preloadedCompanies.forEach(c => {
+            if (c && c.id) mergedCompsMap.set(c.id, c)
+          })
+        }
+        loadedComps.forEach(c => {
+          if (c && c.id) mergedCompsMap.set(c.id, c)
+        })
+
+        const finalComps = Array.from(mergedCompsMap.values())
+          .filter(c => c && (c.name || c.id))
+          .sort((a, b) => (a.name || "").localeCompare(b.name || ""))
+        
+        setCompanies(finalComps)
+        setBuildings(loadedBldgs)
 
         if (editMenu) {
           setSelectedCompanyId(editMenu.companyId || "")
@@ -136,14 +286,32 @@ export function RecurringMonthlyMenuModal({
           }
         }
       } catch (err) {
-        console.error("Failed to load master data:", err)
-        toast({ title: "Error", description: "Failed to load master data.", variant: "destructive" })
+        console.error("Failed to load initial companies/buildings:", err)
       } finally {
         setLoadingInitial(false)
       }
+
+      // 2. Fetch catalog items (services, menuItems, etc.) non-blockingly
+      try {
+        const [srvs, subs, mps, smps, items] = await Promise.all([
+          servicesService.getAll().catch(() => []),
+          subServicesService.getAll().catch(() => []),
+          mealPlansService.getAll().catch(() => []),
+          subMealPlansService.getAll().catch(() => []),
+          menuItemsService.getAll().catch(() => [])
+        ])
+        setServices(srvs || [])
+        setSubServices(subs || [])
+        setMealPlans(mps || [])
+        setSubMealPlans(smps || [])
+        setMenuItems(items || [])
+      } catch (err) {
+        console.error("Failed to load catalog master data:", err)
+      }
     }
+
     loadData()
-  }, [isOpen, editMenu])
+  }, [isOpen, editMenu, preloadedCompanies])
 
   // Filtered Buildings for Selected Company
   const filteredBuildings = useMemo(() => {
@@ -522,57 +690,63 @@ export function RecurringMonthlyMenuModal({
         <div className="px-6 py-3 bg-white border-b border-slate-200 grid grid-cols-1 md:grid-cols-5 gap-3 shrink-0 items-center">
           
           {/* Company */}
-          <div className="space-y-1">
-            <Label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Company</Label>
-            <Select value={selectedCompanyId} onValueChange={v => { setSelectedCompanyId(v); setSelectedBuildingId(""); }}>
-              <SelectTrigger className="h-9 text-xs font-semibold bg-slate-50 border-slate-200">
-                <SelectValue placeholder="Select Company" />
-              </SelectTrigger>
-              <SelectContent>
-                {companies.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
+          <SearchableDropdown
+            label="Company"
+            placeholder="Select Company"
+            searchPlaceholder="Search company..."
+            value={selectedCompanyId}
+            onChange={v => {
+              setSelectedCompanyId(v)
+              setSelectedBuildingId("")
+            }}
+            options={companies.map(c => ({ id: c.id, name: c.name || "Unnamed Company" }))}
+            loading={loadingInitial && companies.length === 0}
+          />
 
           {/* Building */}
-          <div className="space-y-1">
-            <Label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Building / Cafeteria</Label>
-            <Select value={selectedBuildingId} onValueChange={setSelectedBuildingId} disabled={!selectedCompanyId}>
-              <SelectTrigger className="h-9 text-xs font-semibold bg-slate-50 border-slate-200">
-                <SelectValue placeholder={!selectedCompanyId ? "Select company first" : "Select Building"} />
-              </SelectTrigger>
-              <SelectContent>
-                {filteredBuildings.map(b => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
+          <SearchableDropdown
+            label="Building / Cafeteria"
+            placeholder={!selectedCompanyId ? "Select company first" : "Select Building"}
+            searchPlaceholder="Search building..."
+            value={selectedBuildingId}
+            onChange={setSelectedBuildingId}
+            options={filteredBuildings.map(b => ({ id: b.id, name: b.name || "Unnamed Building" }))}
+            disabled={!selectedCompanyId}
+            loading={loadingStructure}
+          />
 
           {/* Month */}
           <div className="space-y-1">
             <Label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Target Month</Label>
-            <Select value={selectedMonth} onValueChange={setSelectedMonth}>
-              <SelectTrigger className="h-9 text-xs font-semibold bg-slate-50 border-slate-200">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {MONTHS.map(m => <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>)}
-              </SelectContent>
-            </Select>
+            <div className="relative">
+              <select
+                value={selectedMonth}
+                onChange={e => setSelectedMonth(e.target.value)}
+                className="h-9 w-full appearance-none rounded-md border border-slate-200 bg-slate-50 px-3 pr-8 text-xs font-semibold text-slate-700 hover:bg-white focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 cursor-pointer transition-all"
+              >
+                {MONTHS.map(m => (
+                  <option key={m.value} value={m.value}>{m.label}</option>
+                ))}
+              </select>
+              <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
+            </div>
           </div>
 
           {/* Year */}
           <div className="space-y-1">
             <Label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Year</Label>
-            <Select value={selectedYear} onValueChange={setSelectedYear}>
-              <SelectTrigger className="h-9 text-xs font-semibold bg-slate-50 border-slate-200">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="2025">2025</SelectItem>
-                <SelectItem value="2026">2026</SelectItem>
-                <SelectItem value="2027">2027</SelectItem>
-              </SelectContent>
-            </Select>
+            <div className="relative">
+              <select
+                value={selectedYear}
+                onChange={e => setSelectedYear(e.target.value)}
+                className="h-9 w-full appearance-none rounded-md border border-slate-200 bg-slate-50 px-3 pr-8 text-xs font-semibold text-slate-700 hover:bg-white focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 cursor-pointer transition-all"
+              >
+                <option value="2025">2025</option>
+                <option value="2026">2026</option>
+                <option value="2027">2027</option>
+              </select>
+              <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
+            </div>
           </div>
 
           {/* Operating Days Mode */}
@@ -882,30 +1056,28 @@ export function RecurringMonthlyMenuModal({
 
                                                   {/* Quick Item Picker for this Cell */}
                                                   <div className="pt-1">
-                                                    <Select
-                                                      onValueChange={val => {
-                                                        if (val) {
+                                                    <select
+                                                      value=""
+                                                      onChange={e => {
+                                                        if (e.target.value) {
                                                           handleAddItem(
                                                             serviceEntry.serviceId,
                                                             subEntry.subServiceId,
                                                             mpEntry.mealPlanId,
                                                             smpEntry.subMealPlanId,
-                                                            val
+                                                            e.target.value
                                                           )
                                                         }
                                                       }}
+                                                      className="h-7 w-full rounded border border-slate-200 bg-slate-50 px-2 text-[10px] font-semibold text-slate-700 hover:bg-slate-100 focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer"
                                                     >
-                                                      <SelectTrigger className="h-7 text-[10px] bg-slate-50 border-slate-200 hover:bg-slate-100">
-                                                        <SelectValue placeholder="+ Click to select dish..." />
-                                                      </SelectTrigger>
-                                                      <SelectContent className="max-h-[220px]">
-                                                        {menuItems.filter(mi => !selectedIds.includes(mi.id)).map(mi => (
-                                                          <SelectItem key={mi.id} value={mi.id} className="text-xs">
-                                                            {mi.name} {mi.category ? `(${mi.category})` : ""}
-                                                          </SelectItem>
-                                                        ))}
-                                                      </SelectContent>
-                                                    </Select>
+                                                      <option value="">+ Add dish to slot...</option>
+                                                      {menuItems.filter(mi => !selectedIds.includes(mi.id)).map(mi => (
+                                                        <option key={mi.id} value={mi.id}>
+                                                          {mi.name} {mi.category ? `(${mi.category})` : ""}
+                                                        </option>
+                                                      ))}
+                                                    </select>
                                                   </div>
                                                 </div>
                                               )

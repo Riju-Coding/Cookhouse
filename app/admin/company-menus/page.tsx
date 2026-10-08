@@ -632,6 +632,7 @@ export default function CompanyMenusPage() {
           loadCompanyMenus()
         }} 
         editMenu={editingRecurringMenu} 
+        preloadedCompanies={uniqueCompanies.map(c => ({ id: c.id, name: c.name }))}
       />
 
     </div>

@@ -12,7 +12,8 @@ import { toast } from "@/hooks/use-toast"
 import { 
   ArrowLeft, ArrowRight, Save, Trash2, Plus, 
   Thermometer, Truck, UtensilsCrossed, FileCheck, 
-  Settings2, Building2, MapPin, CheckSquare, List, Copy
+  Settings2, Building2, MapPin, CheckSquare, List, Copy,
+  Hotel, Sparkles, BedDouble
 } from "lucide-react"
 
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog"
@@ -39,6 +40,87 @@ const FREQUENCIES: { value: ComplianceFrequency; label: string }[] = [
   { value: 'daily', label: 'Daily' },
   { value: 'weekly', label: 'Weekly' },
   { value: 'monthly', label: 'Monthly' },
+]
+
+export const HOTEL_DEPARTMENTS: { id: string; name: string; categories: string[] }[] = [
+  {
+    id: "housekeeping",
+    name: "Housekeeping & Rooms",
+    categories: [
+      "Guest Bedroom & Bed Linen",
+      "Guest Bathroom Sanitation",
+      "VIP Suite Deep Clean",
+      "Stay-over & Turndown Service",
+      "Departure & Checkout Turnover",
+      "Corridors, Linen Closet & Trolleys",
+      "Laundry & Linen Quality"
+    ]
+  },
+  {
+    id: "front_office",
+    name: "Front Office & Concierge",
+    categories: [
+      "Reception Desk & Lobby",
+      "Bell Desk & Luggage Handling",
+      "Guest Check-in / Keycard Issuance",
+      "Main Entrance & Porch Area",
+      "Business Center & Executive Lounge"
+    ]
+  },
+  {
+    id: "public_areas",
+    name: "Public Areas & Facilities",
+    categories: [
+      "Lobby Restrooms Sanitation",
+      "Elevators & Escalators",
+      "Swimming Pool & Deck Hygiene",
+      "Fitness Center / Gym Inspection",
+      "Spa & Wellness Treatment Rooms",
+      "Outdoor Pathways, Parking & Gardens"
+    ]
+  },
+  {
+    id: "engineering_maintenance",
+    name: "Maintenance & Engineering",
+    categories: [
+      "HVAC & Room Air Conditioning (Temp & Filters)",
+      "Plumbing, Water Pressure & Drainage",
+      "Electrical, Lighting & Socket Audits",
+      "Keycard RFID Locks & Mechanised Doors",
+      "Boiler / Chiller Plant & DG Sets"
+    ]
+  },
+  {
+    id: "safety_security",
+    name: "Fire, Safety & Security",
+    categories: [
+      "Smoke Detectors & Sprinklers",
+      "Emergency Exits & Evacuation Signage",
+      "CCTV Coverage & Security Checkpoints",
+      "First Aid & Medical Emergency Readiness",
+      "Keycard & Master Key Log Audit"
+    ]
+  },
+  {
+    id: "fb_banquets",
+    name: "F&B Service & Banquets",
+    categories: [
+      "Banquet Hall Readiness & Table Setup",
+      "Room Service (In-Room Dining) Delivery",
+      "Bar & Lounge Hygiene",
+      "Buffet Display & Crockery Sanitization"
+    ]
+  },
+  {
+    id: "kitchen_stewarding",
+    name: "Kitchen Stewarding & Waste",
+    categories: [
+      "Dishwashing & Cutlery Sanitization",
+      "Garbage Segregation & Bin Cleaning",
+      "Grease Trap & Floor Scrubbing",
+      "Pest Control Barrier Checks"
+    ]
+  }
 ]
 
 export interface ComplianceBuilderProps {
@@ -82,6 +164,11 @@ export function ComplianceBuilder({
   const [menuSource, setMenuSource] = useState<'combined' | 'company'>('company')
   const [serviceId, setServiceId] = useState("")
   const [subServiceId, setSubServiceId] = useState("")
+
+  // Operational Scope / Hotel Settings
+  const [scopeMode, setScopeMode] = useState<'food_service' | 'hotel_facility'>('food_service')
+  const [department, setDepartment] = useState("")
+  const [category, setCategory] = useState("")
 
   // Dynamic Fields
   const [vehicleChecks, setVehicleChecks] = useState<VehicleCheckField[]>([
@@ -199,6 +286,13 @@ export function ComplianceBuilder({
         setMenuSource(t.menuSourceType || 'company')
         setServiceId(t.serviceId || "")
         setSubServiceId(t.subServiceId || "")
+        if ((t as any).scopeMode) {
+          setScopeMode((t as any).scopeMode)
+        } else if ((t as any).department) {
+          setScopeMode('hotel_facility')
+        }
+        setDepartment((t as any).department || "")
+        setCategory((t as any).category || "")
         if (t.vehicleCheckFields) setVehicleChecks(t.vehicleCheckFields)
 
         const fields = await complianceTemplateFieldsService.getByTemplateId(t.id)
@@ -260,11 +354,21 @@ export function ComplianceBuilder({
   const handleBulkSubmit = () => {
     if (!bulkText.trim()) return
 
-    // Split by ? and then clean up
-    const questions = bulkText.split('?')
-      .map(q => q.trim())
-      .filter(q => q.length > 0)
-      .map(q => q + '?') // add the question mark back
+    // Smart parsing: support both newlines and question marks
+    let rawList: string[] = []
+    if (bulkText.includes('\n')) {
+      rawList = bulkText
+        .split('\n')
+        .map(line => line.replace(/^(\d+[\.\)]|\-|\*|Q\d+[:\.\)])\s*/i, '').trim())
+        .filter(line => line.length > 0)
+    } else {
+      rawList = bulkText
+        .split('?')
+        .map(q => q.trim())
+        .filter(q => q.length > 0)
+    }
+
+    const questions = rawList.map(q => q.endsWith('?') ? q : q + '?')
 
     if (questions.length === 0) return
 
@@ -304,8 +408,20 @@ export function ComplianceBuilder({
       if (buildingId && buildingId !== 'none') payload.buildingId = buildingId
       if (cafetariaId && cafetariaId !== 'none') payload.cafetariaId = cafetariaId
       if (areaId && areaId !== 'none') payload.areaId = areaId
-      if (serviceId && serviceId !== 'none') payload.serviceId = serviceId
-      if (subServiceId && subServiceId !== 'none') payload.subServiceId = subServiceId
+      
+      // Save scope mode and category/service data
+      if (scopeMode === 'hotel_facility') {
+        payload.scopeMode = 'hotel_facility'
+        if (department) payload.department = department
+        if (category) payload.category = category
+        // Populate serviceId/subServiceId for backwards compatibility across existing mobile views
+        payload.serviceId = department ? department.toLowerCase().replace(/[^a-z0-9]+/g, '_') : 'hotel_housekeeping'
+        payload.subServiceId = category ? category.toLowerCase().replace(/[^a-z0-9]+/g, '_') : 'room_inspection'
+      } else {
+        payload.scopeMode = 'food_service'
+        if (serviceId && serviceId !== 'none') payload.serviceId = serviceId
+        if (subServiceId && subServiceId !== 'none') payload.subServiceId = subServiceId
+      }
       
       if (['kitchen_readiness', 'dispatch', 'service_point'].includes(templateType)) {
         payload.menuSourceType = menuSource
@@ -477,68 +593,194 @@ export function ComplianceBuilder({
                 </div>
               </div>
 
-              <h2 className="text-lg font-bold border-b pb-2 mt-8 mb-4">Location Targeting</h2>
+              {/* Operational Scope & Categorization Type */}
+              <div className="space-y-3 mt-8">
+                <div className="border-b pb-2">
+                  <h2 className="text-lg font-bold">Operational Scope & Categorization</h2>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    Choose whether this checklist targets Food/Catering Service or Hotel/Housekeeping/Facility Operations.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div
+                    onClick={() => setScopeMode('food_service')}
+                    className={`p-4 rounded-xl border-2 cursor-pointer transition-all flex items-start gap-3 ${
+                      scopeMode === 'food_service'
+                        ? 'border-blue-600 bg-blue-50/50 ring-1 ring-blue-600'
+                        : 'border-gray-200 hover:border-gray-300 bg-white'
+                    }`}
+                  >
+                    <UtensilsCrossed className={`h-5 w-5 mt-0.5 ${scopeMode === 'food_service' ? 'text-blue-600' : 'text-gray-400'}`} />
+                    <div>
+                      <h4 className="font-bold text-sm text-gray-900">Food & Catering Service</h4>
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        Categorized by Cafeteria, Service (Breakfast, Lunch, Dinner) & Sub-Services.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div
+                    onClick={() => {
+                      setScopeMode('hotel_facility');
+                      if (!department) setDepartment(HOTEL_DEPARTMENTS[0].name);
+                      if (!category) setCategory(HOTEL_DEPARTMENTS[0].categories[0]);
+                    }}
+                    className={`p-4 rounded-xl border-2 cursor-pointer transition-all flex items-start gap-3 ${
+                      scopeMode === 'hotel_facility'
+                        ? 'border-purple-600 bg-purple-50/50 ring-1 ring-purple-600'
+                        : 'border-gray-200 hover:border-gray-300 bg-white'
+                    }`}
+                  >
+                    <Building2 className={`h-5 w-5 mt-0.5 ${scopeMode === 'hotel_facility' ? 'text-purple-600' : 'text-gray-400'}`} />
+                    <div>
+                      <h4 className="font-bold text-sm text-gray-900">Hotel, Housekeeping & Facilities</h4>
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        Replaces food services with Hotel Department (Housekeeping, Front Office, Maintenance) & Room/Area Category.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <h2 className="text-lg font-bold border-b pb-2 mt-8 mb-4">
+                {scopeMode === 'hotel_facility' ? 'Property & Department Targeting' : 'Location Targeting'}
+              </h2>
               <div className="grid grid-cols-2 gap-6 bg-gray-50 p-4 rounded-lg border">
                 <div className="space-y-2">
-                  <Label>Company</Label>
+                  <Label>Company / Hotel Property</Label>
                   <Select value={companyId} onValueChange={val => { setCompanyId(val); setBuildingId(''); setCafetariaId(''); setAreaId(''); }}>
-                    <SelectTrigger><SelectValue placeholder="Any Company" /></SelectTrigger>
+                    <SelectTrigger><SelectValue placeholder="Any Company / Property" /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="none">Any Company</SelectItem>
+                      <SelectItem value="none">Any Company / Property</SelectItem>
                       {companies.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label>Building</Label>
+                  <Label>Building / Hotel Wing</Label>
                   <Select value={buildingId} onValueChange={val => { setBuildingId(val); setCafetariaId(''); setAreaId(''); }} disabled={!companyId || companyId === 'none'}>
-                    <SelectTrigger><SelectValue placeholder="Any Building" /></SelectTrigger>
+                    <SelectTrigger><SelectValue placeholder="Any Building / Wing" /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="none">Any Building</SelectItem>
+                      <SelectItem value="none">Any Building / Wing</SelectItem>
                       {filteredBuildings.map(b => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label>Cafeteria</Label>
+                  <Label>{scopeMode === 'hotel_facility' ? 'Cafeteria / Dining Hall (Optional)' : 'Cafeteria'}</Label>
                   <Select value={cafetariaId} onValueChange={val => { setCafetariaId(val); setAreaId(''); }} disabled={!buildingId || buildingId === 'none'}>
-                    <SelectTrigger><SelectValue placeholder="Any Cafeteria" /></SelectTrigger>
+                    <SelectTrigger><SelectValue placeholder="Any Cafeteria / Facility" /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="none">Any Cafeteria</SelectItem>
+                      <SelectItem value="none">Any Cafeteria / Facility</SelectItem>
                       {filteredCafeterias.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label>Area / Floor</Label>
+                  <Label>{scopeMode === 'hotel_facility' ? 'Floor / Room Block / Area' : 'Area / Floor'}</Label>
                   <Select value={areaId} onValueChange={setAreaId} disabled={!cafetariaId || cafetariaId === 'none'}>
-                    <SelectTrigger><SelectValue placeholder="Any Area" /></SelectTrigger>
+                    <SelectTrigger><SelectValue placeholder="Any Floor / Area" /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="none">Any Area</SelectItem>
+                      <SelectItem value="none">Any Floor / Area</SelectItem>
                       {filteredAreas.map(a => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="space-y-2">
-                  <Label>Service</Label>
-                  <Select value={serviceId} onValueChange={val => { setServiceId(val); setSubServiceId(''); }} disabled={!buildingId || buildingId === 'none'}>
-                    <SelectTrigger><SelectValue placeholder="Any Service" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">Any Service</SelectItem>
-                      {availableServices.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Sub-Service</Label>
-                  <Select value={subServiceId} onValueChange={setSubServiceId} disabled={!serviceId || serviceId === 'none'}>
-                    <SelectTrigger><SelectValue placeholder="Any Sub-Service" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">Any Sub-Service</SelectItem>
-                      {filteredSubServices.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
+
+                {scopeMode === 'hotel_facility' ? (
+                  <>
+                    <div className="space-y-2">
+                      <Label className="flex items-center gap-1.5 text-purple-900 font-semibold">
+                        <Hotel className="h-4 w-4 text-purple-600" /> Hotel Department <span className="text-red-500">*</span>
+                      </Label>
+                      <Select 
+                        value={department} 
+                        onValueChange={val => { 
+                          setDepartment(val); 
+                          const dObj = HOTEL_DEPARTMENTS.find(d => d.name === val || d.id === val);
+                          if (dObj && dObj.categories.length > 0) {
+                            setCategory(dObj.categories[0]);
+                          } else {
+                            setCategory('');
+                          }
+                          setServiceId(val.toLowerCase().replace(/[^a-z0-9]+/g, '_')); 
+                        }}
+                      >
+                        <SelectTrigger className="bg-white border-purple-200 focus:ring-purple-500">
+                          <SelectValue placeholder="Select Hotel Department..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {HOTEL_DEPARTMENTS.map(d => (
+                            <SelectItem key={d.id} value={d.name}>{d.name}</SelectItem>
+                          ))}
+                          <SelectItem value="Other Facility Department">Other Facility Department</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label className="flex items-center gap-1.5 text-purple-900 font-semibold">
+                        <Sparkles className="h-4 w-4 text-purple-600" /> Inspection Area / Category <span className="text-red-500">*</span>
+                      </Label>
+                      <div className="space-y-1.5">
+                        <Select 
+                          value={category} 
+                          onValueChange={val => { 
+                            setCategory(val); 
+                            setSubServiceId(val.toLowerCase().replace(/[^a-z0-9]+/g, '_')); 
+                          }}
+                        >
+                          <SelectTrigger className="bg-white border-purple-200 focus:ring-purple-500">
+                            <SelectValue placeholder="Select Inspection Category..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {(() => {
+                              const dObj = HOTEL_DEPARTMENTS.find(d => d.name === department || d.id === department);
+                              const cats = dObj ? dObj.categories : HOTEL_DEPARTMENTS[0].categories;
+                              return cats.map(cat => (
+                                <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+                              ));
+                            })()}
+                            <SelectItem value="General Area Inspection">General Area Inspection</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <Input 
+                          placeholder="Or type custom category (e.g. Deluxe Suite 301)" 
+                          value={category} 
+                          onChange={e => {
+                            setCategory(e.target.value);
+                            setSubServiceId(e.target.value.toLowerCase().replace(/[^a-z0-9]+/g, '_'));
+                          }}
+                          className="text-xs h-8 bg-white border-dashed"
+                        />
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="space-y-2">
+                      <Label>Service</Label>
+                      <Select value={serviceId} onValueChange={val => { setServiceId(val); setSubServiceId(''); }} disabled={!buildingId || buildingId === 'none'}>
+                        <SelectTrigger><SelectValue placeholder="Any Service" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">Any Service</SelectItem>
+                          {availableServices.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Sub-Service</Label>
+                      <Select value={subServiceId} onValueChange={setSubServiceId} disabled={!serviceId || serviceId === 'none'}>
+                        <SelectTrigger><SelectValue placeholder="Any Sub-Service" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">Any Sub-Service</SelectItem>
+                          {filteredSubServices.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           )}
@@ -646,12 +888,22 @@ export function ComplianceBuilder({
                               const nf = [...customFields]; nf[index].servicePhase = val; setCustomFields(nf);
                             }}
                           >
-                            <SelectTrigger className="w-36 bg-white"><SelectValue placeholder="Service Phase" /></SelectTrigger>
+                            <SelectTrigger className="w-40 bg-white">
+                              <SelectValue placeholder={scopeMode === 'hotel_facility' ? "Inspection Stage" : "Service Phase"} />
+                            </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="none">N/A Phase</SelectItem>
-                              <SelectItem value="before_service">Before Service</SelectItem>
-                              <SelectItem value="during_service">During Service</SelectItem>
-                              <SelectItem value="after_service">After Service</SelectItem>
+                              <SelectItem value="none">
+                                {scopeMode === 'hotel_facility' ? 'Any Time / General' : 'N/A Phase'}
+                              </SelectItem>
+                              <SelectItem value="before_service">
+                                {scopeMode === 'hotel_facility' ? 'Check-out Turnover' : 'Before Service'}
+                              </SelectItem>
+                              <SelectItem value="during_service">
+                                {scopeMode === 'hotel_facility' ? 'Stay-Over / Daily' : 'During Service'}
+                              </SelectItem>
+                              <SelectItem value="after_service">
+                                {scopeMode === 'hotel_facility' ? 'Evening / Turndown' : 'After Service'}
+                              </SelectItem>
                             </SelectContent>
                           </Select>
                           <Select 
@@ -821,13 +1073,17 @@ export function ComplianceBuilder({
         <DialogContent className="max-w-xl">
           <DialogHeader>
             <DialogTitle>Bulk Paste Questions</DialogTitle>
-            <DialogDescription>Paste a list of questions separated by question marks (?). They will be added as individual Yes/No questions.</DialogDescription>
+            <DialogDescription>
+              Paste questions separated by question marks (?) or each on a new line. They will be added automatically as Yes/No checklist questions.
+            </DialogDescription>
           </DialogHeader>
           
           <div className="py-4">
             <textarea
               className="w-full h-64 p-3 border rounded-md text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
-              placeholder="Is Staff Briefing Conducted?&#10;Are All Staff Groomed?&#10;Are All Staff Assigned For Their Particular Duty?"
+              placeholder={scopeMode === 'hotel_facility' 
+                ? "Are fresh bedsheets and pillowcases wrinkle-free and spotless?\nIs the mattress protector clean and properly tucked?\nIs the bathroom floor dried, sanitized, and odor-free?\nAre all towels restocked (2 bath, 2 hand, 1 floor mat)?\nIs the AC cooling properly and remote battery working?"
+                : "Is Staff Briefing Conducted?\nAre All Staff Groomed?\nAre All Staff Assigned For Their Particular Duty?"}
               value={bulkText}
               onChange={(e) => setBulkText(e.target.value)}
             />
