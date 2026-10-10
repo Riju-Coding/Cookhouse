@@ -178,6 +178,7 @@ interface RecurringGridCellProps {
   selectedMenuItemIds: string[]
   allMenuItems: MenuItem[]
   onAddItem: (itemId: string) => void
+  onCreateItem: (name: string, category: string) => Promise<{ id: string; name: string } | null>
   onRemoveItem: (itemId: string) => void
   onCopyCell: () => void
   onPasteCell: () => void
@@ -190,6 +191,7 @@ function RecurringGridCell({
   selectedMenuItemIds,
   allMenuItems,
   onAddItem,
+  onCreateItem,
   onRemoveItem,
   onCopyCell,
   onPasteCell,
@@ -198,8 +200,25 @@ function RecurringGridCell({
 }: RecurringGridCellProps) {
   const [isAddOpen, setIsAddOpen] = useState(false)
   const [search, setSearch] = useState("")
+  const [creating, setCreating] = useState(false)
   const [selectedCategory, setSelectedCategory] = useState("All")
   const dropdownRef = useRef<HTMLDivElement>(null)
+
+  const handleCreate = async () => {
+    if (!search.trim() || creating) return
+    setCreating(true)
+    try {
+      const categoryToUse = selectedCategory !== "All" ? selectedCategory : ""
+      const createdItem = await onCreateItem(search.trim(), categoryToUse)
+      if (createdItem && createdItem.id) {
+        onAddItem(createdItem.id)
+        setSearch("")
+        setIsAddOpen(false)
+      }
+    } finally {
+      setCreating(false)
+    }
+  }
 
   // Categories for fast filtering
   const categories = useMemo(() => {
@@ -317,7 +336,7 @@ function RecurringGridCell({
                 </div>
 
                 <div className="max-h-[200px] overflow-y-auto divide-y divide-gray-100">
-                  {filteredDishes.length === 0 ? (
+                  {filteredDishes.length === 0 && !search.trim() ? (
                     <div className="p-3 text-center text-xs text-gray-400">
                       No available dishes found
                     </div>
@@ -342,6 +361,31 @@ function RecurringGridCell({
                     ))
                   )}
                 </div>
+
+                {/* Create item if not found / search is typed */}
+                {search.trim() && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      handleCreate()
+                    }}
+                    disabled={creating}
+                    className="w-full p-2.5 text-center text-xs text-blue-600 font-semibold hover:bg-blue-50 border-t border-gray-100 flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    {creating ? (
+                      <>
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        <span>Creating...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Plus className="h-3.5 w-3.5" />
+                        <span>Create &quot;{search.trim()}&quot;</span>
+                      </>
+                    )}
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -742,6 +786,33 @@ export function RecurringMonthlyMenuModal({
     })
     return count
   }, [masterTemplate])
+
+  // Create New Item when not found in search
+  const handleCreateItem = useCallback(async (name: string, category: string) => {
+    try {
+      const newItemRef = await addDoc(collection(db, "menuItems"), {
+        name,
+        category: category || "",
+        status: "active",
+        order: 999,
+        createdAt: serverTimestamp()
+      })
+      const newItem: MenuItem = { 
+        id: newItemRef.id, 
+        name, 
+        category: category || "", 
+        status: "active", 
+        order: 999 
+      }
+      setMenuItems((prev) => [...prev, newItem])
+      toast({ title: "Success", description: `Menu item "${name}" created successfully` })
+      return { id: newItem.id, name: newItem.name }
+    } catch (error) {
+      console.error("Error creating menu item:", error)
+      toast({ title: "Error", description: "Failed to create menu item", variant: "destructive" })
+      return null
+    }
+  }, [])
 
   // Add Item to a Cell
   const handleAddItem = (
@@ -1403,6 +1474,7 @@ export function RecurringMonthlyMenuModal({
                                     selectedMenuItemIds={selectedMenuItemIds}
                                     allMenuItems={menuItems}
                                     onAddItem={(itemId) => handleAddItem(dayKey, selectedService.id, selectedSubService.id, mealPlan.id, subMealPlan.id, itemId)}
+                                    onCreateItem={handleCreateItem}
                                     onRemoveItem={(itemId) => handleRemoveItem(dayKey, selectedService.id, selectedSubService.id, mealPlan.id, subMealPlan.id, itemId)}
                                     onCopyCell={() => handleCopyCell(selectedMenuItemIds)}
                                     onPasteCell={() => handlePasteCell(dayKey, selectedService.id, selectedSubService.id, mealPlan.id, subMealPlan.id)}
