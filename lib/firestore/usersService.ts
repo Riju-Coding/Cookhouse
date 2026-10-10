@@ -30,6 +30,14 @@ export interface User {
   canRequestStructureUpdates?: boolean;
   canCutStructureItems?: boolean; // NEW
   allowHoAttendance?: boolean; // NEW
+  canViewTickets?: boolean; // Feedback tickets & QR permission
+  canResolveTickets?: boolean; // Permission to resolve feedback tickets
+  requirePhotoForTicketResolution?: boolean; // Require photo proof when resolving
+  canManageQRLinks?: boolean; // Permission to generate/manage QR codes
+  canAccessVendorSOP?: boolean; // Permission to view & audit Vendor HO SOPs
+  canAccessTemperature?: boolean; // Permission to view & record Temperature Monitoring
+  canAccessFefo?: boolean; // Permission to view & audit FIFO/FEFO stock rotation
+  canSetSiteLocation?: boolean; // Temporary permission to set site/cafeteria GPS location in attendance
   companyIds: string[];
   buildingIds: string[];  // NEW
   cafeteriaIds: string[]; // NEW

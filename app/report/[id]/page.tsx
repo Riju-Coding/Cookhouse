@@ -3,6 +3,7 @@ import { useState, useEffect } from "react"
 import { qrLinksService, QRLink } from "@/lib/firestore/qrLinksService"
 import { ticketService, TicketPriority } from "@/lib/firestore/ticketService"
 import { usersService, type User } from "@/lib/firestore/usersService"
+import { liveNotificationService } from "@/lib/firestore/liveNotificationService"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -395,17 +396,36 @@ ${description}
       setUploadingPhotos(false)
 
       const ticketId = await ticketService.createTicket({
-        title: `${category} Issue at ${linkInfo?.cafeName}`,
+        title: `${category} Issue at ${linkInfo?.cafeName || linkInfo?.companyName}`,
         description: finalDescription,
         creatorId: "public_user",
         creatorName: name || "Public Guest",
         companyId: linkInfo!.companyId,
         companyName: linkInfo!.companyName,
-        buildingName: linkInfo!.buildingName || '',
+        buildingId: linkInfo?.buildingId || '',
+        buildingName: linkInfo?.buildingName || '',
+        cafeId: linkInfo?.cafeId || '',
+        cafeName: linkInfo?.cafeName || '',
         priority: priority,
         photos: photoUrls,
         category: category
       })
+
+      // Shoot live notification to all assigned managers & mobile devices
+      liveNotificationService.shootTicketNotification({
+        ticketId,
+        title: `${category} Issue at ${linkInfo?.cafeName || linkInfo?.companyName}`,
+        description: finalDescription,
+        companyId: linkInfo!.companyId,
+        companyName: linkInfo!.companyName,
+        buildingId: linkInfo?.buildingId || '',
+        buildingName: linkInfo?.buildingName || '',
+        cafeId: linkInfo?.cafeId || '',
+        cafeName: linkInfo?.cafeName || '',
+        category,
+        priority,
+        creatorName: name || "Public Guest"
+      }).catch(err => console.warn("Live notification shoot error:", err));
 
       // Save to local storage so they don't lose it
       if (typeof window !== "undefined") {

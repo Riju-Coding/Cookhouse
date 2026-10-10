@@ -502,9 +502,16 @@ export default function TicketingDashboard() {
                             <div className="text-xs text-gray-400">ID: {ticket.creatorId}</div>
                           </TableCell>
                           <TableCell>
-                            <Badge variant={ticket.status === 'Resolved' ? 'secondary' : 'default'} className="whitespace-nowrap">
-                              {ticket.status}
-                            </Badge>
+                            <div className="flex flex-col gap-1 items-start">
+                              <Badge variant={ticket.status === 'Resolved' ? 'secondary' : 'default'} className="whitespace-nowrap">
+                                {ticket.status}
+                              </Badge>
+                              {(ticket.resolutionPhotoUrl || (ticket.resolutionPhotos && ticket.resolutionPhotos.length > 0)) && (
+                                <span className="text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded font-medium inline-flex items-center gap-1">
+                                  📸 Proof attached
+                                </span>
+                              )}
+                            </div>
                           </TableCell>
                           <TableCell>
                             <div className="flex flex-col">
@@ -660,9 +667,64 @@ export default function TicketingDashboard() {
           </div>
           
           <div className="flex-1 overflow-y-auto p-6 space-y-6">
-            <div className="bg-white p-4 rounded-xl border shadow-sm mb-6">
-              <h4 className="font-semibold text-gray-900 mb-2">Original Complaint</h4>
-              <p className="text-gray-700 whitespace-pre-wrap">{activeTicket?.description}</p>
+            <div className="bg-white p-4 rounded-xl border shadow-sm mb-6 space-y-3">
+              <div>
+                <h4 className="font-semibold text-gray-900 mb-1">Original Complaint</h4>
+                <p className="text-gray-700 whitespace-pre-wrap text-sm leading-relaxed">{activeTicket?.description}</p>
+              </div>
+
+              {/* Complaint Attachments */}
+              {activeTicket?.photos && activeTicket.photos.length > 0 && (
+                <div>
+                  <h5 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Complaint Photos</h5>
+                  <div className="flex flex-wrap gap-2">
+                    {activeTicket.photos.map((url, i) => (
+                      <a key={i} href={url} target="_blank" rel="noopener noreferrer" className="block w-20 h-20 rounded-lg overflow-hidden border border-gray-200 hover:opacity-90 transition-opacity">
+                        <img src={url} alt={`Complaint ${i+1}`} className="w-full h-full object-cover" />
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Resolution Photo Proof & Notes */}
+              {(activeTicket?.resolutionPhotoUrl || (activeTicket?.resolutionPhotos && activeTicket.resolutionPhotos.length > 0) || activeTicket?.resolutionNotes) && (
+                <div className="mt-4 p-3.5 bg-emerald-50/70 border border-emerald-200 rounded-xl space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-emerald-800 uppercase tracking-wider flex items-center gap-1.5">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600" /> Resolution & Corrective Action Proof
+                    </span>
+                    {activeTicket.resolvedByName && (
+                      <span className="text-xs text-emerald-700">
+                        Resolved by: <strong>{activeTicket.resolvedByName}</strong>
+                      </span>
+                    )}
+                  </div>
+
+                  {activeTicket.resolutionNotes && (
+                    <p className="text-sm text-emerald-950 whitespace-pre-wrap bg-white/80 p-2.5 rounded-lg border border-emerald-100">
+                      {activeTicket.resolutionNotes}
+                    </p>
+                  )}
+
+                  {/* Resolution Photos */}
+                  {((activeTicket.resolutionPhotoUrl ? [activeTicket.resolutionPhotoUrl] : []).concat(activeTicket.resolutionPhotos || [])).length > 0 && (
+                    <div>
+                      <span className="text-xs font-semibold text-emerald-800 block mb-1.5">Attached Resolution Photo Proof:</span>
+                      <div className="flex flex-wrap gap-2">
+                        {((activeTicket.resolutionPhotoUrl ? [activeTicket.resolutionPhotoUrl] : []).concat(activeTicket.resolutionPhotos || [])).map((url, i) => (
+                          <a key={i} href={url} target="_blank" rel="noopener noreferrer" className="relative block w-24 h-24 rounded-lg overflow-hidden border-2 border-emerald-300 hover:opacity-95 shadow-sm group">
+                            <img src={url} alt={`Resolution proof ${i+1}`} className="w-full h-full object-cover" />
+                            <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white text-xs font-semibold transition-opacity">
+                              Zoom
+                            </div>
+                          </a>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="space-y-4">

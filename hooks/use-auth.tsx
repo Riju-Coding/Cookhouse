@@ -41,6 +41,13 @@ export interface UserProfile {
     durationMinutes: number;
   }[]
   managerId: string
+  canAccessVendorSOP?: boolean
+  canAccessTemperature?: boolean
+  canAccessFefo?: boolean
+  canViewTickets?: boolean
+  canResolveTickets?: boolean
+  canManageQRLinks?: boolean
+  canSetSiteLocation?: boolean
   status: "active" | "inactive"
 }
 
@@ -159,6 +166,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         officeLocation: data.officeLocation || undefined,
         assignedShifts: data.assignedShifts || [],
         managerId: data.managerId || "",
+        canAccessVendorSOP: !!data.canAccessVendorSOP,
+        canAccessTemperature: !!data.canAccessTemperature,
+        canAccessFefo: !!data.canAccessFefo,
+        canViewTickets: !!data.canViewTickets,
+        canResolveTickets: !!data.canResolveTickets,
+        requirePhotoForTicketResolution: !!data.requirePhotoForTicketResolution,
+        canManageQRLinks: !!data.canManageQRLinks,
+        canSetSiteLocation: !!data.canSetSiteLocation,
         status: data.status || "active",
       } as UserProfile
     } catch (error) {
@@ -381,6 +396,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       // Super Admin — always allow
       if (isSuperAdmin) return true
+
+      // Vendor HO SOPs route requires explicit permission
+      if (path.startsWith("/admin/vendor-ho-templates")) {
+        return !!userProfile.canAccessVendorSOP
+      }
 
       // Dashboard is always accessible for any authenticated user
       if (path === "/admin") return true

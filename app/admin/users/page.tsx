@@ -7,13 +7,15 @@ import { usersService, type User } from "@/lib/firestore/usersService"
 import { cafeteriasService } from "@/lib/firestore/cafeteriasService"
 import { globalShiftsService, type GlobalShift } from "@/lib/firestore/globalShiftsService"
 import { complianceTemplatesService, type ComplianceTemplate } from "@/lib/firestore/complianceTemplatesService"
+import { qrLinksService, type QRLink } from "@/lib/firestore/qrLinksService"
 import { toast } from "@/hooks/use-toast"
 import dynamic from "next/dynamic"
 import { ComplianceBuilder } from "@/components/compliances/ComplianceBuilder"
 import { useAuth } from "@/hooks/use-auth"
+import { QRCodeSVG } from "qrcode.react"
 
 // Icons
-import { UserPlus, Users, Pencil, Trash2, Search, Filter, Mail, Phone, MapPin, Building, Lock, CheckCircle, Clock, Plus, Ban, FileText, Store, FileCheck } from "lucide-react"
+import { UserPlus, Users, Pencil, Trash2, Search, Filter, Mail, Phone, MapPin, Building, Lock, CheckCircle, Clock, Plus, Ban, FileText, Store, FileCheck, QrCode, Ticket as TicketIcon, Link as LinkIcon, Download, ExternalLink, Sparkles } from "lucide-react"
 
 // UI Components
 import { Button } from "@/components/ui/button"
@@ -48,6 +50,14 @@ const initialUserState: Omit<User, "id" | "createdAt" | "updatedAt"> = {
   canApproveRequests: false,
   canRequestChanges: false,
   allowHoAttendance: false,
+  canViewTickets: false,
+  canResolveTickets: false,
+  requirePhotoForTicketResolution: false,
+  canManageQRLinks: false,
+  canAccessVendorSOP: false,
+  canAccessTemperature: false,
+  canAccessFefo: false,
+  canSetSiteLocation: false,
   buildingIds: [],
   cafeteriaIds: [],
   assignedShifts: [],
@@ -66,6 +76,9 @@ export default function UserManagementPage() {
   const [cafeterias, setCafeterias] = useState<any[]>([])
   const [globalShifts, setGlobalShifts] = useState<GlobalShift[]>([])
   const [complianceTemplates, setComplianceTemplates] = useState<ComplianceTemplate[]>([])
+  const [qrLinks, setQrLinks] = useState<QRLink[]>([])
+  const [isQrModalOpen, setIsQrModalOpen] = useState(false)
+  const [selectedUserForQr, setSelectedUserForQr] = useState<User | null>(null)
   const [filterTab, setFilterTab] = useState("all")
   
   const [loading, setLoading] = useState(true)
@@ -90,7 +103,7 @@ export default function UserManagementPage() {
   const fetchInitialData = async () => {
     try {
       setLoading(true)
-      const [usersRes, rolesSnap, vendorsSnap, companiesSnap, buildingsSnap, cafeteriasSnap, globalShiftsRes, templatesRes] = await Promise.all([
+      const [usersRes, rolesSnap, vendorsSnap, companiesSnap, buildingsSnap, cafeteriasSnap, globalShiftsRes, templatesRes, qrLinksRes] = await Promise.all([
         usersService.getAll(),
         getDocs(collection(db, 'roles')),
         getDocs(collection(db, 'vendors')),
@@ -98,7 +111,8 @@ export default function UserManagementPage() {
         getDocs(collection(db, 'buildings')),
         getDocs(collection(db, 'cafetarias')), // Ensure this matches your DB collection name
         globalShiftsService.getAll(),
-        complianceTemplatesService.getAll()
+        complianceTemplatesService.getAll(),
+        qrLinksService.getAll().catch(() => [])
       ])
 
       let allUsers = usersRes;
@@ -133,6 +147,7 @@ export default function UserManagementPage() {
       setCafeterias(cafeteriasSnap.docs.map(d => ({ id: d.id, ...d.data() })))
       setGlobalShifts(globalShiftsRes)
       setComplianceTemplates(templatesRes)
+      setQrLinks(qrLinksRes || [])
     } catch (error) {
       console.error(error)
       toast({ title: "Error", description: "Failed to load data", variant: "destructive" })
@@ -144,6 +159,74 @@ export default function UserManagementPage() {
   const availableManagers = useMemo(() => {
     return data.filter(u => u.id !== editingId);
   }, [data, editingId]);
+
+  const userMatchingQrLinks = useMemo(() => {
+    if (!selectedUserForQr) return [];
+    const compIds = selectedUserForQr.companyIds || [];
+    const cafeIds = selectedUserForQr.cafeteriaIds || [];
+    const bldgIds = selectedUserForQr.buildingIds || [];
+
+    return qrLinks.filter(l => {
+      if (cafeIds.length > 0 && cafeIds.includes(l.cafeId)) return true;
+      if (bldgIds.length > 0 && bldgIds.includes(l.buildingId)) return true;
+      if (compIds.length > 0 && compIds.includes(l.companyId)) return true;
+      if (selectedUserForQr.userType === 'super_admin' && compIds.length === 0) return true;
+      return false;
+    });
+  }, [qrLinks, selectedUserForQr]);
+
+  const handleOpenUserQrLinks = (user: User) => {
+    setSelectedUserForQr(user);
+    setIsQrModalOpen(true);
+  };
+
+  const downloadUserQR = (link: QRLink) => {
+    const svg = document.getElementById(`user-qr-${link.id}`);
+    if (!svg) return;
+    const svgData = new XMLSerializer().serializeToString(svg);
+    const scaledSvgData = svgData
+      .replace(/width="140"/, 'width="800"')
+      .replace(/height="140"/, 'height="800"');
+      
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
+    const img = new Image();
+    
+    img.onload = () => {
+      const qrSize = 800; 
+      const padding = 60;
+      const headerHeight = 220; 
+      
+      canvas.width = qrSize + (padding * 2); 
+      canvas.height = qrSize + headerHeight + (padding * 2);
+      
+      if (!ctx) return;
+      
+      ctx.fillStyle = "white";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      
+      ctx.textAlign = "center";
+      const centerX = canvas.width / 2;
+      
+      ctx.fillStyle = "#0f172a"; 
+      ctx.font = "bold 52px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+      ctx.fillText(link.cafeName || "Facility Dining Area", centerX, padding + 65);
+      
+      ctx.fillStyle = "#64748b";
+      ctx.font = "500 30px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+      ctx.fillText(`${link.companyName} • ${link.buildingName}`, centerX, padding + 125);
+      
+      ctx.drawImage(img, padding, padding + headerHeight, qrSize, qrSize);
+      
+      const pngFile = canvas.toDataURL("image/png");
+      const downloadLink = document.createElement("a");
+      downloadLink.download = `QR-${(link.cafeName || 'Facility').replace(/[^a-zA-Z0-9]/g, "_")}.png`;
+      downloadLink.href = pngFile;
+      downloadLink.click();
+    };
+    
+    img.src = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(scaledSvgData)))}`;
+  };
 
   const [searchQuery, setSearchQuery] = useState("")
   const [selectedCompanyId, setSelectedCompanyId] = useState("all")
@@ -359,7 +442,7 @@ export default function UserManagementPage() {
       // Safeguard for live browser state that might still have an object instead of a string
       const safeCafeId = typeof cafeId === 'string' ? cafeId : (cafeId as any).id || cafeId;
 
-      const updatedShifts = (cafe.shifts || []).map(s => 
+      const updatedShifts = (cafe.shifts || []).map((s: any) => 
         s.id === shift.id 
           ? { ...s, name: shiftName.trim(), startTime, endTime } 
           : s
@@ -422,7 +505,7 @@ export default function UserManagementPage() {
     })
   }
 
-  const updateShiftDetails = (cafeteriaId: string, shiftId: string, updates: Partial<typeof formData.assignedShifts[0]>) => {
+  const updateShiftDetails = (cafeteriaId: string, shiftId: string, updates: Partial<NonNullable<typeof formData.assignedShifts>[0]>) => {
     setFormData(prev => {
       const current = prev.assignedShifts || [];
       return {
@@ -464,6 +547,14 @@ export default function UserManagementPage() {
       canApproveRequests: !!user.canApproveRequests,
       canRequestChanges: !!user.canRequestChanges,
       allowHoAttendance: !!user.allowHoAttendance,
+      canViewTickets: !!user.canViewTickets,
+      canResolveTickets: !!user.canResolveTickets,
+      requirePhotoForTicketResolution: !!user.requirePhotoForTicketResolution,
+      canManageQRLinks: !!user.canManageQRLinks,
+      canAccessVendorSOP: !!user.canAccessVendorSOP,
+      canAccessTemperature: !!user.canAccessTemperature,
+      canAccessFefo: !!user.canAccessFefo,
+      canSetSiteLocation: !!user.canSetSiteLocation,
     })
     setIsModalOpen(true)
   }
@@ -517,6 +608,26 @@ export default function UserManagementPage() {
       setData(updatedUsers);
     } catch (error) {
       toast({ title: "Error", description: "Failed to update status", variant: "destructive" });
+    }
+  }
+
+  const handleToggleSiteLocationAccess = async (user: User) => {
+    const newStatus = !user.canSetSiteLocation;
+    try {
+      await usersService.update(user.id, { canSetSiteLocation: newStatus });
+      setData(prev => prev.map(u => u.id === user.id ? { ...u, canSetSiteLocation: newStatus } : u));
+      toast({
+        title: newStatus ? "📍 Site Location Access Granted" : "🔒 Site Location Access Revoked",
+        description: newStatus 
+          ? `Temporary GPS calibration permission enabled for ${user.name}. They can now set site location in CatterCom Attendance.`
+          : `Site location permission disabled for ${user.name}.`,
+      });
+    } catch (error: any) {
+      toast({
+        title: "Update Failed",
+        description: error.message || "Failed to toggle location permission",
+        variant: "destructive"
+      });
     }
   }
 
@@ -635,6 +746,16 @@ export default function UserManagementPage() {
                       {user.roleKey}
                     </Badge>
                     <span className="text-[10px] text-gray-500 uppercase">{user.userType?.replace('_', ' ')}</span>
+                    <div className="flex flex-wrap gap-1 mt-0.5">
+                      {user.canViewTickets && <Badge variant="outline" className="text-[9px] py-0 px-1 bg-indigo-50 text-indigo-700 border-indigo-200 font-medium">🎫 Tickets</Badge>}
+                      {user.canResolveTickets && <Badge variant="outline" className="text-[9px] py-0 px-1 bg-emerald-50 text-emerald-700 border-emerald-200 font-medium">✓ Resolve</Badge>}
+                      {user.requirePhotoForTicketResolution && <Badge variant="outline" className="text-[9px] py-0 px-1 bg-amber-50 text-amber-700 border-amber-200 font-medium">📸 Photo Proof</Badge>}
+                      {user.canManageQRLinks && <Badge variant="outline" className="text-[9px] py-0 px-1 bg-purple-50 text-purple-700 border-purple-200 font-medium">QR Link</Badge>}
+                      {user.canAccessVendorSOP && <Badge variant="outline" className="text-[9px] py-0 px-1 bg-sky-50 text-sky-700 border-sky-200 font-medium">✨ Vendor SOP</Badge>}
+                      {user.canAccessTemperature && <Badge variant="outline" className="text-[9px] py-0 px-1 bg-rose-50 text-rose-700 border-rose-200 font-medium">🌡️ Temp</Badge>}
+                      {user.canAccessFefo && <Badge variant="outline" className="text-[9px] py-0 px-1 bg-amber-50 text-amber-700 border-amber-200 font-medium">📦 FIFO/FEFO</Badge>}
+                      {user.canSetSiteLocation && <Badge variant="outline" className="text-[9px] py-0 px-1 bg-emerald-50 text-emerald-800 border-emerald-300 font-bold">📍 Set Location (Temp)</Badge>}
+                    </div>
                   </div>
                 </TableCell>
                 <TableCell className="text-sm">{getVendorName(user.vendorId)}</TableCell>
@@ -646,8 +767,8 @@ export default function UserManagementPage() {
                     {user.companyIds?.length > 0 && <span className="text-[10px] font-semibold text-blue-600 bg-blue-50 px-2 py-0.5 rounded w-fit">{user.companyIds.length} Companies</span>}
                     {user.buildingIds?.length > 0 && <span className="text-[10px] font-semibold text-purple-600 bg-purple-50 px-2 py-0.5 rounded w-fit">{user.buildingIds.length} Buildings</span>}
                     {user.cafeteriaIds?.length > 0 && <span className="text-[10px] font-semibold text-orange-600 bg-orange-50 px-2 py-0.5 rounded w-fit">{user.cafeteriaIds.length} Cafeterias</span>}
-                    {user.assignedShifts?.length > 0 && <span className="text-[10px] font-semibold text-teal-600 bg-teal-50 px-2 py-0.5 rounded w-fit">{user.assignedShifts.length} Shifts</span>}
-                    {(!user.companyIds?.length && !user.buildingIds?.length && !user.cafeteriaIds?.length && !user.assignedShifts?.length) && <span className="text-xs text-gray-400">—</span>}
+                    {(user.assignedShifts?.length || 0) > 0 && <span className="text-[10px] font-semibold text-teal-600 bg-teal-50 px-2 py-0.5 rounded w-fit">{user.assignedShifts?.length} Shifts</span>}
+                    {(!user.companyIds?.length && !user.buildingIds?.length && !user.cafeteriaIds?.length && !(user.assignedShifts?.length || 0)) && <span className="text-xs text-gray-400">—</span>}
                   </div>
                 </TableCell>
                 <TableCell>
@@ -656,7 +777,31 @@ export default function UserManagementPage() {
                   </Badge>
                 </TableCell>
                 <TableCell className="text-right">
-                  <div className="flex items-center justify-end gap-2">
+                  <div className="flex items-center justify-end gap-1.5">
+                    {/* Temporary Button: Allow User/Supervisor to Set Site Location */}
+                    <Button 
+                      variant="ghost" 
+                      title={user.canSetSiteLocation ? "Temporary Site Location: ENABLED (Click to revoke)" : "Temporary Site Location: DISABLED (Click to enable so this user/supervisor can set site location in attendance)"} 
+                      className={`h-8 px-2 flex items-center gap-1 text-xs rounded-md border transition-all ${
+                        user.canSetSiteLocation 
+                          ? "bg-amber-100/90 text-amber-900 border-amber-300 hover:bg-amber-200 font-semibold" 
+                          : "text-gray-400 border-dashed border-gray-200 hover:text-amber-700 hover:border-amber-200 hover:bg-amber-50"
+                      }`} 
+                      onClick={() => handleToggleSiteLocationAccess(user)}
+                    >
+                      <MapPin className={`h-3.5 w-3.5 ${user.canSetSiteLocation ? "text-amber-700 fill-amber-500" : "text-gray-400"}`} />
+                      <span className="hidden xl:inline text-[10px]">
+                        {user.canSetSiteLocation ? "Site GPS On" : "Allow GPS"}
+                      </span>
+                    </Button>
+                    <Button 
+                      variant="ghost" 
+                      title="View Assigned Facility QR Codes" 
+                      className="h-8 w-8 p-0 text-purple-600 hover:text-purple-800 hover:bg-purple-50" 
+                      onClick={() => handleOpenUserQrLinks(user)}
+                    >
+                      <QrCode className="h-4 w-4" />
+                    </Button>
                     <Button variant="ghost" className="h-8 w-8 p-0 text-blue-600 hover:text-blue-800 hover:bg-blue-50" onClick={() => handleEdit(user)}>
                       <Pencil className="h-4 w-4" />
                     </Button>
@@ -1419,7 +1564,154 @@ export default function UserManagementPage() {
               </div>
             )}
 
+            {/* --- SECTION 4: FEEDBACK TICKETS & QR CODES GOVERNANCE --- */}
+            <div className="col-span-1 md:col-span-2 border-b pb-2 mt-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
+                    <TicketIcon className="h-5 w-5 text-indigo-600" /> Feedback Tickets & QR Governance
+                  </h3>
+                  <p className="text-xs text-gray-500">Configure access to dining & facility feedback tickets, QR codes, and photo resolution requirements.</p>
+                </div>
+                {(formData.companyIds?.length > 0 || formData.cafeteriaIds?.length > 0) && (
+                  <Button 
+                    type="button" 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={() => {
+                      setSelectedUserForQr({
+                        id: editingId || 'temp',
+                        name: formData.name || 'User',
+                        companyIds: formData.companyIds,
+                        cafeteriaIds: formData.cafeteriaIds,
+                        buildingIds: formData.buildingIds
+                      } as any);
+                      setIsQrModalOpen(true);
+                    }}
+                    className="text-xs border-indigo-200 text-indigo-700 hover:bg-indigo-50 shrink-0"
+                  >
+                    <QrCode className="h-3.5 w-3.5 mr-1 text-indigo-600" /> View Facility QR Codes
+                  </Button>
+                )}
+              </div>
+            </div>
 
+            <div className="col-span-1 md:col-span-2 space-y-3 bg-indigo-50/40 p-4 rounded-xl border border-indigo-100">
+              <div className="p-3 bg-white border border-indigo-100 rounded-lg flex items-center justify-between shadow-sm">
+                <div className="pr-4">
+                  <Label className="text-indigo-950 font-semibold text-sm">Can View Feedback Tickets & QR Links</Label>
+                  <p className="text-xs text-gray-500 mt-0.5">Allows this user to access the Tickets & QR Links tab in CatterCom mobile app and Admin panel to monitor diner feedback.</p>
+                </div>
+                <Switch 
+                  checked={!!formData.canViewTickets}
+                  onCheckedChange={(checked) => setFormData(prev => ({ ...prev, canViewTickets: checked }))}
+                />
+              </div>
+
+              <div className="p-3 bg-white border border-indigo-100 rounded-lg flex items-center justify-between shadow-sm">
+                <div className="pr-4">
+                  <Label className="text-indigo-950 font-semibold text-sm">Can Resolve Feedback Tickets</Label>
+                  <p className="text-xs text-gray-500 mt-0.5">Grants authority to change ticket status to 'In Progress', 'Resolved', or 'Closed'.</p>
+                </div>
+                <Switch 
+                  checked={!!formData.canResolveTickets}
+                  onCheckedChange={(checked) => setFormData(prev => ({ ...prev, canResolveTickets: checked }))}
+                />
+              </div>
+
+              <div className="p-3 bg-white border border-amber-200 rounded-lg flex items-center justify-between shadow-sm bg-amber-50/20">
+                <div className="pr-4">
+                  <div className="flex items-center gap-2">
+                    <Label className="text-amber-950 font-semibold text-sm">Require Photo Proof for Resolution</Label>
+                    <Badge className="bg-amber-100 text-amber-800 text-[10px] font-semibold border-amber-200">Mandatory Proof</Badge>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-0.5">When enabled, the user MUST capture or attach before/after photo proof in CatterCom before a ticket can be marked as Resolved.</p>
+                </div>
+                <Switch 
+                  checked={!!formData.requirePhotoForTicketResolution}
+                  onCheckedChange={(checked) => setFormData(prev => ({ ...prev, requirePhotoForTicketResolution: checked }))}
+                />
+              </div>
+
+              <div className="p-3 bg-white border border-indigo-100 rounded-lg flex items-center justify-between shadow-sm">
+                <div className="pr-4">
+                  <Label className="text-indigo-950 font-semibold text-sm">Can Manage & Generate QR Codes</Label>
+                  <p className="text-xs text-gray-500 mt-0.5">Allows user to generate new QR feedback cards, customize questions/headers, and download printable QR signs.</p>
+                </div>
+                <Switch 
+                  checked={!!formData.canManageQRLinks}
+                  onCheckedChange={(checked) => setFormData(prev => ({ ...prev, canManageQRLinks: checked }))}
+                />
+              </div>
+            </div>
+
+            {/* Specialized Compliance Models Permission Section */}
+            <div className="col-span-1 md:col-span-2 space-y-3 bg-emerald-50/40 p-4 rounded-xl border border-emerald-100">
+              <div className="flex items-center gap-2 mb-1">
+                <Sparkles className="h-4 w-4 text-emerald-600" />
+                <h4 className="text-xs font-bold uppercase tracking-wider text-emerald-900">Operational Compliance Modules Permissions</h4>
+              </div>
+
+              {/* Vendor HO SOPs */}
+              <div className="p-3 bg-white border border-emerald-100 rounded-lg flex items-center justify-between shadow-sm">
+                <div className="pr-4">
+                  <div className="flex items-center gap-2">
+                    <Label className="text-emerald-950 font-semibold text-sm">Vendor HO SOPs & Audit Formats</Label>
+                    <Badge className="bg-sky-50 text-sky-700 border-sky-200 text-[10px]">10 Formats</Badge>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-0.5">Allows this user to access, view, and audit the 10 Standard Vendor SOP compliance formats in CatterCom app and Admin panel.</p>
+                </div>
+                <Switch 
+                  checked={!!formData.canAccessVendorSOP}
+                  onCheckedChange={(checked) => setFormData(prev => ({ ...prev, canAccessVendorSOP: checked }))}
+                />
+              </div>
+
+              {/* Temperature Monitoring */}
+              <div className="p-3 bg-white border border-emerald-100 rounded-lg flex items-center justify-between shadow-sm">
+                <div className="pr-4">
+                  <div className="flex items-center gap-2">
+                    <Label className="text-emerald-950 font-semibold text-sm">Temperature Monitoring (FSSAI)</Label>
+                    <Badge className="bg-rose-50 text-rose-700 border-rose-200 text-[10px]">Probe Temp</Badge>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-0.5">Allows this user to view temperature records, probe logs, and perform kitchen readiness/dispatch audits in CatterCom app and Admin panel.</p>
+                </div>
+                <Switch 
+                  checked={!!formData.canAccessTemperature}
+                  onCheckedChange={(checked) => setFormData(prev => ({ ...prev, canAccessTemperature: checked }))}
+                />
+              </div>
+
+              {/* FIFO / FEFO Stock Rotation */}
+              <div className="p-3 bg-white border border-emerald-100 rounded-lg flex items-center justify-between shadow-sm">
+                <div className="pr-4">
+                  <div className="flex items-center gap-2">
+                    <Label className="text-emerald-950 font-semibold text-sm">FIFO / FEFO Stock & Expiry Audit</Label>
+                    <Badge className="bg-amber-50 text-amber-700 border-amber-200 text-[10px]">Stock Rotation</Badge>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-0.5">Allows this user to access pantry FIFO dry stock, dairy/perishable FEFO batch auditing, and expiry tracking in CatterCom app and Admin panel.</p>
+                </div>
+                <Switch 
+                  checked={!!formData.canAccessFefo}
+                  onCheckedChange={(checked) => setFormData(prev => ({ ...prev, canAccessFefo: checked }))}
+                />
+              </div>
+
+              {/* Temporary Site Location Access */}
+              <div className="p-3 bg-white border border-emerald-100 rounded-lg flex items-center justify-between shadow-sm">
+                <div className="pr-4">
+                  <div className="flex items-center gap-2">
+                    <Label className="text-emerald-950 font-semibold text-sm">Allow Set Site Location (Temporary / Supervisor)</Label>
+                    <Badge className="bg-amber-50 text-amber-700 border-amber-200 text-[10px]">📍 Attendance GPS</Badge>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-0.5">Allows this user (including supervisors) to configure and update the site/cafeteria GPS geofence location directly from the CatterCom mobile attendance screen.</p>
+                </div>
+                <Switch 
+                  checked={!!formData.canSetSiteLocation}
+                  onCheckedChange={(checked) => setFormData(prev => ({ ...prev, canSetSiteLocation: checked }))}
+                />
+              </div>
+            </div>
 
           </div>
           
@@ -1428,6 +1720,101 @@ export default function UserManagementPage() {
             <Button onClick={handleSave} disabled={isSaving}>
               {isSaving ? "Saving..." : "Save User"}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── USER ASSIGNED FACILITY QR CODES MODAL ───────────────────────── */}
+      <Dialog open={isQrModalOpen} onOpenChange={setIsQrModalOpen}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-lg">
+              <QrCode className="h-5 w-5 text-indigo-600" />
+              Assigned Facility QR Codes {selectedUserForQr ? `– ${selectedUserForQr.name}` : ""}
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            {userMatchingQrLinks.length === 0 ? (
+              <div className="text-center py-10 border-2 border-dashed rounded-xl bg-gray-50">
+                <QrCode className="h-12 w-12 text-gray-300 mx-auto mb-2" />
+                <p className="text-sm font-medium text-gray-600">No generated QR links found for this user's assigned facilities.</p>
+                <p className="text-xs text-gray-400 mt-1 max-w-sm mx-auto">
+                  You can generate dining feedback QR links in the QR Links management module.
+                </p>
+                <Button 
+                  className="mt-4 text-xs bg-indigo-600 hover:bg-indigo-700" 
+                  size="sm"
+                  onClick={() => window.open("/admin/qr-links", "_blank")}
+                >
+                  <ExternalLink className="h-3.5 w-3.5 mr-1" /> Open QR Links Manager
+                </Button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {userMatchingQrLinks.map((link) => {
+                  const origin = typeof window !== 'undefined' ? window.location.origin : '';
+                  const reportUrl = `${origin}/report/${link.id}`;
+
+                  return (
+                    <div key={link.id} className="border border-slate-200 rounded-xl p-4 bg-white shadow-sm flex flex-col justify-between">
+                      <div>
+                        <div className="flex items-start justify-between">
+                          <div>
+                            <h4 className="font-bold text-sm text-slate-800">{link.cafeName || "Dining Area"}</h4>
+                            <p className="text-xs text-slate-500">{link.companyName} • {link.buildingName}</p>
+                          </div>
+                          <Badge variant="outline" className="text-[10px] bg-indigo-50 text-indigo-700 border-indigo-200">Active</Badge>
+                        </div>
+
+                        <div className="flex justify-center py-4 bg-slate-50/50 rounded-lg my-3 border border-slate-100">
+                          <QRCodeSVG
+                            id={`user-qr-${link.id}`}
+                            value={reportUrl}
+                            size={140}
+                            level="H"
+                            includeMargin={true}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="space-y-2 pt-2 border-t border-slate-100">
+                        <div className="flex items-center gap-1.5">
+                          <Input 
+                            readOnly 
+                            value={reportUrl} 
+                            className="text-[11px] font-mono bg-slate-50 h-7 text-slate-500" 
+                          />
+                          <Button 
+                            size="icon" 
+                            variant="outline" 
+                            className="h-7 w-7 shrink-0 text-slate-600 hover:text-indigo-600"
+                            onClick={() => {
+                              navigator.clipboard.writeText(reportUrl);
+                              toast({ title: "Copied!", description: "Feedback URL copied to clipboard." });
+                            }}
+                            title="Copy link"
+                          >
+                            <LinkIcon className="h-3 w-3" />
+                          </Button>
+                        </div>
+
+                        <Button 
+                          className="w-full text-xs h-8 gap-1.5 bg-indigo-600 hover:bg-indigo-700" 
+                          onClick={() => downloadUserQR(link)}
+                        >
+                          <Download className="h-3.5 w-3.5" /> Download Printable QR
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="border-t pt-3">
+            <Button variant="outline" onClick={() => setIsQrModalOpen(false)}>Close</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

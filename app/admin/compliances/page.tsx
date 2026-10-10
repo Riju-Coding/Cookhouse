@@ -167,6 +167,37 @@ export default function ComplianceDashboardPage() {
         mergedRecords = mergedRecords.filter(r => r.vendorId === userProfile.vendorId)
         templatesRes = templatesRes.filter(t => t.vendorId === userProfile.vendorId)
       }
+
+      // 3. Operational compliance permissions filtering
+      if (userType !== 'super_admin') {
+        const canTemp = !!userProfile?.canAccessTemperature
+        const canVendorSop = !!userProfile?.canAccessVendorSOP
+        const canFefo = !!userProfile?.canAccessFefo
+
+        templatesRes = templatesRes.filter(t => {
+          const type = t.type || ''
+          const isTemp = type === 'kitchen_readiness' || type === 'dispatch' || type === 'service_point' || t.name.toLowerCase().includes('temp')
+          const isVendorSop = type.includes('vendor') || type.includes('sop') || t.name.toLowerCase().includes('sop')
+          const isFefo = t.name.toLowerCase().includes('fefo') || t.name.toLowerCase().includes('fifo')
+
+          if (isTemp && !canTemp) return false
+          if (isVendorSop && !canVendorSop) return false
+          if (isFefo && !canFefo) return false
+          return true
+        })
+
+        mergedRecords = mergedRecords.filter(r => {
+          const name = ((r as any).templateName || (r as any).formName || '').toLowerCase()
+          const isTemp = name.includes('temp') || name.includes('kitchen readiness') || name.includes('dispatch') || name.includes('service point')
+          const isVendorSop = name.includes('vendor') || name.includes('sop')
+          const isFefo = name.includes('fefo') || name.includes('fifo') || name.includes('expiry') || name.includes('stock')
+
+          if (isTemp && !canTemp) return false
+          if (isVendorSop && !canVendorSop) return false
+          if (isFefo && !canFefo) return false
+          return true
+        })
+      }
       
       setRecords(mergedRecords)
       setVendors(vSnap.docs.map(d => ({ id: d.id, ...d.data() })))

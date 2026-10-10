@@ -21,7 +21,16 @@ export interface Ticket {
   assigneeName?: string
   slaBreachAt: Timestamp
   category?: string
+  buildingId?: string
   buildingName?: string
+  cafeId?: string
+  cafeName?: string
+  resolutionPhotoUrl?: string
+  resolutionPhotos?: string[]
+  resolutionNotes?: string
+  resolvedBy?: string
+  resolvedByName?: string
+  resolvedAt?: Timestamp
 }
 
 export interface TicketComment {
@@ -84,18 +93,67 @@ export const ticketService = {
       console.error('Error initiating sync to sheets:', err);
     }
 
+    // Trigger Live Notification Shoot (Expo push + live_notifications stream)
+    try {
+      fetch('/api/notifications/shoot', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          ticketId: docRef.id,
+          title: data.title,
+          description: data.description,
+          companyId: data.companyId,
+          companyName: data.companyName,
+          buildingId: data.buildingId || '',
+          buildingName: data.buildingName || '',
+          cafeId: data.cafeId || '',
+          cafeName: data.cafeName || '',
+          category: data.category || 'General',
+          priority: data.priority,
+          creatorName: data.creatorName || 'Public Guest'
+        }),
+      }).catch(err => console.error('Failed to shoot live notification:', err));
+    } catch (err) {
+      console.error('Error initiating live notification shoot:', err);
+    }
+
     return docRef.id
   },
 
-  async updateTicketStatus(ticketId: string, status: TicketStatus, assigneeId?: string, assigneeName?: string): Promise<void> {
+  async updateTicketStatus(
+    ticketId: string, 
+    status: TicketStatus, 
+    assigneeId?: string, 
+    assigneeName?: string,
+    resolutionData?: {
+      resolutionNotes?: string;
+      resolutionPhotoUrl?: string;
+      resolutionPhotos?: string[];
+      resolvedBy?: string;
+      resolvedByName?: string;
+    }
+  ): Promise<void> {
     const docRef = doc(db, TICKETS_COLLECTION, ticketId)
+    const now = Timestamp.now()
     const updateData: any = {
       status,
-      updatedAt: Timestamp.now()
+      updatedAt: now
     }
     if (assigneeId && assigneeName) {
       updateData.assigneeId = assigneeId
       updateData.assigneeName = assigneeName
+    }
+    if (status === 'Resolved' || status === 'Closed') {
+      updateData.resolvedAt = now
+      if (resolutionData) {
+        if (resolutionData.resolutionNotes) updateData.resolutionNotes = resolutionData.resolutionNotes
+        if (resolutionData.resolutionPhotoUrl) updateData.resolutionPhotoUrl = resolutionData.resolutionPhotoUrl
+        if (resolutionData.resolutionPhotos) updateData.resolutionPhotos = resolutionData.resolutionPhotos
+        if (resolutionData.resolvedBy) updateData.resolvedBy = resolutionData.resolvedBy
+        if (resolutionData.resolvedByName) updateData.resolvedByName = resolutionData.resolvedByName
+      }
     }
     await updateDoc(docRef, updateData)
   },
