@@ -67,6 +67,15 @@ export default function TicketingDashboard() {
       if (isCompanyAdmin && userProfile?.companyIds?.length) {
         initialTickets = fetchedTickets.filter(t => userProfile.companyIds.includes(t.companyId))
       }
+      if (!isSuperAdmin && userProfile?.departments && userProfile.departments.length > 0) {
+        initialTickets = initialTickets.filter(t => {
+          const cat = (t.category || "").trim().toLowerCase()
+          return userProfile.departments!.some((d: string) => {
+            const dl = d.trim().toLowerCase()
+            return cat === dl || cat.includes(dl) || dl.includes(cat)
+          })
+        })
+      }
       
       setTickets(initialTickets)
       if (!isCompanyAdmin) setLeaderboard(fetchedLeaderboard)
@@ -80,7 +89,7 @@ export default function TicketingDashboard() {
   useEffect(() => {
     fetchData()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userProfile?.companyIds, userType])
+  }, [userProfile?.companyIds, userProfile?.departments, userType])
 
   // derived filtered tickets
   const filteredTickets = useMemo(() => {

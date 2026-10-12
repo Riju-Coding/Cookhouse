@@ -18,6 +18,9 @@ export interface QRLinkCustomization {
   showFeedbackFormSubHeader?: boolean;
   showPriority?: boolean;
   showRemarks?: boolean;
+  isRemarksMandatory?: boolean;
+  showPhotos?: boolean;
+  isPhotosMandatory?: boolean;
   showIssueCategory?: boolean;
   issueCategoryLabel?: string;
   issueCategoryPlaceholder?: string;
@@ -34,9 +37,16 @@ export interface QRLink {
   createdAt: Timestamp
   createdBy: string
   createdByName: string
-  requireName?: boolean
-  requireEmail?: boolean
-  requireEmployeeId?: boolean
+  requireName?: boolean // true if shown
+  isNameMandatory?: boolean // true if mandatory, false if optional
+  requireEmail?: boolean // true if shown
+  isEmailMandatory?: boolean // true if mandatory, false if optional
+  requireEmployeeId?: boolean // true if shown
+  isEmployeeIdMandatory?: boolean // true if mandatory, false if optional
+  showRemarks?: boolean
+  isRemarksMandatory?: boolean
+  showPhotos?: boolean
+  isPhotosMandatory?: boolean
   customization?: QRLinkCustomization
 }
 

@@ -78,6 +78,17 @@ export async function POST(req: NextRequest) {
         }
       }
 
+      // If user is assigned to specific departments, they only receive notifications for those departments
+      const userDepartments: string[] = Array.isArray(u.departments) ? u.departments : []
+      if (isEligible && userDepartments.length > 0 && u.userType !== "super_admin") {
+        const deptMatches = userDepartments.some(
+          d => d.trim().toLowerCase() === category.trim().toLowerCase()
+        )
+        if (!deptMatches) {
+          isEligible = false
+        }
+      }
+
       if (isEligible) {
         eligibleUserIds.push(docSnap.id)
 

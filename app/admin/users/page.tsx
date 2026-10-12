@@ -63,6 +63,8 @@ const initialUserState: Omit<User, "id" | "createdAt" | "updatedAt"> = {
   assignedShifts: [],
   managerId: "",
   status: 'active',
+  departments: [],
+  receiveFeedbackEmails: false,
 }
 
 export default function UserManagementPage() {
@@ -80,6 +82,22 @@ export default function UserManagementPage() {
   const [isQrModalOpen, setIsQrModalOpen] = useState(false)
   const [selectedUserForQr, setSelectedUserForQr] = useState<User | null>(null)
   const [filterTab, setFilterTab] = useState("all")
+
+  // Departments derived from QR links categories + standard categories
+  const allDepartments: string[] = useMemo(() => {
+    const deptSet = new Set<string>(["Cleaning and Hygiene", "Food Quality", "Food Shortage", "Staff"])
+    for (const link of qrLinks) {
+      const issueCats = link.customization?.issueCategories || []
+      for (const cat of issueCats) {
+        if (cat) deptSet.add(cat)
+      }
+      const allCats = link.customization?.allCategories || []
+      for (const cat of allCats) {
+        if (cat) deptSet.add(cat)
+      }
+    }
+    return Array.from(deptSet)
+  }, [qrLinks])
   
   const [loading, setLoading] = useState(true)
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -555,6 +573,8 @@ export default function UserManagementPage() {
       canAccessTemperature: !!user.canAccessTemperature,
       canAccessFefo: !!user.canAccessFefo,
       canSetSiteLocation: !!user.canSetSiteLocation,
+      departments: user.departments || [],
+      receiveFeedbackEmails: !!user.receiveFeedbackEmails,
     })
     setIsModalOpen(true)
   }
@@ -756,6 +776,30 @@ export default function UserManagementPage() {
                       {user.canAccessFefo && <Badge variant="outline" className="text-[9px] py-0 px-1 bg-amber-50 text-amber-700 border-amber-200 font-medium">📦 FIFO/FEFO</Badge>}
                       {user.canSetSiteLocation && <Badge variant="outline" className="text-[9px] py-0 px-1 bg-emerald-50 text-emerald-800 border-emerald-300 font-bold">📍 Set Location (Temp)</Badge>}
                     </div>
+                    {/* Assigned Departments & Email Alerts */}
+                    {(user.departments && user.departments.length > 0) ? (
+                      <div className="flex flex-wrap items-center gap-1 mt-1 pt-1 border-t border-slate-100">
+                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Dept:</span>
+                        {user.departments.map(dept => (
+                          <Badge key={dept} variant="outline" className="text-[9px] py-0 px-1 bg-purple-50 text-purple-700 border-purple-200 font-semibold">
+                            🏷️ {dept}
+                          </Badge>
+                        ))}
+                        {user.receiveFeedbackEmails && (
+                          <Badge variant="outline" className="text-[9px] py-0 px-1 bg-emerald-50 text-emerald-700 border-emerald-200 font-bold">
+                            ✉️ Email Alerts
+                          </Badge>
+                        )}
+                      </div>
+                    ) : (
+                      user.receiveFeedbackEmails ? (
+                        <div className="flex items-center gap-1 mt-1 pt-1 border-t border-slate-100">
+                          <Badge variant="outline" className="text-[9px] py-0 px-1 bg-emerald-50 text-emerald-700 border-emerald-200 font-bold">
+                            ✉️ All Depts Alerts
+                          </Badge>
+                        </div>
+                      ) : null
+                    )}
                   </div>
                 </TableCell>
                 <TableCell className="text-sm">{getVendorName(user.vendorId)}</TableCell>
@@ -1641,6 +1685,93 @@ export default function UserManagementPage() {
                 <Switch 
                   checked={!!formData.canManageQRLinks}
                   onCheckedChange={(checked) => setFormData(prev => ({ ...prev, canManageQRLinks: checked }))}
+                />
+              </div>
+            </div>
+
+            {/* Department Assignment & Automated Feedback Email Routing */}
+            <div className="col-span-1 md:col-span-2 space-y-4 bg-purple-50/50 p-4 rounded-xl border border-purple-200 shadow-sm">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-purple-100">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-purple-100 text-purple-700 flex items-center justify-center font-bold text-sm shrink-0">
+                    🏷️
+                  </div>
+                  <div>
+                    <Label className="text-purple-950 font-bold text-sm">Department Assignment (Feedback Categories)</Label>
+                    <p className="text-xs text-purple-700/70">Users only receive feedback tickets & notifications for their assigned departments.</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setFormData(prev => ({ ...prev, departments: [...allDepartments] }))}
+                    className="h-7 text-[11px] bg-white border-purple-200 text-purple-700 hover:bg-purple-100 font-semibold"
+                  >
+                    Select All
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setFormData(prev => ({ ...prev, departments: [] }))}
+                    className="h-7 text-[11px] bg-white border-purple-200 text-purple-700 hover:bg-purple-100 font-semibold"
+                  >
+                    Clear All
+                  </Button>
+                </div>
+              </div>
+
+              {/* Department Checkbox Grid */}
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-purple-900">Select Applicable Departments:</Label>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 bg-white p-3 rounded-lg border border-purple-100 max-h-48 overflow-y-auto">
+                  {allDepartments.map(dept => {
+                    const isChecked = (formData.departments || []).includes(dept)
+                    return (
+                      <label
+                        key={dept}
+                        className={`flex items-center space-x-2 p-2 rounded-md border text-xs font-semibold cursor-pointer transition-all ${
+                          isChecked
+                            ? "bg-purple-50 border-purple-300 text-purple-900 shadow-xs"
+                            : "bg-slate-50/50 border-slate-200 text-slate-600 hover:bg-slate-100"
+                        }`}
+                      >
+                        <Checkbox
+                          checked={isChecked}
+                          onCheckedChange={checked => {
+                            setFormData(prev => {
+                              const curr = prev.departments || []
+                              if (checked) {
+                                return { ...prev, departments: [...curr, dept] }
+                              } else {
+                                return { ...prev, departments: curr.filter(d => d !== dept) }
+                              }
+                            })
+                          }}
+                        />
+                        <span className="truncate">{dept}</span>
+                      </label>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {/* Email Notification Switch */}
+              <div className="p-3.5 bg-white border border-purple-200 rounded-lg flex items-center justify-between shadow-sm">
+                <div className="pr-4">
+                  <div className="flex items-center gap-2">
+                    <Label className="text-purple-950 font-bold text-sm">Receive Email Alerts for Assigned Departments</Label>
+                    <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[10px] font-bold">SMTP Gateway</Badge>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    When diners submit feedback for this user's assigned departments, immediately shoot an automated email to <strong>{formData.email || "this user's email"}</strong>.
+                  </p>
+                </div>
+                <Switch
+                  checked={!!formData.receiveFeedbackEmails}
+                  onCheckedChange={checked => setFormData(prev => ({ ...prev, receiveFeedbackEmails: checked }))}
                 />
               </div>
             </div>

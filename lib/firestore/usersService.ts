@@ -34,6 +34,8 @@ export interface User {
   canResolveTickets?: boolean; // Permission to resolve feedback tickets
   requirePhotoForTicketResolution?: boolean; // Require photo proof when resolving
   canManageQRLinks?: boolean; // Permission to generate/manage QR codes
+  departments?: string[]; // Assigned feedback categories/departments
+  receiveFeedbackEmails?: boolean; // Whether user receives email alerts for feedback in assigned departments
   canAccessVendorSOP?: boolean; // Permission to view & audit Vendor HO SOPs
   canAccessTemperature?: boolean; // Permission to view & record Temperature Monitoring
   canAccessFefo?: boolean; // Permission to view & audit FIFO/FEFO stock rotation

@@ -60,6 +60,7 @@ import { TimelineEntry as ImportedTimelineEntry } from "@/components/menu-edit-m
 import { ServiceNavigationPanel as ImportedServiceNavigationPanel } from "@/components/menu-edit-modal/service-navigation-panel"
 import { LoadingProgress as ImportedLoadingProgress } from "@/components/menu-edit-modal/loading-progress"
 import { DetailedDataScreen as ImportedDetailedDataScreen } from "@/components/menu-edit-modal/detailed-data-screen"
+import { CopyWeekToBuildingsModal } from "@/components/menu-edit-modal/copy-week-to-buildings-modal"
 
 // --- Local Services Definition ---
 // --- Types ---
@@ -2938,6 +2939,7 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
   const [showLogPanel, setShowLogPanel] = useState(false)
 
   const [conflictDrawerOpen, setConflictDrawerOpen] = useState(false)
+  const [copyWeekModalOpen, setCopyWeekModalOpen] = useState(false)
 
   const [conflictAnalysisData, setConflictAnalysisData] = useState<any[]>([])
   const [companies, setCompanies] = useState<any[]>([])
@@ -7301,6 +7303,17 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
           <div className="flex gap-2">
             {(menuType === "combined" || menuType === "company") && (
               <>
+                <Button
+                  variant="outline"
+                  type="button"
+                  onClick={() => setCopyWeekModalOpen(true)}
+                  disabled={saving || loading}
+                  className="border-indigo-300 text-indigo-700 hover:bg-indigo-50 font-semibold gap-1.5 shadow-xs"
+                  title="Copy specific weeks of this menu to other cafeteria buildings of this company"
+                >
+                  <ClipboardCopy className="h-4 w-4 text-indigo-600" />
+                  Copy Menu Week-Wise
+                </Button>
                 <div className="flex items-center space-x-2 mr-2">
                   <select
                     value={aiModel}
@@ -7542,6 +7555,24 @@ export function MenuEditModal({ isOpen, onClose, menuId, menuType, onSave, prelo
           mealPlanAssignments={mealPlanAssignments}
           // Pre-filled selections from previously saved choices
           initialSelections={initialChoiceSelections}
+        />
+
+        {/* Copy Menu Week-Wise to Other Buildings Modal */}
+        <CopyWeekToBuildingsModal
+          isOpen={copyWeekModalOpen}
+          onClose={() => setCopyWeekModalOpen(false)}
+          menu={menu}
+          menuData={menuData}
+          dateRange={dateRange}
+          buildings={buildings}
+          companies={companies}
+          userName={userName}
+          onSuccess={() => {
+            if (onSave) onSave()
+          }}
+          onLocalUpdate={(updater) => {
+            setMenuData(updater)
+          }}
         />
       </div>
     </div>

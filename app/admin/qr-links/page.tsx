@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Download, Plus, Link as LinkIcon, Trash2, Building2, QrCode, Settings2, User, Mail, IdCard, CheckCircle, XCircle, Loader2, Eye, Pencil, Check, X, RotateCcw, Tag, FolderPlus } from "lucide-react"
+import { Download, Plus, Link as LinkIcon, Trash2, Building2, QrCode, Settings2, User, Mail, IdCard, CheckCircle, XCircle, Loader2, Eye, Pencil, Check, X, RotateCcw, Tag, FolderPlus, FileText, Printer, Sparkles } from "lucide-react"
 import { qrLinksService, QRLink, QRLinkCustomization } from "@/lib/firestore/qrLinksService"
 import { companiesService, buildingsService, Company, Building } from "@/lib/firestore"
 import { cafeteriasService, Cafeteria } from "@/lib/firestore/cafeteriasService"
@@ -14,6 +14,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { toast } from "@/hooks/use-toast"
 import { useAuth } from "@/hooks/use-auth"
 import ReportPreview from "./ReportPreview"
+import { downloadStandeePdf } from "@/lib/standeePdfClient"
 
 
 // --- Customization Form Helper ---
@@ -390,9 +391,46 @@ function CustomizationFields({ data, onChange }: { data: any, onChange: (d: any)
           <span className="text-sm">Show Priority</span>
           <ToggleSwitch enabled={data.showPriority !== false} onChange={v => onChange({...data, showPriority: v})} />
         </div>
-        <div className="flex items-center justify-between bg-gray-50 p-2 rounded">
-          <span className="text-sm">Show Remarks Box</span>
-          <ToggleSwitch enabled={data.showRemarks !== false} onChange={v => onChange({...data, showRemarks: v})} />
+        <div className="flex items-center justify-between bg-gray-50 p-3 rounded-lg border border-slate-100">
+          <div>
+            <span className="text-sm font-semibold text-slate-800">Show Remarks / Description</span>
+            <p className="text-[11px] text-slate-400">Enable guest comments textarea</p>
+          </div>
+          <div className="flex items-center gap-4">
+            {data.showRemarks !== false && (
+              <label className="flex items-center gap-1.5 cursor-pointer text-xs font-semibold text-slate-600">
+                <Checkbox
+                  checked={!!data.isRemarksMandatory}
+                  onCheckedChange={c => onChange({...data, isRemarksMandatory: !!c})}
+                />
+                <span className={data.isRemarksMandatory ? "text-red-600 font-bold" : "text-slate-500"}>
+                  Mandatory *
+                </span>
+              </label>
+            )}
+            <ToggleSwitch enabled={data.showRemarks !== false} onChange={v => onChange({...data, showRemarks: v})} />
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between bg-gray-50 p-3 rounded-lg border border-slate-100">
+          <div>
+            <span className="text-sm font-semibold text-slate-800">Show Photo Upload Section</span>
+            <p className="text-[11px] text-slate-400">Allow guest to attach camera/gallery photos</p>
+          </div>
+          <div className="flex items-center gap-4">
+            {data.showPhotos !== false && (
+              <label className="flex items-center gap-1.5 cursor-pointer text-xs font-semibold text-slate-600">
+                <Checkbox
+                  checked={!!data.isPhotosMandatory}
+                  onCheckedChange={c => onChange({...data, isPhotosMandatory: !!c})}
+                />
+                <span className={data.isPhotosMandatory ? "text-red-600 font-bold" : "text-slate-500"}>
+                  Mandatory *
+                </span>
+              </label>
+            )}
+            <ToggleSwitch enabled={data.showPhotos !== false} onChange={v => onChange({...data, showPhotos: v})} />
+          </div>
         </div>
       </div>
     </div>
@@ -456,6 +494,9 @@ const initialCustomization: QRLinkCustomization = {
   showTrackTicket: true,
   showPriority: true,
   showRemarks: true,
+  isRemarksMandatory: false,
+  showPhotos: true,
+  isPhotosMandatory: false,
   showIssueCategory: true,
   issueCategoryLabel: "Issue Category",
   issueCategoryPlaceholder: "Select the type of issue",
@@ -482,8 +523,11 @@ export default function QRLinksPage() {
   const [selectedBuildingId, setSelectedBuildingId] = useState<string>("")
   const [selectedCafeId, setSelectedCafeId] = useState<string>("")
   const [requireName, setRequireName] = useState(false)
+  const [isNameMandatory, setIsNameMandatory] = useState(true)
   const [requireEmail, setRequireEmail] = useState(false)
+  const [isEmailMandatory, setIsEmailMandatory] = useState(true)
   const [requireEmployeeId, setRequireEmployeeId] = useState(false)
+  const [isEmployeeIdMandatory, setIsEmployeeIdMandatory] = useState(true)
   const [creating, setCreating] = useState(false)
 
   const [customization, setCustomization] = useState(initialCustomization)
@@ -494,12 +538,53 @@ export default function QRLinksPage() {
   const [editLink, setEditLink] = useState<QRLink | null>(null)
   const [editModalOpen, setEditModalOpen] = useState(false)
   const [editRequireName, setEditRequireName] = useState(false)
+  const [editIsNameMandatory, setEditIsNameMandatory] = useState(true)
   const [editRequireEmail, setEditRequireEmail] = useState(false)
+  const [editIsEmailMandatory, setEditIsEmailMandatory] = useState(true)
   const [editRequireEmployeeId, setEditRequireEmployeeId] = useState(false)
+  const [editIsEmployeeIdMandatory, setEditIsEmployeeIdMandatory] = useState(true)
   const [editSelectedCompanyId, setEditSelectedCompanyId] = useState<string>("")
   const [editSelectedBuildingId, setEditSelectedBuildingId] = useState<string>("")
   const [editSelectedCafeId, setEditSelectedCafeId] = useState<string>("")
   const [saving, setSaving] = useState(false)
+
+  // Standee Modal State
+  const [standeeLink, setStandeeLink] = useState<QRLink | null>(null)
+  const [standeeModalOpen, setStandeeModalOpen] = useState(false)
+  const [standeeStyle, setStandeeStyle] = useState<"criss_cross" | "diner">("criss_cross")
+  const [downloadingStandee, setDownloadingStandee] = useState(false)
+
+  const openStandeeModal = (link: QRLink) => {
+    setStandeeLink(link)
+    setStandeeStyle("criss_cross")
+    setStandeeModalOpen(true)
+  }
+
+  const handleDownloadStandee = async (link: QRLink, style: "criss_cross" | "diner") => {
+    try {
+      setDownloadingStandee(true)
+      const targetUrl = `${origin || (typeof window !== "undefined" ? window.location.origin : "")}/report/${link.id}`
+      await downloadStandeePdf({
+        url: targetUrl,
+        company: link.companyName,
+        building: link.buildingName,
+        cafe: link.cafeName,
+        style,
+      })
+      toast({
+        title: "Standee PDF Generated!",
+        description: `Downloaded 6x2.5 ft vector PDF for ${link.cafeName} (${style === "diner" ? "Diner Engagement" : "5-Step Flow"}).`,
+      })
+    } catch (err: any) {
+      toast({
+        title: "Error Generating PDF",
+        description: err?.message || "Could not generate standee PDF",
+        variant: "destructive",
+      })
+    } finally {
+      setDownloadingStandee(false)
+    }
+  }
 
   // Origin for full URLs
   const [origin, setOrigin] = useState("")
@@ -557,9 +642,25 @@ export default function QRLinksPage() {
         createdBy: user?.uid || 'admin',
         createdByName: user?.displayName || 'Admin',
         requireName,
+        isNameMandatory,
         requireEmail,
+        isEmailMandatory,
         requireEmployeeId,
-        customization
+        isEmployeeIdMandatory,
+        showRemarks: customization.showRemarks !== false,
+        isRemarksMandatory: !!customization.isRemarksMandatory,
+        showPhotos: customization.showPhotos !== false,
+        isPhotosMandatory: !!customization.isPhotosMandatory,
+        customization: {
+          ...customization,
+          isNameMandatory,
+          isEmailMandatory,
+          isEmployeeIdMandatory,
+          showRemarks: customization.showRemarks !== false,
+          isRemarksMandatory: !!customization.isRemarksMandatory,
+          showPhotos: customization.showPhotos !== false,
+          isPhotosMandatory: !!customization.isPhotosMandatory,
+        }
       })
       toast({ title: "Success", description: "QR Link generated." })
       setModalOpen(false)
@@ -567,8 +668,11 @@ export default function QRLinksPage() {
       setSelectedBuildingId("")
       setSelectedCafeId("")
       setRequireName(false)
+      setIsNameMandatory(true)
       setRequireEmail(false)
+      setIsEmailMandatory(true)
       setRequireEmployeeId(false)
+      setIsEmployeeIdMandatory(true)
       setCustomization(initialCustomization)
       fetchLinks()
     } catch (e) {
@@ -623,8 +727,11 @@ export default function QRLinksPage() {
   const openEditModal = (link: QRLink) => {
     setEditLink(link)
     setEditRequireName(!!link.requireName)
+    setEditIsNameMandatory(link.isNameMandatory ?? link.customization?.isNameMandatory ?? true)
     setEditRequireEmail(!!link.requireEmail)
+    setEditIsEmailMandatory(link.isEmailMandatory ?? link.customization?.isEmailMandatory ?? true)
     setEditRequireEmployeeId(!!link.requireEmployeeId)
+    setEditIsEmployeeIdMandatory(link.isEmployeeIdMandatory ?? link.customization?.isEmployeeIdMandatory ?? true)
     const existingActive = link.customization?.issueCategories || COMPLAINT_CATEGORIES
     const allKnown = Array.from(new Set([
       ...COMPLAINT_CATEGORIES,
@@ -638,7 +745,11 @@ export default function QRLinksPage() {
       allCategories: allKnown,
       showIssueCategory: link.customization?.showIssueCategory !== false,
       issueCategoryLabel: link.customization?.issueCategoryLabel || "Issue Category",
-      issueCategoryPlaceholder: link.customization?.issueCategoryPlaceholder || "Select the type of issue"
+      issueCategoryPlaceholder: link.customization?.issueCategoryPlaceholder || "Select the type of issue",
+      showRemarks: link.customization?.showRemarks !== false,
+      isRemarksMandatory: !!(link.customization?.isRemarksMandatory ?? link.isRemarksMandatory),
+      showPhotos: link.customization?.showPhotos !== false,
+      isPhotosMandatory: !!(link.customization?.isPhotosMandatory ?? link.isPhotosMandatory),
     })
     setEditSelectedCompanyId(link.companyId)
     setEditSelectedBuildingId(link.buildingId)
@@ -658,6 +769,17 @@ export default function QRLinksPage() {
       const building = buildings.find(b => b.id === editSelectedBuildingId)
       const cafe = cafeterias.find(c => c.id === editSelectedCafeId)
 
+      const updatedCustomization = {
+        ...editCustomization,
+        isNameMandatory: editIsNameMandatory,
+        isEmailMandatory: editIsEmailMandatory,
+        isEmployeeIdMandatory: editIsEmployeeIdMandatory,
+        showRemarks: editCustomization.showRemarks !== false,
+        isRemarksMandatory: !!editCustomization.isRemarksMandatory,
+        showPhotos: editCustomization.showPhotos !== false,
+        isPhotosMandatory: !!editCustomization.isPhotosMandatory,
+      }
+
       await qrLinksService.update(editLink.id, {
         companyId: company!.id,
         companyName: company!.name,
@@ -666,16 +788,42 @@ export default function QRLinksPage() {
         cafeId: cafe!.id,
         cafeName: cafe!.name,
         requireName: editRequireName,
+        isNameMandatory: editIsNameMandatory,
         requireEmail: editRequireEmail,
+        isEmailMandatory: editIsEmailMandatory,
         requireEmployeeId: editRequireEmployeeId,
-        customization: editCustomization
+        isEmployeeIdMandatory: editIsEmployeeIdMandatory,
+        showRemarks: editCustomization.showRemarks !== false,
+        isRemarksMandatory: !!editCustomization.isRemarksMandatory,
+        showPhotos: editCustomization.showPhotos !== false,
+        isPhotosMandatory: !!editCustomization.isPhotosMandatory,
+        customization: updatedCustomization
       })
       toast({ title: "Saved!", description: "Field settings updated successfully." })
       setEditModalOpen(false)
       setEditLink(null)
       // Update local state immediately for instant feedback
       setLinks(prev => prev.map(l => l.id === editLink.id
-        ? { ...l, companyId: company!.id, companyName: company!.name, buildingId: building!.id, buildingName: building!.name, cafeId: cafe!.id, cafeName: cafe!.name, requireName: editRequireName, requireEmail: editRequireEmail, requireEmployeeId: editRequireEmployeeId, customization: editCustomization }
+        ? {
+            ...l,
+            companyId: company!.id,
+            companyName: company!.name,
+            buildingId: building!.id,
+            buildingName: building!.name,
+            cafeId: cafe!.id,
+            cafeName: cafe!.name,
+            requireName: editRequireName,
+            isNameMandatory: editIsNameMandatory,
+            requireEmail: editRequireEmail,
+            isEmailMandatory: editIsEmailMandatory,
+            requireEmployeeId: editRequireEmployeeId,
+            isEmployeeIdMandatory: editIsEmployeeIdMandatory,
+            showRemarks: editCustomization.showRemarks !== false,
+            isRemarksMandatory: !!editCustomization.isRemarksMandatory,
+            showPhotos: editCustomization.showPhotos !== false,
+            isPhotosMandatory: !!editCustomization.isPhotosMandatory,
+            customization: updatedCustomization
+          }
         : l
       ))
     } catch (e) {
@@ -816,25 +964,91 @@ export default function QRLinksPage() {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="pt-4 border-t space-y-4">
-                <h4 className="text-sm font-semibold">Form Requirements</h4>
-                <div className="flex items-center space-x-2">
-                  <Checkbox id="req-name" checked={requireName} onCheckedChange={(c) => setRequireName(!!c)} />
-                  <label htmlFor="req-name" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                    Require Name
-                  </label>
+              <div className="pt-4 border-t space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-sm font-bold text-slate-800">Form Fields & Mandatory Requirements</h4>
+                  <span className="text-[11px] text-slate-400 font-medium">Control guest field requirements</span>
                 </div>
-                <div className="flex items-center space-x-2">
-                  <Checkbox id="req-email" checked={requireEmail} onCheckedChange={(c) => setRequireEmail(!!c)} />
-                  <label htmlFor="req-email" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                    Require Contact Number / Email
-                  </label>
+
+                {/* Name */}
+                <div className="flex items-center justify-between p-3.5 rounded-xl bg-slate-50 border border-slate-200">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center shrink-0">
+                      <User className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-slate-800">Guest Name</p>
+                      <p className="text-[10px] text-slate-500">Display name field on form</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    {requireName && (
+                      <label className="flex items-center gap-1.5 cursor-pointer text-xs font-semibold text-slate-600">
+                        <Checkbox
+                          checked={isNameMandatory}
+                          onCheckedChange={c => setIsNameMandatory(!!c)}
+                        />
+                        <span className={isNameMandatory ? "text-red-600 font-bold" : "text-slate-500"}>
+                          Mandatory *
+                        </span>
+                      </label>
+                    )}
+                    <ToggleSwitch enabled={requireName} onChange={setRequireName} />
+                  </div>
                 </div>
-                <div className="flex items-center space-x-2">
-                  <Checkbox id="req-emp-id" checked={requireEmployeeId} onCheckedChange={(c) => setRequireEmployeeId(!!c)} />
-                  <label htmlFor="req-emp-id" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                    Require Employee ID
-                  </label>
+
+                {/* Contact */}
+                <div className="flex items-center justify-between p-3.5 rounded-xl bg-slate-50 border border-slate-200">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-purple-100 text-purple-700 flex items-center justify-center shrink-0">
+                      <Mail className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-slate-800">Contact / Email</p>
+                      <p className="text-[10px] text-slate-500">Contact number or email for ticket follow-up</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    {requireEmail && (
+                      <label className="flex items-center gap-1.5 cursor-pointer text-xs font-semibold text-slate-600">
+                        <Checkbox
+                          checked={isEmailMandatory}
+                          onCheckedChange={c => setIsEmailMandatory(!!c)}
+                        />
+                        <span className={isEmailMandatory ? "text-red-600 font-bold" : "text-slate-500"}>
+                          Mandatory *
+                        </span>
+                      </label>
+                    )}
+                    <ToggleSwitch enabled={requireEmail} onChange={setRequireEmail} />
+                  </div>
+                </div>
+
+                {/* Employee ID */}
+                <div className="flex items-center justify-between p-3.5 rounded-xl bg-slate-50 border border-slate-200">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+                      <IdCard className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-slate-800">Employee ID</p>
+                      <p className="text-[10px] text-slate-500">Company corporate badge identification</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    {requireEmployeeId && (
+                      <label className="flex items-center gap-1.5 cursor-pointer text-xs font-semibold text-slate-600">
+                        <Checkbox
+                          checked={isEmployeeIdMandatory}
+                          onCheckedChange={c => setIsEmployeeIdMandatory(!!c)}
+                        />
+                        <span className={isEmployeeIdMandatory ? "text-red-600 font-bold" : "text-slate-500"}>
+                          Mandatory *
+                        </span>
+                      </label>
+                    )}
+                    <ToggleSwitch enabled={requireEmployeeId} onChange={setRequireEmployeeId} />
+                  </div>
                 </div>
               </div>
               <CustomizationFields data={customization} onChange={setCustomization} />
@@ -858,6 +1072,12 @@ export default function QRLinksPage() {
                    companyName={companies.find(c => c.id === selectedCompanyId)?.name}
                    buildingName={buildings.find(b => b.id === selectedBuildingId)?.name}
                    cafeName={cafeterias.find(c => c.id === selectedCafeId)?.name}
+                   requireName={requireName}
+                   isNameMandatory={isNameMandatory}
+                   requireEmail={requireEmail}
+                   isEmailMandatory={isEmailMandatory}
+                   requireEmployeeId={requireEmployeeId}
+                   isEmployeeIdMandatory={isEmployeeIdMandatory}
                  />
               </div>
             </div>
@@ -912,49 +1132,91 @@ export default function QRLinksPage() {
               </div>
 
               {/* Toggle fields */}
-              <div className="space-y-1">
-                <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4">Enable Fields on Form</p>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">Form Fields & Mandatory Requirements</p>
+                  <span className="text-[11px] text-slate-400">Control guest requirements</span>
+                </div>
 
                 {/* Name */}
-                <div className="flex items-center justify-between py-4 px-4 rounded-xl bg-white border border-slate-100 hover:border-slate-200 transition-colors group">
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-xl bg-blue-50 flex items-center justify-center group-hover:bg-blue-100 transition-colors">
-                      <User className="w-4 h-4 text-blue-600" />
+                <div className="flex items-center justify-between p-3.5 rounded-xl bg-white border border-slate-200 shadow-sm">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center shrink-0">
+                      <User className="w-4 h-4" />
                     </div>
                     <div>
-                      <p className="text-sm font-semibold text-slate-800">Name</p>
-                      <p className="text-[11px] text-slate-400">Require guest to enter their name</p>
+                      <p className="text-xs font-bold text-slate-800">Guest Name</p>
+                      <p className="text-[10px] text-slate-400">Display name field on form</p>
                     </div>
                   </div>
-                  <ToggleSwitch enabled={editRequireName} onChange={setEditRequireName} />
+                  <div className="flex items-center gap-3">
+                    {editRequireName && (
+                      <label className="flex items-center gap-1.5 cursor-pointer text-xs font-semibold text-slate-600">
+                        <Checkbox
+                          checked={editIsNameMandatory}
+                          onCheckedChange={c => setEditIsNameMandatory(!!c)}
+                        />
+                        <span className={editIsNameMandatory ? "text-red-600 font-bold" : "text-slate-500"}>
+                          Mandatory *
+                        </span>
+                      </label>
+                    )}
+                    <ToggleSwitch enabled={editRequireName} onChange={setEditRequireName} />
+                  </div>
                 </div>
 
                 {/* Contact / Email */}
-                <div className="flex items-center justify-between py-4 px-4 rounded-xl bg-white border border-slate-100 hover:border-slate-200 transition-colors group">
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-xl bg-purple-50 flex items-center justify-center group-hover:bg-purple-100 transition-colors">
-                      <Mail className="w-4 h-4 text-purple-600" />
+                <div className="flex items-center justify-between p-3.5 rounded-xl bg-white border border-slate-200 shadow-sm">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-purple-100 text-purple-700 flex items-center justify-center shrink-0">
+                      <Mail className="w-4 h-4" />
                     </div>
                     <div>
-                      <p className="text-sm font-semibold text-slate-800">Contact / Email</p>
-                      <p className="text-[11px] text-slate-400">Require phone number or email for follow-up</p>
+                      <p className="text-xs font-bold text-slate-800">Contact / Email</p>
+                      <p className="text-[10px] text-slate-400">Phone number or email for follow-up</p>
                     </div>
                   </div>
-                  <ToggleSwitch enabled={editRequireEmail} onChange={setEditRequireEmail} />
+                  <div className="flex items-center gap-3">
+                    {editRequireEmail && (
+                      <label className="flex items-center gap-1.5 cursor-pointer text-xs font-semibold text-slate-600">
+                        <Checkbox
+                          checked={editIsEmailMandatory}
+                          onCheckedChange={c => setEditIsEmailMandatory(!!c)}
+                        />
+                        <span className={editIsEmailMandatory ? "text-red-600 font-bold" : "text-slate-500"}>
+                          Mandatory *
+                        </span>
+                      </label>
+                    )}
+                    <ToggleSwitch enabled={editRequireEmail} onChange={setEditRequireEmail} />
+                  </div>
                 </div>
 
                 {/* Employee ID */}
-                <div className="flex items-center justify-between py-4 px-4 rounded-xl bg-white border border-slate-100 hover:border-slate-200 transition-colors group">
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-xl bg-amber-50 flex items-center justify-center group-hover:bg-amber-100 transition-colors">
-                      <IdCard className="w-4 h-4 text-amber-600" />
+                <div className="flex items-center justify-between p-3.5 rounded-xl bg-white border border-slate-200 shadow-sm">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+                      <IdCard className="w-4 h-4" />
                     </div>
                     <div>
-                      <p className="text-sm font-semibold text-slate-800">Employee ID</p>
-                      <p className="text-[11px] text-slate-400">Require company employee identification</p>
+                      <p className="text-xs font-bold text-slate-800">Employee ID</p>
+                      <p className="text-[10px] text-slate-400">Company employee identification</p>
                     </div>
                   </div>
-                  <ToggleSwitch enabled={editRequireEmployeeId} onChange={setEditRequireEmployeeId} />
+                  <div className="flex items-center gap-3">
+                    {editRequireEmployeeId && (
+                      <label className="flex items-center gap-1.5 cursor-pointer text-xs font-semibold text-slate-600">
+                        <Checkbox
+                          checked={editIsEmployeeIdMandatory}
+                          onCheckedChange={c => setEditIsEmployeeIdMandatory(!!c)}
+                        />
+                        <span className={editIsEmployeeIdMandatory ? "text-red-600 font-bold" : "text-slate-500"}>
+                          Mandatory *
+                        </span>
+                      </label>
+                    )}
+                    <ToggleSwitch enabled={editRequireEmployeeId} onChange={setEditRequireEmployeeId} />
+                  </div>
                 </div>
               </div>
               <CustomizationFields data={editCustomization} onChange={setEditCustomization} />
@@ -978,6 +1240,12 @@ export default function QRLinksPage() {
                    companyName={companies.find(c => c.id === editSelectedCompanyId)?.name}
                    buildingName={buildings.find(b => b.id === editSelectedBuildingId)?.name}
                    cafeName={cafeterias.find(c => c.id === editSelectedCafeId)?.name}
+                   requireName={editRequireName}
+                   isNameMandatory={editIsNameMandatory}
+                   requireEmail={editRequireEmail}
+                   isEmailMandatory={editIsEmailMandatory}
+                   requireEmployeeId={editRequireEmployeeId}
+                   isEmployeeIdMandatory={editIsEmployeeIdMandatory}
                  />
               </div>
             </div>
@@ -1031,9 +1299,15 @@ export default function QRLinksPage() {
 
                 {/* Field Badges */}
                 <div className="px-5 py-3 flex flex-wrap gap-1.5 bg-slate-50/50 border-b border-slate-100">
-                  <FieldBadge enabled={!!link.requireName} label="Name" />
-                  <FieldBadge enabled={!!link.requireEmail} label="Contact" />
-                  <FieldBadge enabled={!!link.requireEmployeeId} label="Emp ID" />
+                  <FieldBadge enabled={!!link.requireName} label={link.requireName ? (link.isNameMandatory !== false ? "Name (Req)" : "Name (Opt)") : "Name (Off)"} />
+                  <FieldBadge enabled={!!link.requireEmail} label={link.requireEmail ? (link.isEmailMandatory !== false ? "Contact (Req)" : "Contact (Opt)") : "Contact (Off)"} />
+                  <FieldBadge enabled={!!link.requireEmployeeId} label={link.requireEmployeeId ? (link.isEmployeeIdMandatory !== false ? "Emp ID (Req)" : "Emp ID (Opt)") : "Emp ID (Off)"} />
+                  {link.customization?.showRemarks !== false && (
+                    <FieldBadge enabled={true} label={link.customization?.isRemarksMandatory ? "Remarks (Req)" : "Remarks (Opt)"} />
+                  )}
+                  {link.customization?.showPhotos !== false && (
+                    <FieldBadge enabled={true} label={link.customization?.isPhotosMandatory ? "Photo (Req)" : "Photo (Opt)"} />
+                  )}
                 </div>
 
                 {/* QR Code */}
@@ -1058,15 +1332,256 @@ export default function QRLinksPage() {
                       <LinkIcon className="w-3.5 h-3.5" />
                     </Button>
                   </div>
-                  <Button className="w-full gap-2" variant="secondary" onClick={() => downloadQR(link)}>
-                    <Download className="w-4 h-4" /> Download QR
-                  </Button>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button className="w-full gap-1.5 text-xs" variant="outline" onClick={() => downloadQR(link)}>
+                      <Download className="w-3.5 h-3.5" /> Download QR
+                    </Button>
+                    <Button
+                      className="w-full gap-1.5 text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-semibold shadow-sm"
+                      onClick={() => openStandeeModal(link)}
+                    >
+                      <FileText className="w-3.5 h-3.5" /> Standee (6×2.5ft)
+                    </Button>
+                  </div>
                 </div>
               </div>
             )
           })}
         </div>
       )}
+
+      {/* ── Standee 6x2.5 ft Export Modal ─────────────────────────────────────── */}
+      <Dialog open={standeeModalOpen} onOpenChange={(o) => { if (!o) setStandeeLink(null); setStandeeModalOpen(o) }}>
+        <DialogContent className="max-w-4xl max-h-[92vh] overflow-y-auto p-6 bg-slate-50 border-slate-200">
+          {standeeLink && (
+            <div className="space-y-6">
+              {/* Header */}
+              <DialogHeader className="pb-4 border-b border-slate-200">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-11 h-11 rounded-2xl bg-emerald-100 flex items-center justify-center text-emerald-700 shadow-sm">
+                      <Printer className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <DialogTitle className="text-xl font-bold text-slate-900 flex items-center gap-2">
+                        Roll-Up Standee Banner (6.0 ft × 2.5 ft)
+                        <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+                          100% Vector Print PDF
+                        </span>
+                      </DialogTitle>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        Exact 30.0" × 72.0" (2,160 pt × 5,184 pt) standard roll-up standee banner with live table QR code.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </DialogHeader>
+
+              {/* Location Summary Bar */}
+              <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-3 text-xs">
+                <div className="flex items-center gap-2 text-slate-700">
+                  <Building2 className="w-4 h-4 text-emerald-600" />
+                  <span className="font-semibold text-slate-900">{standeeLink.cafeName}</span>
+                  <span className="text-slate-400">•</span>
+                  <span className="text-slate-600">{standeeLink.companyName}</span>
+                  <span className="text-slate-400">•</span>
+                  <span className="text-slate-600">{standeeLink.buildingName}</span>
+                </div>
+                <div className="flex items-center gap-2 text-slate-500 font-mono text-[11px] bg-slate-100 px-2.5 py-1 rounded-md">
+                  <LinkIcon className="w-3.5 h-3.5 text-slate-400" />
+                  <span className="truncate max-w-[280px]">{`${origin}/report/${standeeLink.id}`}</span>
+                </div>
+              </div>
+
+              {/* Style Selector Tabs */}
+              <div className="space-y-3">
+                <Label className="text-xs font-bold text-slate-600 uppercase tracking-wider">
+                  Select Standee Layout & Design
+                </Label>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Style 1: 5-Step Criss-Cross Flow */}
+                  <div
+                    onClick={() => setStandeeStyle("criss_cross")}
+                    className={`p-4 rounded-xl border-2 cursor-pointer transition-all ${
+                      standeeStyle === "criss_cross"
+                        ? "bg-white border-emerald-500 shadow-md ring-2 ring-emerald-100"
+                        : "bg-white/70 border-slate-200 hover:border-slate-300 opacity-80"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="space-y-1">
+                        <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                          Recommended for Operations
+                        </span>
+                        <h4 className="font-bold text-slate-800 text-sm mt-1">5-Step Criss-Cross Flow</h4>
+                        <p className="text-xs text-slate-500">
+                          Step-by-step zigzag pathway: Diner Scan ➔ Food/Cleanliness Rating ➔ Cloud Dispatch ➔ Mandatory Photo Proof ➔ Compliance Sync.
+                        </p>
+                      </div>
+                      <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${
+                        standeeStyle === "criss_cross" ? "border-emerald-600 bg-emerald-600 text-white" : "border-slate-300"
+                      }`}>
+                        {standeeStyle === "criss_cross" && <Check className="w-3 h-3 stroke-[3]" />}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Style 2: Diner Engagement */}
+                  <div
+                    onClick={() => setStandeeStyle("diner")}
+                    className={`p-4 rounded-xl border-2 cursor-pointer transition-all ${
+                      standeeStyle === "diner"
+                        ? "bg-white border-emerald-500 shadow-md ring-2 ring-emerald-100"
+                        : "bg-white/70 border-slate-200 hover:border-slate-300 opacity-80"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="space-y-1">
+                        <span className="text-xs font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200">
+                          Recommended for Cafeteria Entrance
+                        </span>
+                        <h4 className="font-bold text-slate-800 text-sm mt-1">Diner Engagement & Quick Feedback</h4>
+                        <p className="text-xs text-slate-500">
+                          High-visibility "YOUR FEEDBACK MATTERS" headline, extra-large center QR code, and 3 simple diner steps.
+                        </p>
+                      </div>
+                      <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${
+                        standeeStyle === "diner" ? "border-emerald-600 bg-emerald-600 text-white" : "border-slate-300"
+                      }`}>
+                        {standeeStyle === "diner" && <Check className="w-3 h-3 stroke-[3]" />}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Standee Preview Box (Scaled Mockup) */}
+              <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col items-center">
+                <div className="w-full flex items-center justify-between pb-3 border-b border-slate-100 mb-4 text-xs">
+                  <span className="font-bold text-slate-700 flex items-center gap-1.5">
+                    <Eye className="w-4 h-4 text-emerald-600" /> Visual Preview (Scale: 6ft × 2.5ft Aspect Ratio)
+                  </span>
+                  <span className="text-slate-400">Physical Size: 30 inches × 72 inches (100% Vector)</span>
+                </div>
+
+                {/* Scaled Banner Mockup */}
+                <div className="relative w-[250px] h-[600px] bg-slate-900 rounded-lg shadow-2xl p-2 border-4 border-slate-800 flex flex-col items-center justify-between overflow-hidden text-center select-none">
+                  {/* Standee Base Plate */}
+                  <div className="absolute top-0 inset-x-0 h-1.5 bg-emerald-500"></div>
+
+                  {/* Standee Inner Card */}
+                  <div className="w-full h-full bg-slate-50 rounded flex flex-col items-center justify-between p-3.5 overflow-hidden">
+                    {/* Header */}
+                    <div className="w-full space-y-1 pt-1">
+                      <div className="flex items-center justify-center gap-1">
+                        <div className="w-4 h-4 rounded-full border-2 border-emerald-500 flex items-center justify-center">
+                          <div className="w-2 h-2 rounded-full bg-amber-500"></div>
+                        </div>
+                        <span className="font-extrabold text-sm tracking-tight text-slate-900">cookhouse</span>
+                      </div>
+                      <div className="bg-emerald-50 text-emerald-800 text-[8px] font-bold px-2 py-0.5 rounded-full inline-block border border-emerald-200 truncate max-w-full">
+                        {standeeLink.companyName} • {standeeLink.buildingName} • {standeeLink.cafeName}
+                      </div>
+                    </div>
+
+                    {/* Headline */}
+                    <div className="space-y-0.5">
+                      <h4 className="font-black text-[11px] text-slate-900 uppercase tracking-tight leading-tight">
+                        {standeeStyle === "diner" ? "YOUR FEEDBACK MATTERS!" : "CLOSED-LOOP FEEDBACK WORKFLOW"}
+                      </h4>
+                      <p className="text-[7.5px] text-emerald-700 font-semibold">
+                        {standeeStyle === "diner" ? "Help Us Improve Every Single Meal You Enjoy" : "Instant Action • Tabletop QR • Photo Proof"}
+                      </p>
+                    </div>
+
+                    {/* QR Code Container */}
+                    <div className="p-2 bg-white rounded-lg border-2 border-emerald-300 shadow-sm flex flex-col items-center">
+                      <QRCodeSVG
+                        value={`${origin}/report/${standeeLink.id}`}
+                        size={standeeStyle === "diner" ? 110 : 85}
+                        level="H"
+                        includeMargin={false}
+                      />
+                      <span className="text-[7px] font-bold text-slate-600 mt-1 uppercase tracking-wider">
+                        Scan with any camera
+                      </span>
+                    </div>
+
+                    {/* Pathway Highlights */}
+                    <div className="w-full space-y-1 text-left text-[7.5px]">
+                      {standeeStyle === "criss_cross" ? (
+                        <>
+                          <div className="bg-white p-1 rounded border border-slate-200 flex items-center gap-1 shadow-2xs">
+                            <span className="w-3.5 h-3.5 rounded-full bg-emerald-600 text-white font-bold text-[7px] flex items-center justify-center shrink-0">1</span>
+                            <span className="font-bold text-slate-800 truncate">Scan Table QR: Rate Dish / Hygiene</span>
+                          </div>
+                          <div className="bg-white p-1 rounded border border-slate-200 flex items-center gap-1 shadow-2xs">
+                            <span className="w-3.5 h-3.5 rounded-full bg-blue-600 text-white font-bold text-[7px] flex items-center justify-center shrink-0">2</span>
+                            <span className="font-bold text-slate-800 truncate">Immediate Cloud Dispatch to CookHouse</span>
+                          </div>
+                          <div className="bg-white p-1 rounded border border-slate-200 flex items-center gap-1 shadow-2xs">
+                            <span className="w-3.5 h-3.5 rounded-full bg-amber-600 text-white font-bold text-[7px] flex items-center justify-center shrink-0">3</span>
+                            <span className="font-bold text-slate-800 truncate">Mandatory Employee Photo Proof</span>
+                          </div>
+                          <div className="bg-white p-1 rounded border border-slate-200 flex items-center gap-1 shadow-2xs">
+                            <span className="w-3.5 h-3.5 rounded-full bg-teal-600 text-white font-bold text-[7px] flex items-center justify-center shrink-0">4</span>
+                            <span className="font-bold text-slate-800 truncate">100% Verified Compliance Audit Sync</span>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div className="bg-white p-1.5 rounded border border-slate-200 flex items-center gap-1.5 shadow-2xs">
+                            <span className="text-emerald-600 font-bold">✓</span>
+                            <span className="font-semibold text-slate-800">1. Open Camera & Point at QR Code</span>
+                          </div>
+                          <div className="bg-white p-1.5 rounded border border-slate-200 flex items-center gap-1.5 shadow-2xs">
+                            <span className="text-emerald-600 font-bold">✓</span>
+                            <span className="font-semibold text-slate-800">2. Rate Taste, Portion, or Housekeeping</span>
+                          </div>
+                          <div className="bg-white p-1.5 rounded border border-slate-200 flex items-center gap-1.5 shadow-2xs">
+                            <span className="text-emerald-600 font-bold">✓</span>
+                            <span className="font-semibold text-slate-800">3. Supervisor Resolves on the Spot</span>
+                          </div>
+                        </>
+                      )}
+                    </div>
+
+                    {/* Footer */}
+                    <div className="w-full bg-slate-900 text-white p-1 rounded text-[7px] space-y-0.5">
+                      <p className="font-bold text-slate-200">Cookhouse Dining Compliance</p>
+                      <p className="text-slate-400 text-[6.5px]">cookhouse.com • 100% Vector Print</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-slate-200">
+                <Button variant="outline" onClick={() => setStandeeModalOpen(false)}>
+                  Close
+                </Button>
+                <div className="flex items-center gap-2">
+                  <Button
+                    onClick={() => handleDownloadStandee(standeeLink, standeeStyle)}
+                    disabled={downloadingStandee}
+                    className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow-md h-10 px-5 text-sm"
+                  >
+                    {downloadingStandee ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" /> Generating 6×2.5 ft Vector PDF...
+                      </>
+                    ) : (
+                      <>
+                        <Download className="w-4 h-4" /> Download Standee Vector PDF (6×2.5 ft)
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

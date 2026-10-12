@@ -48,6 +48,8 @@ export interface UserProfile {
   canResolveTickets?: boolean
   canManageQRLinks?: boolean
   canSetSiteLocation?: boolean
+  departments?: string[]
+  receiveFeedbackEmails?: boolean
   status: "active" | "inactive"
 }
 

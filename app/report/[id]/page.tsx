@@ -307,8 +307,34 @@ export default function PublicReportPage({ params }: { params: { id: string } })
     })
   }
 
+  const isNameMandatory = linkInfo?.isNameMandatory ?? linkInfo?.customization?.isNameMandatory ?? true
+  const isEmailMandatory = linkInfo?.isEmailMandatory ?? linkInfo?.customization?.isEmailMandatory ?? true
+  const isEmployeeIdMandatory = linkInfo?.isEmployeeIdMandatory ?? linkInfo?.customization?.isEmployeeIdMandatory ?? true
+  const isRemarksMandatory = linkInfo?.customization?.isRemarksMandatory ?? linkInfo?.isRemarksMandatory ?? (category !== "Food Quality" && category !== "Food Shortage")
+  const isPhotosMandatory = linkInfo?.customization?.isPhotosMandatory ?? linkInfo?.isPhotosMandatory ?? false
+  const showPhotos = linkInfo?.customization?.showPhotos ?? linkInfo?.showPhotos ?? true
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+
+    // Validate mandatory Name
+    if (linkInfo?.requireName && isNameMandatory && !name.trim()) {
+      toast({ title: "Required Field", description: "Your name is required.", variant: "destructive" })
+      return
+    }
+
+    // Validate mandatory Email/Contact
+    if (linkInfo?.requireEmail && isEmailMandatory && !contact.trim()) {
+      toast({ title: "Required Field", description: "Contact number / Email is required.", variant: "destructive" })
+      return
+    }
+
+    // Validate mandatory Employee ID
+    if (linkInfo?.requireEmployeeId && isEmployeeIdMandatory && !employeeId.trim()) {
+      toast({ title: "Required Field", description: "Employee ID is required.", variant: "destructive" })
+      return
+    }
+
     if (linkInfo?.customization?.showIssueCategory !== false && !category) {
       toast({ 
         title: "Required Fields", 
@@ -318,9 +344,15 @@ export default function PublicReportPage({ params }: { params: { id: string } })
       return
     }
     
-    // Description is required ONLY for general categories (not Food Quality or Food Shortage)
-    if (category !== "Food Quality" && category !== "Food Shortage" && !description) {
-      toast({ title: "Required Fields", description: "Description is required for this issue category.", variant: "destructive" })
+    // Description validation based on mandatory setting
+    if (isRemarksMandatory && !description.trim()) {
+      toast({ title: "Required Fields", description: "Description / Remarks is required.", variant: "destructive" })
+      return
+    }
+
+    // Photo validation based on mandatory setting
+    if (showPhotos && isPhotosMandatory && photos.length === 0) {
+      toast({ title: "Required Photo", description: "Please attach at least one photo proof before submitting.", variant: "destructive" })
       return
     }
 
@@ -538,12 +570,14 @@ ${description}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
           {linkInfo.requireName && (
             <div className="space-y-2.5">
-              <Label className="text-sm font-semibold text-slate-700">Your Name <span className="text-red-500">*</span></Label>
+              <Label className="text-sm font-semibold text-slate-700">
+                Your Name {isNameMandatory ? <span className="text-red-500">*</span> : <span className="text-slate-400 text-xs font-normal">(Optional)</span>}
+              </Label>
               <Input 
                 placeholder="e.g. John Doe" 
                 value={name} 
                 onChange={e => setName(e.target.value)}
-                required
+                required={isNameMandatory}
                 className="rounded-xl bg-slate-50/50 border-slate-200 focus-visible:ring-blue-500 h-12 px-4 transition-all hover:bg-white"
               />
             </div>
@@ -551,12 +585,14 @@ ${description}
           
           {linkInfo.requireEmail && (
             <div className="space-y-2.5">
-              <Label className="text-sm font-semibold text-slate-700">Contact Number / Email <span className="text-red-500">*</span></Label>
+              <Label className="text-sm font-semibold text-slate-700">
+                Contact Number / Email {isEmailMandatory ? <span className="text-red-500">*</span> : <span className="text-slate-400 text-xs font-normal">(Optional)</span>}
+              </Label>
               <Input 
                 placeholder="For follow-up" 
                 value={contact} 
                 onChange={e => setContact(e.target.value)} 
-                required
+                required={isEmailMandatory}
                 className="rounded-xl bg-slate-50/50 border-slate-200 focus-visible:ring-blue-500 h-12 px-4 transition-all hover:bg-white"
               />
             </div>
@@ -564,12 +600,14 @@ ${description}
           
           {linkInfo.requireEmployeeId && (
             <div className="space-y-2.5 sm:col-span-2">
-              <Label className="text-sm font-semibold text-slate-700">Employee ID <span className="text-red-500">*</span></Label>
+              <Label className="text-sm font-semibold text-slate-700">
+                Employee ID {isEmployeeIdMandatory ? <span className="text-red-500">*</span> : <span className="text-slate-400 text-xs font-normal">(Optional)</span>}
+              </Label>
               <Input 
                 placeholder="e.g. EMP12345" 
                 value={employeeId} 
                 onChange={e => setEmployeeId(e.target.value)} 
-                required
+                required={isEmployeeIdMandatory}
                 className="rounded-xl bg-slate-50/50 border-slate-200 focus-visible:ring-blue-500 h-12 px-4 transition-all hover:bg-white"
               />
             </div>
@@ -636,14 +674,15 @@ ${description}
         {linkInfo.customization?.showRemarks !== false && (
         <div className="space-y-2.5">
           <Label className="text-sm font-bold text-slate-700 flex items-center gap-2">
-            {(category === "Food Quality" || category === "Food Shortage") ? "General Remarks (Optional)" : "Description *"}
-            {(category !== "Food Quality" && category !== "Food Shortage") && <span className="text-red-500">*</span>}
+            {(category === "Food Quality" || category === "Food Shortage") ? "General Remarks" : "Description"}
+            {isRemarksMandatory ? <span className="text-red-500">*</span> : <span className="text-slate-400 text-xs font-normal">(Optional)</span>}
           </Label>
           <Textarea 
             placeholder={(category === "Food Quality" || category === "Food Shortage") ? "Any overall feedback..." : "Please describe the issue in detail..."}
             className="min-h-[140px] rounded-2xl bg-slate-50/50 border-slate-200 focus-visible:ring-blue-500 p-4 transition-all hover:bg-white resize-none"
             value={description}
             onChange={e => setDescription(e.target.value)}
+            required={isRemarksMandatory}
           />
         </div>
         )}
@@ -849,8 +888,11 @@ ${description}
           </div>
         )}
 
+        {showPhotos && (
         <div className="space-y-3 pt-2">
-          <Label className="text-sm font-bold text-slate-700">Attach Proof / Photos (Optional)</Label>
+          <Label className="text-sm font-bold text-slate-700">
+            Attach Proof / Photos {isPhotosMandatory ? <span className="text-red-500">*</span> : <span className="text-slate-400 text-xs font-normal">(Optional)</span>}
+          </Label>
           
           {photos.length > 0 && (
             <div className="grid grid-cols-3 sm:grid-cols-4 gap-4 mb-4">
@@ -888,6 +930,7 @@ ${description}
           </div>
           <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">Supported: JPG, PNG, WEBP (Max 5MB)</p>
         </div>
+        )}
 
         <Button 
           type="submit" 

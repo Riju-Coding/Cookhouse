@@ -1,7 +1,18 @@
 import React from "react"
 import { ChefHat, MapPin } from "lucide-react"
 
-export default function ReportPreview({ customization, companyName, buildingName, cafeName }: any) {
+export default function ReportPreview({ 
+  customization, 
+  companyName, 
+  buildingName, 
+  cafeName,
+  requireName,
+  isNameMandatory = true,
+  requireEmail,
+  isEmailMandatory = true,
+  requireEmployeeId,
+  isEmployeeIdMandatory = true,
+}: any) {
 
   const category = "Food Quality" 
 
@@ -58,6 +69,39 @@ export default function ReportPreview({ customization, companyName, buildingName
         {/* Mock Form */}
         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-4 space-y-4">
           
+          {requireName && (
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-bold text-slate-700">
+                Your Name {isNameMandatory ? <span className="text-red-500">*</span> : <span className="text-slate-400 font-normal">(Optional)</span>}
+              </label>
+              <div className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs text-slate-400">
+                e.g. John Doe
+              </div>
+            </div>
+          )}
+
+          {requireEmail && (
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-bold text-slate-700">
+                Contact Number / Email {isEmailMandatory ? <span className="text-red-500">*</span> : <span className="text-slate-400 font-normal">(Optional)</span>}
+              </label>
+              <div className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs text-slate-400">
+                For follow-up
+              </div>
+            </div>
+          )}
+
+          {requireEmployeeId && (
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-bold text-slate-700">
+                Employee ID {isEmployeeIdMandatory ? <span className="text-red-500">*</span> : <span className="text-slate-400 font-normal">(Optional)</span>}
+              </label>
+              <div className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs text-slate-400">
+                e.g. EMP12345
+              </div>
+            </div>
+          )}
+          
           {customization?.showIssueCategory !== false && (
             <div className="space-y-1.5">
               <label className="text-[11px] font-bold text-slate-700">
@@ -86,8 +130,21 @@ export default function ReportPreview({ customization, companyName, buildingName
 
           {customization.showRemarks !== false && (
             <div className="space-y-1.5">
-              <label className="text-[11px] font-bold text-slate-700">General Remarks (Optional)</label>
+              <label className="text-[11px] font-bold text-slate-700">
+                General Remarks {customization.isRemarksMandatory ? <span className="text-red-500">*</span> : <span className="text-slate-400 font-normal">(Optional)</span>}
+              </label>
               <div className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-400 h-20 flex items-start">Any overall feedback...</div>
+            </div>
+          )}
+
+          {customization.showPhotos !== false && (
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-bold text-slate-700">
+                Attach Proof / Photos {customization.isPhotosMandatory ? <span className="text-red-500">*</span> : <span className="text-slate-400 font-normal">(Optional)</span>}
+              </label>
+              <div className="w-full bg-slate-50 border border-dashed border-slate-200 rounded-xl p-2.5 text-center text-xs text-slate-400">
+                Tap to upload photo proof
+              </div>
             </div>
           )}
 

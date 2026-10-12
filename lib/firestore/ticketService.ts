@@ -119,6 +119,31 @@ export const ticketService = {
       console.error('Error initiating live notification shoot:', err);
     }
 
+    // Trigger Department Feedback Email Shoot via operational SMTP
+    try {
+      fetch('/api/feedback/shoot-mail', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          ticketId: docRef.id,
+          title: data.title,
+          description: data.description,
+          category: data.category || 'General Feedback',
+          companyId: data.companyId,
+          companyName: data.companyName,
+          buildingName: data.buildingName || '',
+          cafeName: data.cafeName || '',
+          priority: data.priority,
+          creatorName: data.creatorName || 'Public Guest',
+          photos: data.photos || []
+        }),
+      }).catch(err => console.error('Failed to shoot feedback email:', err));
+    } catch (err) {
+      console.error('Error initiating feedback email shoot:', err);
+    }
+
     return docRef.id
   },
 

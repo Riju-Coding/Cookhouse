@@ -13,7 +13,8 @@ import {
   ClipboardCopy, GripHorizontal
 } from "lucide-react"
 import { db } from "@/lib/firebase"
-import { collection, addDoc, doc, updateDoc, serverTimestamp, getDocs } from "firebase/firestore"
+import { collection, addDoc, doc, updateDoc, serverTimestamp, getDocs, query, where } from "firebase/firestore"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { 
   companiesService, 
   buildingsService, 
@@ -584,6 +585,17 @@ export function RecurringMonthlyMenuModal({
     return buildings.filter(b => b.companyId === selectedCompanyId)
   }, [buildings, selectedCompanyId])
 
+  // Other buildings of this company (excluding current building)
+  const otherBuildings = useMemo(() => {
+    return filteredBuildings.filter(b => b.id !== selectedBuildingId)
+  }, [filteredBuildings, selectedBuildingId])
+
+  // Copy to Other Buildings modal state
+  const [copyBuildingsModalOpen, setCopyBuildingsModalOpen] = useState(false)
+  const [selectedTargetBuildingIds, setSelectedTargetBuildingIds] = useState<string[]>([])
+  const [isCopyingToBuildings, setIsCopyingToBuildings] = useState(false)
+  const [targetBuildingSearch, setTargetBuildingSearch] = useState("")
+
   // Fetch Structure Assignment when Company & Building change
   useEffect(() => {
     if (!selectedCompanyId || !selectedBuildingId) {
@@ -786,6 +798,11 @@ export function RecurringMonthlyMenuModal({
     })
     return count
   }, [masterTemplate])
+
+  // Total items scheduled across all active days in cycle
+  const totalItemsCount = useMemo(() => {
+    return activeDaysList.reduce((acc, d) => acc + getItemCountForDay(d), 0)
+  }, [activeDaysList, getItemCountForDay])
 
   // Create New Item when not found in search
   const handleCreateItem = useCallback(async (name: string, category: string) => {
@@ -1026,7 +1043,6 @@ export function RecurringMonthlyMenuModal({
       return
     }
 
-    const totalItemsCount = activeDaysList.reduce((acc, d) => acc + getItemCountForDay(d), 0)
     if (totalItemsCount === 0) {
       toast({ title: "Empty Menu", description: "Please add dishes to at least one day in the cycle.", variant: "destructive" })
       return
@@ -1093,6 +1109,107 @@ export function RecurringMonthlyMenuModal({
       toast({ title: "Failed to save", description: "An error occurred while saving.", variant: "destructive" })
     } finally {
       setSaving(false)
+    }
+  }
+
+  // Copy 4-Week Menu to other buildings of the same company
+  const handleCopyRecurringToBuildings = async () => {
+    if (selectedTargetBuildingIds.length === 0) {
+      toast({
+        title: "No Buildings Selected",
+        description: "Please select at least one building to copy to.",
+        variant: "destructive"
+      })
+      return
+    }
+
+    if (!selectedCompanyId) {
+      toast({ title: "Company required", description: "Please select a company first.", variant: "destructive" })
+      return
+    }
+
+    setIsCopyingToBuildings(true)
+    try {
+      const selectedCompany = companies.find(c => c.id === selectedCompanyId)
+      const year = parseInt(selectedYear)
+      const month = parseInt(selectedMonth)
+      const totalDays = new Date(year, month + 1, 0).getDate()
+
+      const startDate = `${year}-${String(month + 1).padStart(2, "0")}-01`
+      const endDate = `${year}-${String(month + 1).padStart(2, "0")}-${String(totalDays).padStart(2, "0")}`
+
+      // Expand master template across all calendar dates of the month
+      const expandedMenuData: Record<string, any> = {}
+      for (let day = 1; day <= totalDays; day++) {
+        const d = new Date(year, month, day)
+        const dateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`
+        const dayKey = d.toLocaleDateString("en-US", { weekday: "long" }).toLowerCase()
+
+        if (activeDaysList.includes(dayKey) && masterTemplate[dayKey]) {
+          expandedMenuData[dateStr] = JSON.parse(JSON.stringify(masterTemplate[dayKey]))
+        }
+      }
+
+      let copiedCount = 0
+      for (const bId of selectedTargetBuildingIds) {
+        const targetBld = buildings.find(b => b.id === bId)
+        if (!targetBld) continue
+
+        const q = query(
+          collection(db, "companyMenus"),
+          where("companyId", "==", selectedCompanyId),
+          where("buildingId", "==", bId)
+        )
+        const snap = await getDocs(q)
+        const existingDoc = snap.docs.find(d => {
+          const dData = d.data()
+          return dData.startDate === startDate && dData.endDate === endDate
+        })
+
+        const payload = {
+          companyId: selectedCompanyId,
+          companyName: selectedCompany?.name || "",
+          buildingId: targetBld.id,
+          buildingName: targetBld.name,
+          startDate,
+          endDate,
+          status: "active",
+          combinedMenuId: `standalone_${selectedCompanyId}_${year}_${month + 1}`,
+          isStandaloneMonthly: true,
+          menuType: "recurring_monthly",
+          workDaysMode,
+          masterTemplate,
+          menuData: expandedMenuData,
+          updatedAt: serverTimestamp()
+        }
+
+        if (existingDoc) {
+          await updateDoc(doc(db, "companyMenus", existingDoc.id), payload)
+        } else {
+          await addDoc(collection(db, "companyMenus"), {
+            ...payload,
+            createdAt: serverTimestamp()
+          })
+        }
+        copiedCount++
+      }
+
+      toast({
+        title: "4-Week Menu Copied Successfully!",
+        description: `Deployed 4-week menu cycle to ${copiedCount} building(s) of ${selectedCompany?.name || "company"}.`
+      })
+      setCopyBuildingsModalOpen(false)
+      setSelectedTargetBuildingIds([])
+      onSuccess?.()
+    } catch (err: any) {
+      console.error("Error copying recurring menu:", err)
+      toast({
+        title: "Copy Failed",
+        description: err?.message || "Failed to copy to other buildings",
+        variant: "destructive"
+      })
+    } finally {
+      setIsCopyingToBuildings(false)
     }
   }
 
@@ -1514,6 +1631,21 @@ export function RecurringMonthlyMenuModal({
             <Button
               type="button"
               variant="outline"
+              onClick={() => {
+                setSelectedTargetBuildingIds([])
+                setTargetBuildingSearch("")
+                setCopyBuildingsModalOpen(true)
+              }}
+              disabled={saving || !selectedCompanyId || !selectedBuildingId || totalItemsCount === 0}
+              className="border-purple-300 text-purple-700 hover:bg-purple-50 text-xs font-semibold gap-1.5 shadow-xs"
+              title="Copy this 4-week menu cycle to other cafeteria locations of this company"
+            >
+              <Copy className="h-4 w-4 text-purple-600" />
+              Copy to Other Buildings
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
               onClick={() => setShowPreviewModal(!showPreviewModal)}
               className="border-blue-300 text-blue-700 hover:bg-blue-50 text-xs font-semibold"
             >
@@ -1543,6 +1675,149 @@ export function RecurringMonthlyMenuModal({
           </div>
         </div>
 
+      {/* ─── Copy 4-Week Menu to Other Buildings Modal ─────────────────── */}
+      <Dialog open={copyBuildingsModalOpen} onOpenChange={open => { if (!open && !isCopyingToBuildings) setCopyBuildingsModalOpen(false) }}>
+        <DialogContent className="max-w-lg p-0 overflow-hidden rounded-2xl border-0 shadow-2xl">
+          <div className="bg-gradient-to-r from-purple-700 to-indigo-700 px-6 py-4 text-white">
+            <div className="flex items-center gap-2">
+              <Building2 className="h-5 w-5 text-purple-200" />
+              <div>
+                <DialogTitle className="text-base font-bold text-white">
+                  Copy 4-Week Menu to Other Buildings
+                </DialogTitle>
+                <DialogDescription className="text-xs text-purple-100 mt-0.5">
+                  Replicate this 4-week cycle across other cafeteria locations of {selectedCompany?.name || "this company"}
+                </DialogDescription>
+              </div>
+            </div>
+            <div className="mt-3 pt-2.5 border-t border-white/20 flex items-center gap-2 text-xs">
+              <span className="bg-white/15 px-2 py-0.5 rounded-full">
+                Source: <strong>{selectedBuilding?.name || "Current Location"}</strong>
+              </span>
+              <span className="bg-white/15 px-2 py-0.5 rounded-full ml-auto">
+                {MONTHS.find(m => m.value === selectedMonth)?.label} {selectedYear}
+              </span>
+            </div>
+          </div>
+
+          <div className="p-5 space-y-4 max-h-[60vh] overflow-y-auto">
+            {otherBuildings.length === 0 ? (
+              <div className="text-center py-6 text-slate-500 text-xs space-y-2">
+                <AlertCircle className="h-8 w-8 text-amber-500 mx-auto" />
+                <p className="font-semibold text-slate-700">No other buildings found</p>
+                <p>This company does not have other registered cafeteria buildings.</p>
+              </div>
+            ) : (
+              <>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-700">
+                    Select Target Buildings ({selectedTargetBuildingIds.length} of {otherBuildings.length})
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setSelectedTargetBuildingIds(otherBuildings.map(b => b.id))}
+                      className="h-6 text-xs text-purple-700 hover:bg-purple-50 px-2 font-semibold"
+                    >
+                      Select All
+                    </Button>
+                    <span className="text-slate-300">|</span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setSelectedTargetBuildingIds([])}
+                      className="h-6 text-xs text-slate-500 hover:bg-slate-100 px-2 font-semibold"
+                    >
+                      Clear
+                    </Button>
+                  </div>
+                </div>
+
+                {otherBuildings.length > 3 && (
+                  <div className="relative">
+                    <Search className="h-3.5 w-3.5 absolute left-3 top-2.5 text-slate-400" />
+                    <Input
+                      placeholder="Filter buildings..."
+                      value={targetBuildingSearch}
+                      onChange={e => setTargetBuildingSearch(e.target.value)}
+                      className="pl-8 h-8 text-xs bg-slate-50"
+                    />
+                  </div>
+                )}
+
+                <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                  {otherBuildings
+                    .filter(b => !targetBuildingSearch.trim() || (b.name || "").toLowerCase().includes(targetBuildingSearch.toLowerCase()))
+                    .map(bld => {
+                      const isChecked = selectedTargetBuildingIds.includes(bld.id)
+                      return (
+                        <div
+                          key={bld.id}
+                          onClick={() => {
+                            setSelectedTargetBuildingIds(prev =>
+                              prev.includes(bld.id) ? prev.filter(id => id !== bld.id) : [...prev, bld.id]
+                            )
+                          }}
+                          className={`p-2.5 rounded-lg border flex items-center justify-between cursor-pointer transition-all ${
+                            isChecked
+                              ? "border-purple-500 bg-purple-50/70 text-purple-900"
+                              : "border-slate-200 hover:bg-slate-50 text-slate-700"
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={() => {}}
+                              className="h-4 w-4 text-purple-600 rounded"
+                            />
+                            <span className="font-semibold text-xs">{bld.name}</span>
+                          </div>
+                          <span className="text-[10px] text-slate-400">{bld.address || "Location"}</span>
+                        </div>
+                      )
+                    })}
+                </div>
+              </>
+            )}
+          </div>
+
+          <div className="border-t bg-slate-50 px-5 py-3 flex items-center justify-between">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setCopyBuildingsModalOpen(false)}
+              disabled={isCopyingToBuildings}
+              className="text-xs"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              onClick={handleCopyRecurringToBuildings}
+              disabled={isCopyingToBuildings || selectedTargetBuildingIds.length === 0}
+              className="bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold gap-1.5"
+            >
+              {isCopyingToBuildings ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Deploying...
+                </>
+              ) : (
+                <>
+                  <Copy className="h-3.5 w-3.5" />
+                  Copy to {selectedTargetBuildingIds.length} Building(s)
+                </>
+              )}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
       </div>
     </div>
   )
