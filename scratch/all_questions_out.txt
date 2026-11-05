@@ -1,0 +1,670 @@
+
+=======================================================
+TITLE: Radio Room Cleaning Checklist
+APPLICABILITY: Cairn OB | DEPT: Accommodation & Living Quarters | FREQ: daily
+TOTAL CHECKPOINTS: 13
+  1. FLOOR Cleaning [Photo Required]
+  2. Office
+  3. Tables
+  4. Sofas/chairs [Photo Required]
+  5. Wooden shelves
+  6. doors
+  7. Dustbins
+  8. Dusting
+  9. Mopping
+  10. Air Freshner
+  11. Deep Cleaning
+  12. Housekeeper Shift Execution Sign-off
+  13. Supervisor / Camp Boss Quality Verification Sign-off
+
+=======================================================
+TITLE: Telecom Room Cleaning Checklist
+APPLICABILITY: Cairn OB | DEPT: Accommodation & Living Quarters | FREQ: daily
+TOTAL CHECKPOINTS: 11
+  1. FLOOR Cleaning [Photo Required]
+  2. Office
+  3. Tables
+  4. Sofas/chairs [Photo Required]
+  5. Photo Frames
+  6. doors
+  7. Dustbins
+  8. Dusting
+  9. Mopping
+  10. Housekeeper Shift Execution Sign-off
+  11. Supervisor / Camp Boss Quality Verification Sign-off
+
+=======================================================
+TITLE: Medical Cleaning Clecklist
+APPLICABILITY: Cairn BOTH | DEPT: Medical Center & First Aid | FREQ: daily
+TOTAL CHECKPOINTS: 17
+  1. Passage Cleaning
+  2. office/cabin
+  3. Tables
+  4. Sofas/chairs [Photo Required]
+  5. SS railings
+  6. Photo Frames
+  7. Glass doors
+  8. Dustbins
+  9. H.T Dispenser
+  10. Handwash
+  11. Toilet roll [Photo Required]
+  12. Odonil
+  13. WC/Bowl
+  14. Wash Basin
+  15. Water washed
+  16. Housekeeper Shift Execution Sign-off
+  17. Supervisor / Camp Boss Quality Verification Sign-off
+
+=======================================================
+TITLE: Security Building Checklist
+APPLICABILITY: Cairn BOTH | DEPT: Administration & Security | FREQ: daily
+TOTAL CHECKPOINTS: 18
+  1. Passage Cleaning
+  2. Offices
+  3. Tables
+  4. Sofas/chairs [Photo Required]
+  5. SS railings
+  6. Photo Frames
+  7. Glass doors
+  8. Dustbins
+  9. Stairs [Photo Required]
+  10. H.T Dispenser
+  11. Handwash
+  12. Toilet roll [Photo Required]
+  13. Odonil
+  14. WC/Bowl
+  15. Wash Basin
+  16. Water washed
+  17. Housekeeper Shift Execution Sign-off
+  18. Supervisor / Camp Boss Quality Verification Sign-off
+
+=======================================================
+TITLE: C Bunk Cleaning Checklist
+APPLICABILITY: Cairn OB | DEPT: Accommodation & Living Quarters | FREQ: daily
+TOTAL CHECKPOINTS: 20
+  1. Bed Sheet, Pillow Cover & Blanket [Photo Required]
+  2. Study Table
+  3. TV & Tata sky
+  4. TV & AC Remotes
+  5. Mosquito Repellent
+  6. Kettle, Cups, Saucer, spoon
+  7. Tea,coffee,sugar & milk sachets
+  8. Tissue Box
+  9. Chairs
+  10. Drinking Water Jar
+  11. Water glass
+  12. Dustbin
+  13. Handwash
+  14. Toilet roll [Photo Required]
+  15. bucket & mug
+  16. Odonil
+  17. DUSTING
+  18. Mopping
+  19. Housekeeper Shift Execution Sign-off
+  20. Supervisor / Camp Boss Quality Verification Sign-off
+
+=======================================================
+TITLE: Pee Bunk Cleaning Checklist
+APPLICABILITY: Cairn OB | DEPT: Accommodation & Living Quarters | FREQ: daily
+TOTAL CHECKPOINTS: 20
+  1. Bed Sheet, Pillow Cover & Blanket [Photo Required]
+  2. Study Table
+  3. TV & Tata sky
+  4. TV & AC Remotes
+  5. Mosquito Repellent
+  6. Kettle, Cups, Saucer, spoon
+  7. Tea,coffee,sugar & milk sachets
+  8. Tissue Box
+  9. Chairs
+  10. Drinking Water Jar
+  11. Water glass
+  12. Dustbin
+  13. Handwash
+  14. Toilet roll [Photo Required]
+  15. bucket & mug
+  16. Odonil
+  17. DUSTING
+  18. Mopping
+  19. Housekeeper Shift Execution Sign-off
+  20. Supervisor / Camp Boss Quality Verification Sign-off
+
+=======================================================
+TITLE: Room Checklist
+APPLICABILITY: Cairn BOTH | DEPT: Accommodation & Living Quarters | FREQ: daily
+TOTAL CHECKPOINTS: 22
+  1. Bed sheet, pillow cover & duvet cover [Photo Required]
+  2. Luggage Table
+  3. Fridge Cabinet
+  4. Room Telephone
+  5. TV & Tata sky
+  6. TV & AC Remotes
+  7. Mosquito Repellent
+  8. Kettle, Cups, Saucer, spoon
+  9. Tea,coffee,sugar & milk sachets
+  10. Tissue Box
+  11. Sofa Chairs [Photo Required]
+  12. Drinking Water Jar
+  13. Water glass
+  14. Dustbin
+  15. Handwash
+  16. Toilet roll [Photo Required]
+  17. bucket & mug
+  18. Odonil
+  19. Dusting
+  20. Mopping
+  21. Housekeeper Shift Execution Sign-off
+  22. Supervisor / Camp Boss Quality Verification Sign-off
+
+=======================================================
+TITLE: Washroom Checklist
+APPLICABILITY: Cairn BOTH | DEPT: Accommodation & Living Quarters | FREQ: daily
+TOTAL CHECKPOINTS: 17
+  1. Wash Basin
+  2. Mirror [Photo Required]
+  3. Hand wash
+  4. H.T.Dispen
+  5. Hand Dryer
+  6. Urinals [Photo Required]
+  7. WC/Bowl
+  8. H/Faucet
+  9. T.P/Roll
+  10. Dust Bin
+  11. Wall
+  12. Floor [Photo Required]
+  13. Odonil
+  14. Water washed
+  15. Air Freshner
+  16. Housekeeper Shift Execution Sign-off
+  17. Supervisor / Camp Boss Quality Verification Sign-off
+
+=======================================================
+TITLE: A Wing Checklist
+APPLICABILITY: Cairn BOTH | DEPT: Accommodation & Living Quarters | FREQ: daily
+TOTAL CHECKPOINTS: 14
+  1. Passage Cleaning
+  2. Reception
+  3. Tables
+  4. Sofas/chairs [Photo Required]
+  5. SS railings
+  6. Photo Frames
+  7. Glass doors
+  8. Dustbins
+  9. Stairs [Photo Required]
+  10. Wooden shelves
+  11. Air Freshner
+  12. Deep Cleaning
+  13. Housekeeper Shift Execution Sign-off
+  14. Supervisor / Camp Boss Quality Verification Sign-off
+
+=======================================================
+TITLE: Recreation Checklist
+APPLICABILITY: Cairn BOTH | DEPT: Recreation & Wellness | FREQ: daily
+TOTAL CHECKPOINTS: 14
+  1. Sweeping
+  2. Dusting
+  3. Mopping
+  4. Tables
+  5. Sofas [Photo Required]
+  6. Photo Frames
+  7. Glass doors
+  8. Dustbins
+  9. T.v & accesories
+  10. Chairs
+  11. Air Freshner
+  12. Deep Cleaning
+  13. Housekeeper Shift Execution Sign-off
+  14. Supervisor / Camp Boss Quality Verification Sign-off
+
+=======================================================
+TITLE: B Wing Checklist
+APPLICABILITY: Cairn BOTH | DEPT: Accommodation & Living Quarters | FREQ: daily
+TOTAL CHECKPOINTS: 14
+  1. Passage Cleaning
+  2. Reception
+  3. Tables
+  4. Sofas/chairs [Photo Required]
+  5. SS railings
+  6. Photo Frames
+  7. Glass doors
+  8. Dustbins
+  9. Stairs [Photo Required]
+  10. Wooden shelves
+  11. Air Freshner
+  12. Deep Cleaning
+  13. Housekeeper Shift Execution Sign-off
+  14. Supervisor / Camp Boss Quality Verification Sign-off
+
+=======================================================
+TITLE: Gym Room Checklist
+APPLICABILITY: Cairn BOTH | DEPT: Accommodation & Living Quarters | FREQ: daily
+TOTAL CHECKPOINTS: 17
+  1. Gym equipments dusting
+  2. Sweeping
+  3. Mopping
+  4. Windows
+  5. Wash Basin
+  6. Mirror [Photo Required]
+  7. Hand wash
+  8. H.T. Dispenser
+  9. Hand Dryer
+  10. Urinals [Photo Required]
+  11. WC/Bowl
+  12. T.P/Roll
+  13. DustBin
+  14. Odonil
+  15. Air Freshner
+  16. Housekeeper Shift Execution Sign-off
+  17. Supervisor / Camp Boss Quality Verification Sign-off
+
+=======================================================
+TITLE: Badminton Court Checklist
+APPLICABILITY: Cairn OB | DEPT: Recreation & Wellness | FREQ: daily
+TOTAL CHECKPOINTS: 15
+  1. Sweeping
+  2. Dusting
+  3. Mopping
+  4. Glass doors
+  5. Dustbins
+  6. H.T. Dispenser
+  7. Hand wash
+  8. Wash Basin
+  9. Urinals [Photo Required]
+  10. WC/Bowl
+  11. Floor [Photo Required]
+  12. Water washed
+  13. ODONIL
+  14. Housekeeper Shift Execution Sign-off
+  15. Supervisor / Camp Boss Quality Verification Sign-off
+
+=======================================================
+TITLE: Innovation Cafe Cleaning Checklist
+APPLICABILITY: Cairn BOTH | DEPT: Food Services & Pantries | FREQ: daily
+TOTAL CHECKPOINTS: 14
+  1. Sweeping
+  2. Dusting
+  3. Mopping
+  4. Training room
+  5. Dustbins
+  6. H.T. Dispenser
+  7. Hand wash
+  8. Wash Basin
+  9. Urinals [Photo Required]
+  10. WC/Bowl
+  11. Floor [Photo Required]
+  12. Water washed
+  13. Housekeeper Shift Execution Sign-off
+  14. Supervisor / Camp Boss Quality Verification Sign-off
+
+=======================================================
+TITLE: Staff Accommodation Cleaning Checklist
+APPLICABILITY: Cairn BOTH | DEPT: Accommodation & Living Quarters | FREQ: daily
+TOTAL CHECKPOINTS: 14
+  1. Wash Basin
+  2. Mirror [Photo Required]
+  3. Dormitory
+  4. Stairs [Photo Required]
+  5. Urinals [Photo Required]
+  6. WC/Bowl
+  7. H/Faucet
+  8. Dust Bin
+  9. Wall
+  10. Floor [Photo Required]
+  11. Odonil
+  12. Water washed
+  13. Housekeeper Shift Execution Sign-off
+  14. Supervisor / Camp Boss Quality Verification Sign-off
+
+=======================================================
+TITLE: Water Dispenser 12-Step Chemical Sanitization Checklist
+APPLICABILITY: Cairn BOTH | DEPT: Housekeeping & Hygiene | FREQ: weekly
+TOTAL CHECKPOINTS: 13
+  1. Step 1: Select the dispenser to be cleaned
+  2. Step 2: Remove the empty jar
+  3. Step 3: Remove the top & inner accessories
+  4. Step 4: Drain the washes water from the hot and cold nozzel completely
+  5. Step 5: Add sumatab solution of 150ppm & allow contact time of 15 minutes [Photo Required]
+  6. Step 6: Manually clean the surface of inner with soft nylon brush
+  7. Step 7: Use the fresh solution to clean the top & inner accessory
+  8. Step 8: Rinse the top & inner accessory with potable water [Photo Required]
+  9. Step 9: Pour a liter of potable water a long the wall side if inner surface
+  10. Step 10: Again pour water along the wall side of inner surface
+  11. Step 11: Drain the water from hot & cold nozzel completely
+  12. Step 12: Replace the wash top and inner accessory
+  13. Step 13: The jar is placed on the dispenser
+
+=======================================================
+TITLE: Project Bunk Cleaning Checklist
+APPLICABILITY: Cairn BOTH | DEPT: Accommodation & Living Quarters | FREQ: daily
+TOTAL CHECKPOINTS: 21
+  1. Bed sheet,pillow cover & Blanket [Photo Required]
+  2. study Table
+  3. TV & Tata sky
+  4. TV & AC Remotes
+  5. Mosquito Repellent
+  6. Kettle, Cups, Saucer, spoon
+  7. Tea,coffee,sugar & milk sachets
+  8. Tissue Box
+  9. Chairs
+  10. 20ltr water bottle
+  11. Water glass
+  12. Dustbin
+  13. Handwash
+  14. Toilet roll [Photo Required]
+  15. bucket & mug
+  16. Odonil
+  17. DUSTING
+  18. Mopping
+  19. Toiletries [Photo Required]
+  20. Housekeeper Shift Execution Sign-off
+  21. Supervisor / Camp Boss Quality Verification Sign-off
+
+=======================================================
+TITLE: Front Office Daily Operations & Front Desk SOP Checklist
+APPLICABILITY: Cairn OB | DEPT: Front Office & Administration | FREQ: daily
+TOTAL CHECKPOINTS: 15
+  1. Touch Card Access [Photo Required]
+  2. Hard Copy Of Attendance (Self)
+  3. Check In /Out Register To Check [Photo Required]
+  4. Arrival / Departure Info To H.K.
+  5. Water Consumption Email
+  6. Evening Check Out Email/ Scanned [Photo Required]
+  7. P.O.B. Check
+  8. Issue Of Toiletries Soft / Hard Copy
+  9. Cleaning Of Front Office
+  10. Complain Register Check Morning / Evening [Photo Required]
+  11. Key Register Maintenance [Photo Required]
+  12. Crew Chang Hard Copy File Up
+  13. Laundry Count +File Up
+  14. Receptionist Sign
+  15. Supervisor Sign
+
+=======================================================
+TITLE: Gate No. 2 Security Post & Access Control Cleaning Checklist
+APPLICABILITY: Cairn MPT | DEPT: Security & Plant Logistics | FREQ: daily
+TOTAL CHECKPOINTS: 8
+  1. Gate No. 2 Security Cabin HK Status (Pass / Fail) [Photo Required]
+  2. Floor swept, mopped, and free of sand/oil stains
+  3. Security desk, glass panels & boom barrier console wiped clean
+  4. Waste bin emptied and fresh bin liner installed
+  5. Drinking water pot / dispenser replenished for on-duty guards
+  6. Cleaner Name & Timestamp
+  7. Security Guard On-Duty Name & Endorsement Sign
+  8. Remarks / Maintenance Issues Noted
+
+=======================================================
+TITLE: Driver Bunk Quarters Daily Deep Cleaning Checklist
+APPLICABILITY: Cairn MPT | DEPT: Housekeeping & Accommodation | FREQ: daily
+TOTAL CHECKPOINTS: 18
+  1. Driver Bunk No.1 - Complete Bedding, Floor & Dusting Sanitation [Photo Required]
+  2. Driver Bunk No.2 - Complete Bedding, Floor & Dusting Sanitation
+  3. Driver Bunk No.3 - Complete Bedding, Floor & Dusting Sanitation
+  4. Driver Bunk No.4 - Complete Bedding, Floor & Dusting Sanitation
+  5. Driver Bunk No.5 - Complete Bedding, Floor & Dusting Sanitation
+  6. Driver Bunk No.6 - Complete Bedding, Floor & Dusting Sanitation
+  7. Driver Bunk No.7 - Complete Bedding, Floor & Dusting Sanitation [Photo Required]
+  8. Driver Bunk No.8 - Complete Bedding, Floor & Dusting Sanitation
+  9. Driver Bunk No.9 - Complete Bedding, Floor & Dusting Sanitation
+  10. Driver Bunk No.10 - Complete Bedding, Floor & Dusting Sanitation
+  11. Driver Bunk No.11 - Complete Bedding, Floor & Dusting Sanitation
+  12. Driver Bunk No.12 - Complete Bedding, Floor & Dusting Sanitation
+  13. Driver Bunk No.13 - Complete Bedding, Floor & Dusting Sanitation
+  14. Driver Bunk No.14 - Complete Bedding, Floor & Dusting Sanitation
+  15. Driver Rest Area Bathrooms & Wash basins cleaned & sanitized [Photo Required]
+  16. Linen / Blanket replacement completed for vacated driver bunks
+  17. Housekeeper Name & Daily Shift Completion Sign
+  18. Supervisor Verification & Shift Sign-off
+
+=======================================================
+TITLE: Stp Cleaning Checklist
+APPLICABILITY: Cairn OB | DEPT: Technical & Critical Infrastructure | FREQ: daily
+TOTAL CHECKPOINTS: 10
+  1. FLOOR Cleaning [Photo Required]
+  2. Tables
+  3. chairs
+  4. Stairs [Photo Required]
+  5. doors
+  6. Dustbins
+  7. iron pipe
+  8. pipe protector
+  9. Housekeeper Shift Execution Sign-off
+  10. Supervisor / Camp Boss Quality Verification Sign-off
+
+=======================================================
+TITLE: Cec Cleaning Checklist
+APPLICABILITY: Cairn OB | DEPT: Technical & Critical Infrastructure | FREQ: daily
+TOTAL CHECKPOINTS: 11
+  1. FLOOR Cleaning [Photo Required]
+  2. Office
+  3. Tables
+  4. Sofas/chairs [Photo Required]
+  5. Photo Frames
+  6. doors
+  7. Dustbins
+  8. Dusting
+  9. Mopping
+  10. Housekeeper Shift Execution Sign-off
+  11. Supervisor / Camp Boss Quality Verification Sign-off
+
+=======================================================
+TITLE: Staff Bunk Quarters Daily Cleaning Checklist
+APPLICABILITY: Cairn BOTH | DEPT: Housekeeping & Accommodation | FREQ: daily
+TOTAL CHECKPOINTS: 9
+  1. Staff Bunk No.1 - Complete Bedding, Floor Mopping & Dusting [Photo Required]
+  2. Staff Bunk No.2 - Complete Bedding, Floor Mopping & Dusting
+  3. Staff Bunk No.3 - Complete Bedding, Floor Mopping & Dusting
+  4. Staff Bunk No.4 - Complete Bedding, Floor Mopping & Dusting
+  5. Staff Bunk No.5 - Complete Bedding, Floor Mopping & Dusting [Photo Required]
+  6. Staff Washroom, Geyser & Fittings Sanitization [Photo Required]
+  7. All AC / Fan / Lights switches operational and clean
+  8. Housekeeper / Staff Attendant Signature
+  9. Supervisor Inspection Sign-off
+
+=======================================================
+TITLE: Medical Center Cleaning Checklist
+APPLICABILITY: Cairn BOTH | DEPT: Medical Center & First Aid | FREQ: daily
+TOTAL CHECKPOINTS: 11
+  1. FLOOR Cleaning [Photo Required]
+  2. Office
+  3. Tables
+  4. Sofas/chairs [Photo Required]
+  5. Photo Frames
+  6. doors
+  7. Dustbins
+  8. Dusting
+  9. Mopping
+  10. Housekeeper Shift Execution Sign-off
+  11. Supervisor / Camp Boss Quality Verification Sign-off
+
+=======================================================
+TITLE: Security Building Cleaning Checklist
+APPLICABILITY: Cairn BOTH | DEPT: Administration & Security | FREQ: daily
+TOTAL CHECKPOINTS: 11
+  1. FLOOR Cleaning [Photo Required]
+  2. Office
+  3. Tables
+  4. Sofas/chairs [Photo Required]
+  5. Photo Frames
+  6. doors
+  7. Dustbins
+  8. Dusting
+  9. Mopping
+  10. Housekeeper Shift Execution Sign-off
+  11. Supervisor / Camp Boss Quality Verification Sign-off
+
+=======================================================
+TITLE: Admin Building Cleaning Checklist
+APPLICABILITY: Cairn OB | DEPT: Administration & Security | FREQ: daily
+TOTAL CHECKPOINTS: 13
+  1. CARPET CLEANING
+  2. Office
+  3. Tables
+  4. Sofas/chairs [Photo Required]
+  5. Photo Frames
+  6. FLOWER POT
+  7. TV
+  8. doors
+  9. Dustbins
+  10. Dusting
+  11. Mopping
+  12. Housekeeper Shift Execution Sign-off
+  13. Supervisor / Camp Boss Quality Verification Sign-off
+
+=======================================================
+TITLE: Innovation Cafe 1 Cleaning Checklist
+APPLICABILITY: Cairn BOTH | DEPT: Food Services & Pantries | FREQ: daily
+TOTAL CHECKPOINTS: 12
+  1. FLOOR Cleaning [Photo Required]
+  2. Office
+  3. Tables
+  4. Sofas/chairs [Photo Required]
+  5. Photo Frames
+  6. doors
+  7. Dustbins
+  8. Dusting
+  9. ODONIL
+  10. Mopping
+  11. Housekeeper Shift Execution Sign-off
+  12. Supervisor / Camp Boss Quality Verification Sign-off
+
+=======================================================
+TITLE: Sanitary Napkin Dispenser Restocking & Hygiene Checklist
+APPLICABILITY: Cairn BOTH | DEPT: Housekeeping & Female Restrooms | FREQ: daily
+TOTAL CHECKPOINTS: 6
+  1. Sanitary Pad Dispenser Stock Available (Units remaining)
+  2. Dispenser Cleanliness & Mechanical Functionality
+  3. Refill Quantity Added (Units) [Photo Required]
+  4. Disposal Bin Cleaned, Sanitized & Lined with Biohazard Bag
+  5. Housekeeper Refill Verification Sign
+  6. Supervisor Remarks / Restock Notes
+
+=======================================================
+TITLE: Rest Shelter Cleaning Checklist
+APPLICABILITY: Cairn MPT | DEPT: Food Services & Pantries | FREQ: daily
+TOTAL CHECKPOINTS: 9
+  1. FLOOR Cleaning [Photo Required]
+  2. Tables
+  3. chairs
+  4. doors
+  5. Dustbins
+  6. Dusting
+  7. Mopping
+  8. Housekeeper Shift Execution Sign-off
+  9. Supervisor / Camp Boss Quality Verification Sign-off
+
+=======================================================
+TITLE: Ob Pantry Cleaning Checklist
+APPLICABILITY: Cairn OB | DEPT: Food Services & Pantries | FREQ: daily
+TOTAL CHECKPOINTS: 8
+  1. Tables
+  2. Sofas/chairs [Photo Required]
+  3. Door
+  4. Dustbins
+  5. Handwash
+  6. Water washed
+  7. Housekeeper Shift Execution Sign-off
+  8. Supervisor / Camp Boss Quality Verification Sign-off
+
+=======================================================
+TITLE: Staff Personal Hygiene, Uniform & Grooming Audit Card
+APPLICABILITY: Cairn BOTH | DEPT: HSE & Quality Assurance | FREQ: daily
+TOTAL CHECKPOINTS: 11
+  1. Uniform: Clean, ironed, complete company uniform with name badge [Photo Required]
+  2. Shoes & Socks: Clean safety shoes / non-slip footwear and fresh dark socks
+  3. Hair: Neatly groomed, trimmed hair / clean cap or hairnet in place
+  4. Nails: Short, clean, trimmed without nail paint or dirt
+  5. Shaving: Clean shaven or neatly manicured beard policy compliance
+  6. Personal Hygiene: Clean hands, no body odor, fresh personal appearance
+  7. Dusters: Correct color-coded microfibre dusters carrying on person
+  8. Pledge Card: Sodexo / Cairn Quality & Safety Pledge Card carried
+  9. Jewellery Policy: Zero rings, bracelets, or watches in sensitive zones
+  10. Staff Name, Designation & Shift
+  11. Supervisor / Camp Boss Signature Verification
+
+=======================================================
+TITLE: Mahi Toewr Cleaning Checklist
+APPLICABILITY: Cairn OB | DEPT: Housekeeping & Facility Management | FREQ: daily
+TOTAL CHECKPOINTS: 22
+  1. Bed sheet, pillow cover & duvet cover [Photo Required]
+  2. Luggage Table
+  3. Fridge Cabinet
+  4. Room Telephone
+  5. TV & Tata sky
+  6. TV & AC Remotes
+  7. Mosquito Repellent
+  8. Kettle, Cups, Saucer, spoon
+  9. Tea,coffee,sugar & milk sachets
+  10. Tissue Box
+  11. Sofa Chairs [Photo Required]
+  12. Drinking Water Jar
+  13. Water glass
+  14. Dustbin
+  15. Handwash
+  16. Toilet roll [Photo Required]
+  17. bucket & mug
+  18. Odonil
+  19. Dusting
+  20. Mopping
+  21. Housekeeper Shift Execution Sign-off
+  22. Supervisor / Camp Boss Quality Verification Sign-off
+
+=======================================================
+TITLE: Mahi Tower Cleaning Checklist
+APPLICABILITY: Cairn OB | DEPT: Accommodation & Living Quarters | FREQ: daily
+TOTAL CHECKPOINTS: 21
+  1. Bed sheet, pillow cover & duvet cover [Photo Required]
+  2. Luggage Table
+  3. Fridge Cabinet
+  4. TV & Tata sky
+  5. TV & AC Remotes
+  6. Mosquito Repellent
+  7. Kettle, Cups, Saucer, spoon
+  8. Tea,coffee,sugar & milk sachets
+  9. Tissue Box
+  10. Sofa Chairs [Photo Required]
+  11. Drinking Water Jar
+  12. Water glass
+  13. Dustbin
+  14. Handwash
+  15. Toilet roll [Photo Required]
+  16. bucket & mug
+  17. Odonil
+  18. Dusting
+  19. Mopping
+  20. Housekeeper Shift Execution Sign-off
+  21. Supervisor / Camp Boss Quality Verification Sign-off
+
+=======================================================
+TITLE: Saraswati Tower Cleaning Checklist
+APPLICABILITY: Cairn OB | DEPT: Accommodation & Living Quarters | FREQ: daily
+TOTAL CHECKPOINTS: 20
+  1. Bed sheet, pillow cover & duvet cover [Photo Required]
+  2. Luggage Table
+  3. Fridge Cabinet
+  4. AC Remotes
+  5. Mosquito Repellent
+  6. Kettle, Cups, Saucer, spoon
+  7. Tea,coffee,sugar & milk sachets
+  8. Tissue Box
+  9. Sofa Chairs [Photo Required]
+  10. Drinking Water Jar
+  11. Water glass
+  12. Dustbin
+  13. Handwash
+  14. Toilet roll [Photo Required]
+  15. bucket & mug
+  16. Odonil
+  17. Dusting
+  18. Mopping
+  19. Housekeeper Shift Execution Sign-off
+  20. Supervisor / Camp Boss Quality Verification Sign-off
+
+=======================================================
+TITLE: Eye Wash Bottle Refilling & HSE Inspection Checklist
+APPLICABILITY: Cairn BOTH | DEPT: Health, Safety & Environment (HSE) | FREQ: daily
+TOTAL CHECKPOINTS: 6
+  1. Inspect Eye Wash Bottle seal, cleanliness and expiry date [Photo Required]
+  2. Verify fluid permissible limit & clarity (clean, sterile saline/potable water)
+  3. Housekeeper Refill Status (Full / Refilled / Replaced) [Photo Required]
+  4. Quantity refilled (ml)
+  5. Inspection / Refill Remarks
+  6. Supervisor / HSE Sign-off Verification

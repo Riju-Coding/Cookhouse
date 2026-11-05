@@ -84,6 +84,7 @@ function getRouteGroup(routePath: string): string {
     "/admin/meal-plans": "meals",
     "/admin/sub-meal-plans": "meals",
     "/admin/menu-items": "meals",
+    "/admin/recipes": "meals",
     "/admin/services": "services",
     "/admin/sub-services": "services",
     "/admin/companies": "organization",
@@ -113,14 +114,14 @@ const PRESETS: Record<string, { label: string; description: string; routes: stri
   "menu-viewer": {
     label: "Menu Viewer",
     description: "View company menus, meal plans, and menu items",
-    routes: ["/admin/company-menus", "/admin/menu-items", "/admin/meal-plans", "/admin/sub-meal-plans"],
+    routes: ["/admin/company-menus", "/admin/recipes", "/admin/menu-items", "/admin/meal-plans", "/admin/sub-meal-plans"],
   },
   "full-menu": {
     label: "Full Menu Access",
     description: "Create and manage menus, services, and meal plans",
     routes: [
       "/admin/company-menus", "/admin/combined-menu", "/admin/combined-menu-management",
-      "/admin/menu-items", "/admin/meal-plans", "/admin/sub-meal-plans",
+      "/admin/recipes", "/admin/menu-items", "/admin/meal-plans", "/admin/sub-meal-plans",
       "/admin/services", "/admin/sub-services", "/admin/updations",
     ],
   },

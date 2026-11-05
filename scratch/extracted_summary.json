@@ -1,0 +1,670 @@
+[
+  {
+    "sheet_name": "RADIO ROOM",
+    "clean_title": "RADIO ROOM  CLEANING CHECK LIST",
+    "question_count": 12,
+    "questions": [
+      "FLOOR Cleaning",
+      "Office",
+      "Tables",
+      "Sofas/chairs",
+      "Wooden shelves",
+      "doors",
+      "Dustbins",
+      "Dusting",
+      "Mopping",
+      "Air Freshner",
+      "Deep Cleaning",
+      "Signature"
+    ],
+    "col0_dates": true
+  },
+  {
+    "sheet_name": "TELECOM ROOM",
+    "clean_title": "TELECOM ROOM CLEANING CHECK LIST",
+    "question_count": 11,
+    "questions": [
+      "FLOOR Cleaning",
+      "Office",
+      "Tables",
+      "Sofas/chairs",
+      "Photo Frames",
+      "doors",
+      "Dustbins",
+      "Dusting",
+      "Mopping",
+      "Time",
+      "Signature"
+    ],
+    "col0_dates": true
+  },
+  {
+    "sheet_name": "Medical cleaning clecklist",
+    "clean_title": "MEDICAL CENTER  CLEANING CHECK LIST",
+    "question_count": 2,
+    "questions": [
+      "MEDICAL CENTER CLEANING CHECK LIST - FOR THE MONTH OF : ______________: FEB-2025__________",
+      "Passage Cleaning"
+    ],
+    "col0_dates": false
+  },
+  {
+    "sheet_name": "Security building checklist",
+    "clean_title": "SECURITY BUILDING CLEANING CHECK LIST",
+    "question_count": 17,
+    "questions": [
+      "Passage Cleaning",
+      "Offices",
+      "Tables",
+      "Sofas/chairs",
+      "SS railings",
+      "Photo Frames",
+      "Glass doors",
+      "Dustbins",
+      "Stairs",
+      "H.T Dispenser",
+      "Handwash",
+      "Toilet roll",
+      "Odonil",
+      "WC/Bowl",
+      "Wash Basin",
+      "Water washed",
+      "Signature"
+    ],
+    "col0_dates": true
+  },
+  {
+    "sheet_name": "C BUNK",
+    "clean_title": "BUNK NO - C BUNK                     CLEANING CHECKLIST",
+    "question_count": 19,
+    "questions": [
+      "Bed Sheet, Pillow Cover & Blanket",
+      "Study Table",
+      "TV & Tata sky",
+      "TV & AC Remotes",
+      "Mosquito Repellent",
+      "Kettle, Cups, Saucer, spoon",
+      "Tea,coffee,sugar & milk sachets",
+      "Tissue Box",
+      "Chairs",
+      "Drinking Water Jar",
+      "Water glass",
+      "Dustbin",
+      "Handwash",
+      "Toilet roll",
+      "bucket & mug",
+      "Odonil",
+      "DUSTING",
+      "Mopping",
+      "Signature"
+    ],
+    "col0_dates": true
+  },
+  {
+    "sheet_name": "PEE BUNK ",
+    "clean_title": "BUNK NO -PE                       CLEANING CHECKLIST",
+    "question_count": 19,
+    "questions": [
+      "Bed Sheet, Pillow Cover & Blanket",
+      "Study Table",
+      "TV & Tata sky",
+      "TV & AC Remotes",
+      "Mosquito Repellent",
+      "Kettle, Cups, Saucer, spoon",
+      "Tea,coffee,sugar & milk sachets",
+      "Tissue Box",
+      "Chairs",
+      "Drinking Water Jar",
+      "Water glass",
+      "Dustbin",
+      "Handwash",
+      "Toilet roll",
+      "bucket & mug",
+      "Odonil",
+      "DUSTING",
+      "Mopping",
+      "Signature"
+    ],
+    "col0_dates": true
+  },
+  {
+    "sheet_name": "Room Checklist",
+    "clean_title": "ROOM NO -                                                             CLEANING CHECKLIST",
+    "question_count": 21,
+    "questions": [
+      "Bed sheet, pillow cover & duvet cover",
+      "Luggage Table",
+      "Fridge Cabinet",
+      "Room Telephone",
+      "TV & Tata sky",
+      "TV & AC Remotes",
+      "Mosquito Repellent",
+      "Kettle, Cups, Saucer, spoon",
+      "Tea,coffee,sugar & milk sachets",
+      "Tissue Box",
+      "Sofa Chairs",
+      "Drinking Water Jar",
+      "Water glass",
+      "Dustbin",
+      "Handwash",
+      "Toilet roll",
+      "bucket & mug",
+      "Odonil",
+      "Dusting",
+      "Mopping",
+      "Signature"
+    ],
+    "col0_dates": true
+  },
+  {
+    "sheet_name": "Washroom checklist",
+    "clean_title": "WASH ROOM CLEANING CHECK LIST",
+    "question_count": 16,
+    "questions": [
+      "Wash Basin",
+      "Mirror",
+      "Hand wash",
+      "H.T.Dispen",
+      "Hand Dryer",
+      "Urinals",
+      "WC/Bowl",
+      "H/Faucet",
+      "T.P/Roll",
+      "Dust Bin",
+      "Wall",
+      "Floor",
+      "Odonil",
+      "Water washed",
+      "Air Freshner",
+      "Signature"
+    ],
+    "col0_dates": true
+  },
+  {
+    "sheet_name": "A wing checklist",
+    "clean_title": "A-WING CLEANING CHECK LIST",
+    "question_count": 13,
+    "questions": [
+      "Passage Cleaning",
+      "Reception",
+      "Tables",
+      "Sofas/chairs",
+      "SS railings",
+      "Photo Frames",
+      "Glass doors",
+      "Dustbins",
+      "Stairs",
+      "Wooden shelves",
+      "Air Freshner",
+      "Deep Cleaning",
+      "Signature"
+    ],
+    "col0_dates": true
+  },
+  {
+    "sheet_name": "Recreation checklist",
+    "clean_title": "RECREATION / T.V ROOM CLEANING CHECK LIST",
+    "question_count": 13,
+    "questions": [
+      "Sweeping",
+      "Dusting",
+      "Mopping",
+      "Tables",
+      "Sofas",
+      "Photo Frames",
+      "Glass doors",
+      "Dustbins",
+      "T.v & accesories",
+      "Chairs",
+      "Air Freshner",
+      "Deep Cleaning",
+      "Signature"
+    ],
+    "col0_dates": true
+  },
+  {
+    "sheet_name": "B wing checklist",
+    "clean_title": "B-WING CLEANING CHECK LIST",
+    "question_count": 13,
+    "questions": [
+      "Passage Cleaning",
+      "Reception",
+      "Tables",
+      "Sofas/chairs",
+      "SS railings",
+      "Photo Frames",
+      "Glass doors",
+      "Dustbins",
+      "Stairs",
+      "Wooden shelves",
+      "Air Freshner",
+      "Deep Cleaning",
+      "Signature"
+    ],
+    "col0_dates": true
+  },
+  {
+    "sheet_name": "Gym room checklist",
+    "clean_title": "GYM ROOM / BATHROOM CLEANING CHECK LIST",
+    "question_count": 16,
+    "questions": [
+      "Gym equipments dusting",
+      "Sweeping",
+      "Mopping",
+      "Windows",
+      "Wash Basin",
+      "Mirror",
+      "Hand wash",
+      "H.T. Dispenser",
+      "Hand Dryer",
+      "Urinals",
+      "WC/Bowl",
+      "T.P/Roll",
+      "DustBin",
+      "Odonil",
+      "Air Freshner",
+      "Signature"
+    ],
+    "col0_dates": true
+  },
+  {
+    "sheet_name": "Badminton court checklist",
+    "clean_title": "BADMINTON COURT CLEANING CHECK LIST",
+    "question_count": 14,
+    "questions": [
+      "Sweeping",
+      "Dusting",
+      "Mopping",
+      "Glass doors",
+      "Dustbins",
+      "H.T. Dispenser",
+      "Hand wash",
+      "Wash Basin",
+      "Urinals",
+      "WC/Bowl",
+      "Floor",
+      "Water washed",
+      "ODONIL",
+      "Signature"
+    ],
+    "col0_dates": true
+  },
+  {
+    "sheet_name": "INNOVATION CAFE",
+    "clean_title": "INNOVATION CAFE CLEANING CHECK LIST",
+    "question_count": 13,
+    "questions": [
+      "Sweeping",
+      "Dusting",
+      "Mopping",
+      "Training room",
+      "Dustbins",
+      "H.T. Dispenser",
+      "Hand wash",
+      "Wash Basin",
+      "Urinals",
+      "WC/Bowl",
+      "Floor",
+      "Water washed",
+      "Signature"
+    ],
+    "col0_dates": true
+  },
+  {
+    "sheet_name": "STAFF ACCOMMODATION",
+    "clean_title": "STAFF ACCOMMODATION CLEANING CHECK LIST",
+    "question_count": 13,
+    "questions": [
+      "Wash Basin",
+      "Mirror",
+      "Dormitory",
+      "Stairs",
+      "Urinals",
+      "WC/Bowl",
+      "H/Faucet",
+      "Dust Bin",
+      "Wall",
+      "Floor",
+      "Odonil",
+      "Water washed",
+      "Signature"
+    ],
+    "col0_dates": true
+  },
+  {
+    "sheet_name": "Water Disp.",
+    "clean_title": "WATER DISPENSER CLEANING CHECK LIST",
+    "question_count": 7,
+    "questions": [
+      "SR.NO",
+      "CLEANING PROCEDURE",
+      "1st WEEK",
+      "2nd WEEK",
+      "3rd WEEK",
+      "4th WEEK",
+      "REMARK"
+    ],
+    "col0_dates": true
+  },
+  {
+    "sheet_name": "PROJECT BUNK ",
+    "clean_title": "PROJECT BUNK",
+    "question_count": 1,
+    "questions": [
+      "Bed sheet,pillow cover & Blanket"
+    ],
+    "col0_dates": false
+  },
+  {
+    "sheet_name": "Front",
+    "clean_title": "FRONT OFFICE DAILY WORK DESCRIPTION CHECKLIST                             MONTH -SEP- 2026",
+    "question_count": 15,
+    "questions": [
+      "TOUCH CARD ACCESS",
+      "HARD COPY OF ATTENDANCE (SELF)",
+      "CHECK IN /OUT REGISTER TO CHECK",
+      "ARRIVAL / DEPARTURE INFO TO H.K.",
+      "WATER CONSUMPTION EMAIL",
+      "EVENING CHECK OUT EMAIL/ SCANNED",
+      "P.O.B. CHECK",
+      "ISSUE OF TOILETRIES SOFT / HARD COPY",
+      "CLEANING OF FRONT OFFICE",
+      "COMPLAIN REGISTER CHECK MORNING / EVENING",
+      "KEY REGISTER MAINTENANCE",
+      "CREW CHANG HARD COPY FILE UP",
+      "LAUNDRY COUNT +FILE UP",
+      "RECEPTIONIST SIGN",
+      "SUPERVISOR SIGN"
+    ],
+    "col0_dates": true
+  },
+  {
+    "sheet_name": "GATE. 2",
+    "clean_title": "GATE NO - 2",
+    "question_count": 6,
+    "questions": [
+      "HOUSEKEEPING STATUS",
+      "CLEANER",
+      "SIGNATURE",
+      "SECURITY NAME",
+      "SECURITY SIGN",
+      "REMARKS"
+    ],
+    "col0_dates": true
+  },
+  {
+    "sheet_name": "DRIVER BUNK",
+    "clean_title": "HOUSEKEEPING CLEANING CHECKLIST                                 DRIVER BUNK DAILY CLEANING                                                              DATE",
+    "question_count": 6,
+    "questions": [
+      "SL.NO.",
+      "LOCATION",
+      "CLEANING DONE",
+      "STAFF NAME",
+      "STAFF SIGNATURE",
+      "REMARKS"
+    ],
+    "col0_dates": true
+  },
+  {
+    "sheet_name": "STP",
+    "clean_title": "OB STP CLEANING CHECK LIST",
+    "question_count": 10,
+    "questions": [
+      "FLOOR Cleaning",
+      "Tables",
+      "chairs",
+      "Stairs",
+      "doors",
+      "Dustbins",
+      "iron pipe",
+      "pipe protector",
+      "Time",
+      "Signature"
+    ],
+    "col0_dates": true
+  },
+  {
+    "sheet_name": "CEC",
+    "clean_title": "CEC CLEANING CHECK LIST",
+    "question_count": 10,
+    "questions": [
+      "FLOOR Cleaning",
+      "Office",
+      "Tables",
+      "Sofas/chairs",
+      "Photo Frames",
+      "doors",
+      "Dustbins",
+      "Dusting",
+      "Mopping",
+      "Signature"
+    ],
+    "col0_dates": true
+  },
+  {
+    "sheet_name": "STAFF BUNK ",
+    "clean_title": "SODEXO INDIA SERVICES PVT.",
+    "question_count": 6,
+    "questions": [
+      "SL.NO.",
+      "LOCATION",
+      "CLEANING DONE",
+      "STAFF NAME",
+      "STAFF SIGNATURE",
+      "REMARKS"
+    ],
+    "col0_dates": true
+  },
+  {
+    "sheet_name": "MEDICAL CENTER",
+    "clean_title": "MEDICAL CENTER CLEANING CHECK LIST",
+    "question_count": 10,
+    "questions": [
+      "FLOOR Cleaning",
+      "Office",
+      "Tables",
+      "Sofas/chairs",
+      "Photo Frames",
+      "doors",
+      "Dustbins",
+      "Dusting",
+      "Mopping",
+      "Signature"
+    ],
+    "col0_dates": true
+  },
+  {
+    "sheet_name": "SECURITY BUILDING",
+    "clean_title": "SECURITY BUILDING CLEANING CHECK LIST",
+    "question_count": 10,
+    "questions": [
+      "FLOOR Cleaning",
+      "Office",
+      "Tables",
+      "Sofas/chairs",
+      "Photo Frames",
+      "doors",
+      "Dustbins",
+      "Dusting",
+      "Mopping",
+      "Signature"
+    ],
+    "col0_dates": true
+  },
+  {
+    "sheet_name": "ADMIN  BUILDING",
+    "clean_title": "ADMIN BUILDING CLEANING CHECK LIST",
+    "question_count": 12,
+    "questions": [
+      "CARPET CLEANING",
+      "Office",
+      "Tables",
+      "Sofas/chairs",
+      "Photo Frames",
+      "FLOWER POT",
+      "TV",
+      "doors",
+      "Dustbins",
+      "Dusting",
+      "Mopping",
+      "Signature"
+    ],
+    "col0_dates": true
+  },
+  {
+    "sheet_name": "INNOVATION CAFE 1",
+    "clean_title": "INNOVATION CAFE CLEANING CHECK LIST",
+    "question_count": 11,
+    "questions": [
+      "FLOOR Cleaning",
+      "Office",
+      "Tables",
+      "Sofas/chairs",
+      "Photo Frames",
+      "doors",
+      "Dustbins",
+      "Dusting",
+      "ODONIL",
+      "Mopping",
+      "Signature"
+    ],
+    "col0_dates": true
+  },
+  {
+    "sheet_name": "PAD",
+    "clean_title": "SANITARY PADS CHECKLIST    Location ....SEP- 2026..............  Month",
+    "question_count": 3,
+    "questions": [
+      "AVAILABLE",
+      "REFILL",
+      "HK SIGN"
+    ],
+    "col0_dates": true
+  },
+  {
+    "sheet_name": "REST SHELTER",
+    "clean_title": "REST SHELTER CLEANING CHECK LIST MPT",
+    "question_count": 9,
+    "questions": [
+      "FLOOR Cleaning",
+      "Tables",
+      "chairs",
+      "doors",
+      "Dustbins",
+      "Dusting",
+      "Mopping",
+      "Time",
+      "Signature"
+    ],
+    "col0_dates": true
+  },
+  {
+    "sheet_name": "OB PANTRY",
+    "clean_title": "OB PANTRY CLEANING CHECK LIST",
+    "question_count": 7,
+    "questions": [
+      "Tables",
+      "Sofas/chairs",
+      "Door",
+      "Dustbins",
+      "Handwash",
+      "Water washed",
+      "Signature"
+    ],
+    "col0_dates": true
+  },
+  {
+    "sheet_name": "GROOMING CHECK CARD ",
+    "clean_title": "GROOMING CHECK CARD",
+    "question_count": 11,
+    "questions": [
+      "Sr . No.",
+      "Uniform",
+      "Shoes & Socks",
+      "Hair",
+      "Nails",
+      "Shaving",
+      "Dusters",
+      "Pledge Card",
+      "Jewelery Policy",
+      "Remarks if any",
+      "Sup/Camp boss Sign"
+    ],
+    "col0_dates": true
+  },
+  {
+    "sheet_name": "MAHI TOEWR",
+    "clean_title": "ROOM NO -                                                                                                 CLEANING CHECKLIST",
+    "question_count": 2,
+    "questions": [
+      "ROOM NO - CLEANING CHECKLIST MONTH : NOV-2025",
+      "Bed sheet, pillow cover & duvet cover"
+    ],
+    "col0_dates": false
+  },
+  {
+    "sheet_name": "MAHI TOWER",
+    "clean_title": "MAHI TOWER -                                                                    CLEANING CHECKLIST",
+    "question_count": 20,
+    "questions": [
+      "Bed sheet, pillow cover & duvet cover",
+      "Luggage Table",
+      "Fridge Cabinet",
+      "TV & Tata sky",
+      "TV & AC Remotes",
+      "Mosquito Repellent",
+      "Kettle, Cups, Saucer, spoon",
+      "Tea,coffee,sugar & milk sachets",
+      "Tissue Box",
+      "Sofa Chairs",
+      "Drinking Water Jar",
+      "Water glass",
+      "Dustbin",
+      "Handwash",
+      "Toilet roll",
+      "bucket & mug",
+      "Odonil",
+      "Dusting",
+      "Mopping",
+      "Signature"
+    ],
+    "col0_dates": true
+  },
+  {
+    "sheet_name": "SARASWATI TOWER",
+    "clean_title": "SARASWATI TOWER -                             CLEANING CHECKLIST",
+    "question_count": 19,
+    "questions": [
+      "Bed sheet, pillow cover & duvet cover",
+      "Luggage Table",
+      "Fridge Cabinet",
+      "AC Remotes",
+      "Mosquito Repellent",
+      "Kettle, Cups, Saucer, spoon",
+      "Tea,coffee,sugar & milk sachets",
+      "Tissue Box",
+      "Sofa Chairs",
+      "Drinking Water Jar",
+      "Water glass",
+      "Dustbin",
+      "Handwash",
+      "Toilet roll",
+      "bucket & mug",
+      "Odonil",
+      "Dusting",
+      "Mopping",
+      "Signature"
+    ],
+    "col0_dates": true
+  },
+  {
+    "sheet_name": "EYE WASH CHECKLIST",
+    "clean_title": "EYE WASH BOTTLE REFILLING CHECKLIST",
+    "question_count": 1,
+    "questions": [
+      "Reversion No:00 H& FS"
+    ],
+    "col0_dates": true
+  }
+]

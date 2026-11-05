@@ -1,0 +1,3436 @@
+[
+  {
+    "key": "radio_room",
+    "sheet_name": "RADIO ROOM",
+    "title": "Radio Room Cleaning Checklist",
+    "department": "Accommodation & Living Quarters",
+    "category": "Resident Rooms & Bunks",
+    "frequency": "daily",
+    "building_applicability": "OB",
+    "assignedRole": "Housekeeper / Supervisor",
+    "description": "Daily shift housekeeping and facility inspection checklist for Radio Room Cleaning Checklist at Cairn OB.",
+    "questions": [
+      {
+        "question": "FLOOR Cleaning",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": true
+      },
+      {
+        "question": "Office",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Tables",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Sofas/chairs",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": true
+      },
+      {
+        "question": "Wooden shelves",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "doors",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Dustbins",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Dusting",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Mopping",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Air Freshner",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Deep Cleaning",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Housekeeper Shift Execution Sign-off",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Supervisor / Camp Boss Quality Verification Sign-off",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      }
+    ]
+  },
+  {
+    "key": "telecom_room",
+    "sheet_name": "TELECOM ROOM",
+    "title": "Telecom Room Cleaning Checklist",
+    "department": "Accommodation & Living Quarters",
+    "category": "Resident Rooms & Bunks",
+    "frequency": "daily",
+    "building_applicability": "OB",
+    "assignedRole": "Housekeeper / Supervisor",
+    "description": "Daily shift housekeeping and facility inspection checklist for Telecom Room Cleaning Checklist at Cairn OB.",
+    "questions": [
+      {
+        "question": "FLOOR Cleaning",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": true
+      },
+      {
+        "question": "Office",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Tables",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Sofas/chairs",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": true
+      },
+      {
+        "question": "Photo Frames",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "doors",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Dustbins",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Dusting",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Mopping",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Housekeeper Shift Execution Sign-off",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Supervisor / Camp Boss Quality Verification Sign-off",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      }
+    ]
+  },
+  {
+    "key": "medical_cleaning_clecklist",
+    "sheet_name": "Medical cleaning clecklist",
+    "title": "Medical Cleaning Clecklist",
+    "department": "Medical Center & First Aid",
+    "category": "Healthcare Facility",
+    "frequency": "daily",
+    "building_applicability": "BOTH",
+    "assignedRole": "Housekeeper / Supervisor",
+    "description": "Daily shift housekeeping and facility inspection checklist for Medical Cleaning Clecklist at Cairn BOTH.",
+    "questions": [
+      {
+        "question": "Passage Cleaning",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "office/cabin",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Tables",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Sofas/chairs",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": true
+      },
+      {
+        "question": "SS railings",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Photo Frames",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Glass doors",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Dustbins",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "H.T Dispenser",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Handwash",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Toilet roll",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": true
+      },
+      {
+        "question": "Odonil",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "WC/Bowl",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Wash Basin",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Water washed",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Housekeeper Shift Execution Sign-off",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Supervisor / Camp Boss Quality Verification Sign-off",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      }
+    ]
+  },
+  {
+    "key": "security_building_checklist",
+    "sheet_name": "Security building checklist",
+    "title": "Security Building Checklist",
+    "department": "Administration & Security",
+    "category": "Security & Corporate Buildings",
+    "frequency": "daily",
+    "building_applicability": "BOTH",
+    "assignedRole": "Housekeeper / Supervisor",
+    "description": "Daily shift housekeeping and facility inspection checklist for Security Building Checklist at Cairn BOTH.",
+    "questions": [
+      {
+        "question": "Passage Cleaning",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Offices",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Tables",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Sofas/chairs",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": true
+      },
+      {
+        "question": "SS railings",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Photo Frames",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Glass doors",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Dustbins",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Stairs",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": true
+      },
+      {
+        "question": "H.T Dispenser",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Handwash",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Toilet roll",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": true
+      },
+      {
+        "question": "Odonil",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "WC/Bowl",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Wash Basin",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Water washed",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Housekeeper Shift Execution Sign-off",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Supervisor / Camp Boss Quality Verification Sign-off",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      }
+    ]
+  },
+  {
+    "key": "c_bunk",
+    "sheet_name": "C BUNK",
+    "title": "C Bunk Cleaning Checklist",
+    "department": "Accommodation & Living Quarters",
+    "category": "Resident Rooms & Bunks",
+    "frequency": "daily",
+    "building_applicability": "OB",
+    "assignedRole": "Housekeeper / Supervisor",
+    "description": "Daily shift housekeeping and facility inspection checklist for C Bunk Cleaning Checklist at Cairn OB.",
+    "questions": [
+      {
+        "question": "Bed Sheet, Pillow Cover & Blanket",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": true
+      },
+      {
+        "question": "Study Table",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "TV & Tata sky",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "TV & AC Remotes",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Mosquito Repellent",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Kettle, Cups, Saucer, spoon",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Tea,coffee,sugar & milk sachets",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Tissue Box",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Chairs",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Drinking Water Jar",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Water glass",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Dustbin",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Handwash",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Toilet roll",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": true
+      },
+      {
+        "question": "bucket & mug",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Odonil",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "DUSTING",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Mopping",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Housekeeper Shift Execution Sign-off",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Supervisor / Camp Boss Quality Verification Sign-off",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      }
+    ]
+  },
+  {
+    "key": "pee_bunk",
+    "sheet_name": "PEE BUNK ",
+    "title": "Pee Bunk Cleaning Checklist",
+    "department": "Accommodation & Living Quarters",
+    "category": "Resident Rooms & Bunks",
+    "frequency": "daily",
+    "building_applicability": "OB",
+    "assignedRole": "Housekeeper / Supervisor",
+    "description": "Daily shift housekeeping and facility inspection checklist for Pee Bunk Cleaning Checklist at Cairn OB.",
+    "questions": [
+      {
+        "question": "Bed Sheet, Pillow Cover & Blanket",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": true
+      },
+      {
+        "question": "Study Table",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "TV & Tata sky",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "TV & AC Remotes",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Mosquito Repellent",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Kettle, Cups, Saucer, spoon",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Tea,coffee,sugar & milk sachets",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Tissue Box",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Chairs",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Drinking Water Jar",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Water glass",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Dustbin",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Handwash",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Toilet roll",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": true
+      },
+      {
+        "question": "bucket & mug",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Odonil",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "DUSTING",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Mopping",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Housekeeper Shift Execution Sign-off",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Supervisor / Camp Boss Quality Verification Sign-off",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      }
+    ]
+  },
+  {
+    "key": "room_checklist",
+    "sheet_name": "Room Checklist",
+    "title": "Room Checklist",
+    "department": "Accommodation & Living Quarters",
+    "category": "Resident Rooms & Bunks",
+    "frequency": "daily",
+    "building_applicability": "BOTH",
+    "assignedRole": "Housekeeper / Supervisor",
+    "description": "Daily shift housekeeping and facility inspection checklist for Room Checklist at Cairn BOTH.",
+    "questions": [
+      {
+        "question": "Bed sheet, pillow cover & duvet cover",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": true
+      },
+      {
+        "question": "Luggage Table",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Fridge Cabinet",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Room Telephone",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "TV & Tata sky",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "TV & AC Remotes",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Mosquito Repellent",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Kettle, Cups, Saucer, spoon",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Tea,coffee,sugar & milk sachets",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Tissue Box",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Sofa Chairs",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": true
+      },
+      {
+        "question": "Drinking Water Jar",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Water glass",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Dustbin",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Handwash",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Toilet roll",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": true
+      },
+      {
+        "question": "bucket & mug",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Odonil",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Dusting",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Mopping",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Housekeeper Shift Execution Sign-off",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Supervisor / Camp Boss Quality Verification Sign-off",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      }
+    ]
+  },
+  {
+    "key": "washroom_checklist",
+    "sheet_name": "Washroom checklist",
+    "title": "Washroom Checklist",
+    "department": "Accommodation & Living Quarters",
+    "category": "Resident Rooms & Bunks",
+    "frequency": "daily",
+    "building_applicability": "BOTH",
+    "assignedRole": "Housekeeper / Supervisor",
+    "description": "Daily shift housekeeping and facility inspection checklist for Washroom Checklist at Cairn BOTH.",
+    "questions": [
+      {
+        "question": "Wash Basin",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Mirror",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": true
+      },
+      {
+        "question": "Hand wash",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "H.T.Dispen",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Hand Dryer",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Urinals",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": true
+      },
+      {
+        "question": "WC/Bowl",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "H/Faucet",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "T.P/Roll",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Dust Bin",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Wall",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Floor",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": true
+      },
+      {
+        "question": "Odonil",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Water washed",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Air Freshner",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Housekeeper Shift Execution Sign-off",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Supervisor / Camp Boss Quality Verification Sign-off",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      }
+    ]
+  },
+  {
+    "key": "a_wing_checklist",
+    "sheet_name": "A wing checklist",
+    "title": "A Wing Checklist",
+    "department": "Accommodation & Living Quarters",
+    "category": "Resident Rooms & Bunks",
+    "frequency": "daily",
+    "building_applicability": "BOTH",
+    "assignedRole": "Housekeeper / Supervisor",
+    "description": "Daily shift housekeeping and facility inspection checklist for A Wing Checklist at Cairn BOTH.",
+    "questions": [
+      {
+        "question": "Passage Cleaning",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Reception",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Tables",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Sofas/chairs",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": true
+      },
+      {
+        "question": "SS railings",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Photo Frames",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Glass doors",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Dustbins",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Stairs",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": true
+      },
+      {
+        "question": "Wooden shelves",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Air Freshner",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Deep Cleaning",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Housekeeper Shift Execution Sign-off",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Supervisor / Camp Boss Quality Verification Sign-off",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      }
+    ]
+  },
+  {
+    "key": "recreation_checklist",
+    "sheet_name": "Recreation checklist",
+    "title": "Recreation Checklist",
+    "department": "Recreation & Wellness",
+    "category": "Sports & Fitness Amenities",
+    "frequency": "daily",
+    "building_applicability": "BOTH",
+    "assignedRole": "Housekeeper / Supervisor",
+    "description": "Daily shift housekeeping and facility inspection checklist for Recreation Checklist at Cairn BOTH.",
+    "questions": [
+      {
+        "question": "Sweeping",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Dusting",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Mopping",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Tables",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Sofas",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": true
+      },
+      {
+        "question": "Photo Frames",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Glass doors",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Dustbins",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "T.v & accesories",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Chairs",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Air Freshner",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Deep Cleaning",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Housekeeper Shift Execution Sign-off",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Supervisor / Camp Boss Quality Verification Sign-off",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      }
+    ]
+  },
+  {
+    "key": "b_wing_checklist",
+    "sheet_name": "B wing checklist",
+    "title": "B Wing Checklist",
+    "department": "Accommodation & Living Quarters",
+    "category": "Resident Rooms & Bunks",
+    "frequency": "daily",
+    "building_applicability": "BOTH",
+    "assignedRole": "Housekeeper / Supervisor",
+    "description": "Daily shift housekeeping and facility inspection checklist for B Wing Checklist at Cairn BOTH.",
+    "questions": [
+      {
+        "question": "Passage Cleaning",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Reception",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Tables",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Sofas/chairs",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": true
+      },
+      {
+        "question": "SS railings",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Photo Frames",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Glass doors",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Dustbins",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Stairs",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": true
+      },
+      {
+        "question": "Wooden shelves",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Air Freshner",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Deep Cleaning",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Housekeeper Shift Execution Sign-off",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Supervisor / Camp Boss Quality Verification Sign-off",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      }
+    ]
+  },
+  {
+    "key": "gym_room_checklist",
+    "sheet_name": "Gym room checklist",
+    "title": "Gym Room Checklist",
+    "department": "Accommodation & Living Quarters",
+    "category": "Resident Rooms & Bunks",
+    "frequency": "daily",
+    "building_applicability": "BOTH",
+    "assignedRole": "Housekeeper / Supervisor",
+    "description": "Daily shift housekeeping and facility inspection checklist for Gym Room Checklist at Cairn BOTH.",
+    "questions": [
+      {
+        "question": "Gym equipments dusting",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Sweeping",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Mopping",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Windows",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Wash Basin",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Mirror",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": true
+      },
+      {
+        "question": "Hand wash",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "H.T. Dispenser",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Hand Dryer",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Urinals",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": true
+      },
+      {
+        "question": "WC/Bowl",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "T.P/Roll",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "DustBin",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Odonil",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Air Freshner",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Housekeeper Shift Execution Sign-off",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Supervisor / Camp Boss Quality Verification Sign-off",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      }
+    ]
+  },
+  {
+    "key": "badminton_court_checklist",
+    "sheet_name": "Badminton court checklist",
+    "title": "Badminton Court Checklist",
+    "department": "Recreation & Wellness",
+    "category": "Sports & Fitness Amenities",
+    "frequency": "daily",
+    "building_applicability": "OB",
+    "assignedRole": "Housekeeper / Supervisor",
+    "description": "Daily shift housekeeping and facility inspection checklist for Badminton Court Checklist at Cairn OB.",
+    "questions": [
+      {
+        "question": "Sweeping",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Dusting",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Mopping",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Glass doors",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Dustbins",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "H.T. Dispenser",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Hand wash",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Wash Basin",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Urinals",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": true
+      },
+      {
+        "question": "WC/Bowl",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Floor",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": true
+      },
+      {
+        "question": "Water washed",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "ODONIL",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Housekeeper Shift Execution Sign-off",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Supervisor / Camp Boss Quality Verification Sign-off",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      }
+    ]
+  },
+  {
+    "key": "innovation_cafe",
+    "sheet_name": "INNOVATION CAFE",
+    "title": "Innovation Cafe Cleaning Checklist",
+    "department": "Food Services & Pantries",
+    "category": "Cafeteria & Dining Areas",
+    "frequency": "daily",
+    "building_applicability": "BOTH",
+    "assignedRole": "Housekeeper / Supervisor",
+    "description": "Daily shift housekeeping and facility inspection checklist for Innovation Cafe Cleaning Checklist at Cairn BOTH.",
+    "questions": [
+      {
+        "question": "Sweeping",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Dusting",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Mopping",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Training room",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Dustbins",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "H.T. Dispenser",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Hand wash",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Wash Basin",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Urinals",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": true
+      },
+      {
+        "question": "WC/Bowl",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Floor",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": true
+      },
+      {
+        "question": "Water washed",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Housekeeper Shift Execution Sign-off",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Supervisor / Camp Boss Quality Verification Sign-off",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      }
+    ]
+  },
+  {
+    "key": "staff_accommodation",
+    "sheet_name": "STAFF ACCOMMODATION",
+    "title": "Staff Accommodation Cleaning Checklist",
+    "department": "Accommodation & Living Quarters",
+    "category": "Resident Rooms & Bunks",
+    "frequency": "daily",
+    "building_applicability": "BOTH",
+    "assignedRole": "Housekeeper / Supervisor",
+    "description": "Daily shift housekeeping and facility inspection checklist for Staff Accommodation Cleaning Checklist at Cairn BOTH.",
+    "questions": [
+      {
+        "question": "Wash Basin",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Mirror",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": true
+      },
+      {
+        "question": "Dormitory",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Stairs",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": true
+      },
+      {
+        "question": "Urinals",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": true
+      },
+      {
+        "question": "WC/Bowl",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "H/Faucet",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Dust Bin",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Wall",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Floor",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": true
+      },
+      {
+        "question": "Odonil",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Water washed",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Housekeeper Shift Execution Sign-off",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Supervisor / Camp Boss Quality Verification Sign-off",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      }
+    ]
+  },
+  {
+    "key": "water_dispenser_cleaning",
+    "sheet_name": "Water Disp.",
+    "title": "Water Dispenser 12-Step Chemical Sanitization Checklist",
+    "department": "Housekeeping & Hygiene",
+    "category": "Hygiene & Sanitization",
+    "frequency": "weekly",
+    "building_applicability": "BOTH",
+    "assignedRole": "Housekeeper / Supervisor",
+    "description": "Standardized 12-step sanitization cycle for water dispensers using Sumatab 150ppm solution with 15-minute contact time.",
+    "questions": [
+      {
+        "question": "Step 1: Select the dispenser to be cleaned",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Step 2: Remove the empty jar",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Step 3: Remove the top & inner accessories",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Step 4: Drain the washes water from the hot and cold nozzel completely",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Step 5: Add sumatab solution of 150ppm & allow contact time of 15 minutes",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": true
+      },
+      {
+        "question": "Step 6: Manually clean the surface of inner with soft nylon brush",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Step 7: Use the fresh solution to clean the top & inner accessory",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Step 8: Rinse the top & inner accessory with potable water",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": true
+      },
+      {
+        "question": "Step 9: Pour a liter of potable water a long the wall side if inner surface",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Step 10: Again pour water along the wall side of inner surface",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Step 11: Drain the water from hot & cold nozzel completely",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Step 12: Replace the wash top and inner accessory",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Step 13: The jar is placed on the dispenser",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      }
+    ]
+  },
+  {
+    "key": "project_bunk",
+    "sheet_name": "PROJECT BUNK ",
+    "title": "Project Bunk Cleaning Checklist",
+    "department": "Accommodation & Living Quarters",
+    "category": "Resident Rooms & Bunks",
+    "frequency": "daily",
+    "building_applicability": "BOTH",
+    "assignedRole": "Housekeeper / Supervisor",
+    "description": "Daily shift housekeeping and facility inspection checklist for Project Bunk Cleaning Checklist at Cairn BOTH.",
+    "questions": [
+      {
+        "question": "Bed sheet,pillow cover & Blanket",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": true
+      },
+      {
+        "question": "study Table",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "TV & Tata sky",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "TV & AC Remotes",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Mosquito Repellent",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Kettle, Cups, Saucer, spoon",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Tea,coffee,sugar & milk sachets",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Tissue Box",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Chairs",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "20ltr water bottle",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Water glass",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Dustbin",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Handwash",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Toilet roll",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": true
+      },
+      {
+        "question": "bucket & mug",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Odonil",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "DUSTING",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Mopping",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Toiletries",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": true
+      },
+      {
+        "question": "Housekeeper Shift Execution Sign-off",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Supervisor / Camp Boss Quality Verification Sign-off",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      }
+    ]
+  },
+  {
+    "key": "front_office_daily_work",
+    "sheet_name": "Front",
+    "title": "Front Office Daily Operations & Front Desk SOP Checklist",
+    "department": "Front Office & Administration",
+    "category": "Front Desk & Guest Logistics",
+    "frequency": "daily",
+    "building_applicability": "OB",
+    "assignedRole": "Front Desk Executive / Supervisor",
+    "description": "Daily administrative checklist covering biometric/touch card access, attendance records, P.O.B. counts, arrival/departure handover, and water reporting.",
+    "questions": [
+      {
+        "question": "Touch Card Access",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": true
+      },
+      {
+        "question": "Hard Copy Of Attendance (Self)",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Check In /Out Register To Check",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": true
+      },
+      {
+        "question": "Arrival / Departure Info To H.K.",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Water Consumption Email",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Evening Check Out Email/ Scanned",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": true
+      },
+      {
+        "question": "P.O.B. Check",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Issue Of Toiletries Soft / Hard Copy",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Cleaning Of Front Office",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Complain Register Check Morning / Evening",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": true
+      },
+      {
+        "question": "Key Register Maintenance",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": true
+      },
+      {
+        "question": "Crew Chang Hard Copy File Up",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Laundry Count +File Up",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Receptionist Sign",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Supervisor Sign",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      }
+    ]
+  },
+  {
+    "key": "gate_2_security_cleaning",
+    "sheet_name": "GATE. 2",
+    "title": "Gate No. 2 Security Post & Access Control Cleaning Checklist",
+    "department": "Security & Plant Logistics",
+    "category": "Security Outposts",
+    "frequency": "daily",
+    "building_applicability": "MPT",
+    "assignedRole": "Housekeeper / Security Guard",
+    "description": "Daily hygiene, glass cleaning, boom barrier perimeter, and dual sign-off between housekeeping cleaner and on-duty security guard.",
+    "questions": [
+      {
+        "question": "Gate No. 2 Security Cabin HK Status (Pass / Fail)",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": true
+      },
+      {
+        "question": "Floor swept, mopped, and free of sand/oil stains",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Security desk, glass panels & boom barrier console wiped clean",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Waste bin emptied and fresh bin liner installed",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Drinking water pot / dispenser replenished for on-duty guards",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Cleaner Name & Timestamp",
+        "type": "text",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Security Guard On-Duty Name & Endorsement Sign",
+        "type": "text",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Remarks / Maintenance Issues Noted",
+        "type": "text",
+        "isRequired": false,
+        "isPhotoRequired": false
+      }
+    ]
+  },
+  {
+    "key": "driver_bunk_daily_cleaning",
+    "sheet_name": "DRIVER BUNK",
+    "title": "Driver Bunk Quarters Daily Deep Cleaning Checklist",
+    "department": "Housekeeping & Accommodation",
+    "category": "Driver Living Quarters",
+    "frequency": "daily",
+    "building_applicability": "MPT",
+    "assignedRole": "Housekeeper / Camp Supervisor",
+    "description": "Driver accommodation bunks (Bunks 1-14) daily cleaning, linen change, dusting, pest repellant, and toilet sanitation.",
+    "questions": [
+      {
+        "question": "Driver Bunk No.1 - Complete Bedding, Floor & Dusting Sanitation",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": true
+      },
+      {
+        "question": "Driver Bunk No.2 - Complete Bedding, Floor & Dusting Sanitation",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Driver Bunk No.3 - Complete Bedding, Floor & Dusting Sanitation",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Driver Bunk No.4 - Complete Bedding, Floor & Dusting Sanitation",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Driver Bunk No.5 - Complete Bedding, Floor & Dusting Sanitation",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Driver Bunk No.6 - Complete Bedding, Floor & Dusting Sanitation",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Driver Bunk No.7 - Complete Bedding, Floor & Dusting Sanitation",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": true
+      },
+      {
+        "question": "Driver Bunk No.8 - Complete Bedding, Floor & Dusting Sanitation",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Driver Bunk No.9 - Complete Bedding, Floor & Dusting Sanitation",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Driver Bunk No.10 - Complete Bedding, Floor & Dusting Sanitation",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Driver Bunk No.11 - Complete Bedding, Floor & Dusting Sanitation",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Driver Bunk No.12 - Complete Bedding, Floor & Dusting Sanitation",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Driver Bunk No.13 - Complete Bedding, Floor & Dusting Sanitation",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Driver Bunk No.14 - Complete Bedding, Floor & Dusting Sanitation",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Driver Rest Area Bathrooms & Wash basins cleaned & sanitized",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": true
+      },
+      {
+        "question": "Linen / Blanket replacement completed for vacated driver bunks",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Housekeeper Name & Daily Shift Completion Sign",
+        "type": "text",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Supervisor Verification & Shift Sign-off",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      }
+    ]
+  },
+  {
+    "key": "stp",
+    "sheet_name": "STP",
+    "title": "Stp Cleaning Checklist",
+    "department": "Technical & Critical Infrastructure",
+    "category": "Engineering & Plant Utilities",
+    "frequency": "daily",
+    "building_applicability": "OB",
+    "assignedRole": "Housekeeper / Supervisor",
+    "description": "Daily shift housekeeping and facility inspection checklist for Stp Cleaning Checklist at Cairn OB.",
+    "questions": [
+      {
+        "question": "FLOOR Cleaning",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": true
+      },
+      {
+        "question": "Tables",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "chairs",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Stairs",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": true
+      },
+      {
+        "question": "doors",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Dustbins",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "iron pipe",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "pipe protector",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Housekeeper Shift Execution Sign-off",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Supervisor / Camp Boss Quality Verification Sign-off",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      }
+    ]
+  },
+  {
+    "key": "cec",
+    "sheet_name": "CEC",
+    "title": "Cec Cleaning Checklist",
+    "department": "Technical & Critical Infrastructure",
+    "category": "Engineering & Plant Utilities",
+    "frequency": "daily",
+    "building_applicability": "OB",
+    "assignedRole": "Housekeeper / Supervisor",
+    "description": "Daily shift housekeeping and facility inspection checklist for Cec Cleaning Checklist at Cairn OB.",
+    "questions": [
+      {
+        "question": "FLOOR Cleaning",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": true
+      },
+      {
+        "question": "Office",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Tables",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Sofas/chairs",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": true
+      },
+      {
+        "question": "Photo Frames",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "doors",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Dustbins",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Dusting",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Mopping",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Housekeeper Shift Execution Sign-off",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Supervisor / Camp Boss Quality Verification Sign-off",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      }
+    ]
+  },
+  {
+    "key": "staff_bunk_daily_cleaning",
+    "sheet_name": "STAFF BUNK ",
+    "title": "Staff Bunk Quarters Daily Cleaning Checklist",
+    "department": "Housekeeping & Accommodation",
+    "category": "Staff Accommodation",
+    "frequency": "daily",
+    "building_applicability": "BOTH",
+    "assignedRole": "Housekeeper / Supervisor",
+    "description": "Sodexo staff quarters bunks 1 to 5 daily inspection, hygiene check, linen tidiness, and electrical fitting safety.",
+    "questions": [
+      {
+        "question": "Staff Bunk No.1 - Complete Bedding, Floor Mopping & Dusting",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": true
+      },
+      {
+        "question": "Staff Bunk No.2 - Complete Bedding, Floor Mopping & Dusting",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Staff Bunk No.3 - Complete Bedding, Floor Mopping & Dusting",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Staff Bunk No.4 - Complete Bedding, Floor Mopping & Dusting",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Staff Bunk No.5 - Complete Bedding, Floor Mopping & Dusting",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": true
+      },
+      {
+        "question": "Staff Washroom, Geyser & Fittings Sanitization",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": true
+      },
+      {
+        "question": "All AC / Fan / Lights switches operational and clean",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Housekeeper / Staff Attendant Signature",
+        "type": "text",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Supervisor Inspection Sign-off",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      }
+    ]
+  },
+  {
+    "key": "medical_center",
+    "sheet_name": "MEDICAL CENTER",
+    "title": "Medical Center Cleaning Checklist",
+    "department": "Medical Center & First Aid",
+    "category": "Healthcare Facility",
+    "frequency": "daily",
+    "building_applicability": "BOTH",
+    "assignedRole": "Housekeeper / Supervisor",
+    "description": "Daily shift housekeeping and facility inspection checklist for Medical Center Cleaning Checklist at Cairn BOTH.",
+    "questions": [
+      {
+        "question": "FLOOR Cleaning",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": true
+      },
+      {
+        "question": "Office",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Tables",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Sofas/chairs",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": true
+      },
+      {
+        "question": "Photo Frames",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "doors",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Dustbins",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Dusting",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Mopping",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Housekeeper Shift Execution Sign-off",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Supervisor / Camp Boss Quality Verification Sign-off",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      }
+    ]
+  },
+  {
+    "key": "security_building",
+    "sheet_name": "SECURITY BUILDING",
+    "title": "Security Building Cleaning Checklist",
+    "department": "Administration & Security",
+    "category": "Security & Corporate Buildings",
+    "frequency": "daily",
+    "building_applicability": "BOTH",
+    "assignedRole": "Housekeeper / Supervisor",
+    "description": "Daily shift housekeeping and facility inspection checklist for Security Building Cleaning Checklist at Cairn BOTH.",
+    "questions": [
+      {
+        "question": "FLOOR Cleaning",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": true
+      },
+      {
+        "question": "Office",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Tables",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Sofas/chairs",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": true
+      },
+      {
+        "question": "Photo Frames",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "doors",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Dustbins",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Dusting",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Mopping",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Housekeeper Shift Execution Sign-off",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Supervisor / Camp Boss Quality Verification Sign-off",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      }
+    ]
+  },
+  {
+    "key": "admin_building",
+    "sheet_name": "ADMIN  BUILDING",
+    "title": "Admin Building Cleaning Checklist",
+    "department": "Administration & Security",
+    "category": "Security & Corporate Buildings",
+    "frequency": "daily",
+    "building_applicability": "OB",
+    "assignedRole": "Housekeeper / Supervisor",
+    "description": "Daily shift housekeeping and facility inspection checklist for Admin Building Cleaning Checklist at Cairn OB.",
+    "questions": [
+      {
+        "question": "CARPET CLEANING",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Office",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Tables",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Sofas/chairs",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": true
+      },
+      {
+        "question": "Photo Frames",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "FLOWER POT",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "TV",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "doors",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Dustbins",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Dusting",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Mopping",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Housekeeper Shift Execution Sign-off",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Supervisor / Camp Boss Quality Verification Sign-off",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      }
+    ]
+  },
+  {
+    "key": "innovation_cafe_1",
+    "sheet_name": "INNOVATION CAFE 1",
+    "title": "Innovation Cafe 1 Cleaning Checklist",
+    "department": "Food Services & Pantries",
+    "category": "Cafeteria & Dining Areas",
+    "frequency": "daily",
+    "building_applicability": "BOTH",
+    "assignedRole": "Housekeeper / Supervisor",
+    "description": "Daily shift housekeeping and facility inspection checklist for Innovation Cafe 1 Cleaning Checklist at Cairn BOTH.",
+    "questions": [
+      {
+        "question": "FLOOR Cleaning",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": true
+      },
+      {
+        "question": "Office",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Tables",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Sofas/chairs",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": true
+      },
+      {
+        "question": "Photo Frames",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "doors",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Dustbins",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Dusting",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "ODONIL",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Mopping",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Housekeeper Shift Execution Sign-off",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Supervisor / Camp Boss Quality Verification Sign-off",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      }
+    ]
+  },
+  {
+    "key": "sanitary_pads_dispenser",
+    "sheet_name": "PAD",
+    "title": "Sanitary Napkin Dispenser Restocking & Hygiene Checklist",
+    "department": "Housekeeping & Female Restrooms",
+    "category": "Female Hygiene",
+    "frequency": "daily",
+    "building_applicability": "BOTH",
+    "assignedRole": "Female Housekeeper / Supervisor",
+    "description": "Daily monitoring of sanitary napkin dispenser stocks, restocking counts, coin/twist mechanism check, and waste bin sanitation.",
+    "questions": [
+      {
+        "question": "Sanitary Pad Dispenser Stock Available (Units remaining)",
+        "type": "number",
+        "unit": "pcs",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Dispenser Cleanliness & Mechanical Functionality",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Refill Quantity Added (Units)",
+        "type": "number",
+        "unit": "pcs",
+        "isRequired": true,
+        "isPhotoRequired": true
+      },
+      {
+        "question": "Disposal Bin Cleaned, Sanitized & Lined with Biohazard Bag",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Housekeeper Refill Verification Sign",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Supervisor Remarks / Restock Notes",
+        "type": "text",
+        "isRequired": false,
+        "isPhotoRequired": false
+      }
+    ]
+  },
+  {
+    "key": "rest_shelter",
+    "sheet_name": "REST SHELTER",
+    "title": "Rest Shelter Cleaning Checklist",
+    "department": "Food Services & Pantries",
+    "category": "Cafeteria & Dining Areas",
+    "frequency": "daily",
+    "building_applicability": "MPT",
+    "assignedRole": "Housekeeper / Supervisor",
+    "description": "Daily shift housekeeping and facility inspection checklist for Rest Shelter Cleaning Checklist at Cairn MPT.",
+    "questions": [
+      {
+        "question": "FLOOR Cleaning",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": true
+      },
+      {
+        "question": "Tables",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "chairs",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "doors",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Dustbins",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Dusting",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Mopping",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Housekeeper Shift Execution Sign-off",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Supervisor / Camp Boss Quality Verification Sign-off",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      }
+    ]
+  },
+  {
+    "key": "ob_pantry",
+    "sheet_name": "OB PANTRY",
+    "title": "Ob Pantry Cleaning Checklist",
+    "department": "Food Services & Pantries",
+    "category": "Cafeteria & Dining Areas",
+    "frequency": "daily",
+    "building_applicability": "OB",
+    "assignedRole": "Housekeeper / Supervisor",
+    "description": "Daily shift housekeeping and facility inspection checklist for Ob Pantry Cleaning Checklist at Cairn OB.",
+    "questions": [
+      {
+        "question": "Tables",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Sofas/chairs",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": true
+      },
+      {
+        "question": "Door",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Dustbins",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Handwash",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Water washed",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Housekeeper Shift Execution Sign-off",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Supervisor / Camp Boss Quality Verification Sign-off",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      }
+    ]
+  },
+  {
+    "key": "grooming_check_card",
+    "sheet_name": "GROOMING CHECK CARD ",
+    "title": "Staff Personal Hygiene, Uniform & Grooming Audit Card",
+    "department": "HSE & Quality Assurance",
+    "category": "Staff Grooming & SOP",
+    "frequency": "daily",
+    "building_applicability": "BOTH",
+    "assignedRole": "Housekeeping Supervisor / Camp Boss",
+    "description": "Daily shift start line-up inspection: 10-point personal hygiene, uniform, nail, shaving, pledge card, and color-coded duster verification.",
+    "questions": [
+      {
+        "question": "Uniform: Clean, ironed, complete company uniform with name badge",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": true
+      },
+      {
+        "question": "Shoes & Socks: Clean safety shoes / non-slip footwear and fresh dark socks",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Hair: Neatly groomed, trimmed hair / clean cap or hairnet in place",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Nails: Short, clean, trimmed without nail paint or dirt",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Shaving: Clean shaven or neatly manicured beard policy compliance",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Personal Hygiene: Clean hands, no body odor, fresh personal appearance",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Dusters: Correct color-coded microfibre dusters carrying on person",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Pledge Card: Sodexo / Cairn Quality & Safety Pledge Card carried",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Jewellery Policy: Zero rings, bracelets, or watches in sensitive zones",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Staff Name, Designation & Shift",
+        "type": "text",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Supervisor / Camp Boss Signature Verification",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      }
+    ]
+  },
+  {
+    "key": "mahi_toewr",
+    "sheet_name": "MAHI TOEWR",
+    "title": "Mahi Toewr Cleaning Checklist",
+    "department": "Housekeeping & Facility Management",
+    "category": "General Operations",
+    "frequency": "daily",
+    "building_applicability": "OB",
+    "assignedRole": "Housekeeper / Supervisor",
+    "description": "Daily shift housekeeping and facility inspection checklist for Mahi Toewr Cleaning Checklist at Cairn OB.",
+    "questions": [
+      {
+        "question": "Bed sheet, pillow cover & duvet cover",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": true
+      },
+      {
+        "question": "Luggage Table",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Fridge Cabinet",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Room Telephone",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "TV & Tata sky",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "TV & AC Remotes",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Mosquito Repellent",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Kettle, Cups, Saucer, spoon",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Tea,coffee,sugar & milk sachets",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Tissue Box",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Sofa Chairs",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": true
+      },
+      {
+        "question": "Drinking Water Jar",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Water glass",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Dustbin",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Handwash",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Toilet roll",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": true
+      },
+      {
+        "question": "bucket & mug",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Odonil",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Dusting",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Mopping",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Housekeeper Shift Execution Sign-off",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Supervisor / Camp Boss Quality Verification Sign-off",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      }
+    ]
+  },
+  {
+    "key": "mahi_tower",
+    "sheet_name": "MAHI TOWER",
+    "title": "Mahi Tower Cleaning Checklist",
+    "department": "Accommodation & Living Quarters",
+    "category": "Resident Rooms & Bunks",
+    "frequency": "daily",
+    "building_applicability": "OB",
+    "assignedRole": "Housekeeper / Supervisor",
+    "description": "Daily shift housekeeping and facility inspection checklist for Mahi Tower Cleaning Checklist at Cairn OB.",
+    "questions": [
+      {
+        "question": "Bed sheet, pillow cover & duvet cover",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": true
+      },
+      {
+        "question": "Luggage Table",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Fridge Cabinet",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "TV & Tata sky",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "TV & AC Remotes",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Mosquito Repellent",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Kettle, Cups, Saucer, spoon",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Tea,coffee,sugar & milk sachets",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Tissue Box",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Sofa Chairs",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": true
+      },
+      {
+        "question": "Drinking Water Jar",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Water glass",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Dustbin",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Handwash",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Toilet roll",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": true
+      },
+      {
+        "question": "bucket & mug",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Odonil",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Dusting",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Mopping",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Housekeeper Shift Execution Sign-off",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Supervisor / Camp Boss Quality Verification Sign-off",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      }
+    ]
+  },
+  {
+    "key": "saraswati_tower",
+    "sheet_name": "SARASWATI TOWER",
+    "title": "Saraswati Tower Cleaning Checklist",
+    "department": "Accommodation & Living Quarters",
+    "category": "Resident Rooms & Bunks",
+    "frequency": "daily",
+    "building_applicability": "OB",
+    "assignedRole": "Housekeeper / Supervisor",
+    "description": "Daily shift housekeeping and facility inspection checklist for Saraswati Tower Cleaning Checklist at Cairn OB.",
+    "questions": [
+      {
+        "question": "Bed sheet, pillow cover & duvet cover",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": true
+      },
+      {
+        "question": "Luggage Table",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Fridge Cabinet",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "AC Remotes",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Mosquito Repellent",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Kettle, Cups, Saucer, spoon",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Tea,coffee,sugar & milk sachets",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Tissue Box",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Sofa Chairs",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": true
+      },
+      {
+        "question": "Drinking Water Jar",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Water glass",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Dustbin",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Handwash",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Toilet roll",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": true
+      },
+      {
+        "question": "bucket & mug",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Odonil",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Dusting",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Mopping",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Housekeeper Shift Execution Sign-off",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Supervisor / Camp Boss Quality Verification Sign-off",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      }
+    ]
+  },
+  {
+    "key": "eye_wash_refilling",
+    "sheet_name": "EYE WASH CHECKLIST",
+    "title": "Eye Wash Bottle Refilling & HSE Inspection Checklist",
+    "department": "Health, Safety & Environment (HSE)",
+    "category": "Safety & Emergency Readiness",
+    "frequency": "daily",
+    "building_applicability": "BOTH",
+    "assignedRole": "Housekeeper / HSE Supervisor",
+    "description": "Emergency eye wash station readiness, fluid permissible limits, seal verification, and housekeeper refilling log.",
+    "questions": [
+      {
+        "question": "Inspect Eye Wash Bottle seal, cleanliness and expiry date",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": true
+      },
+      {
+        "question": "Verify fluid permissible limit & clarity (clean, sterile saline/potable water)",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Housekeeper Refill Status (Full / Refilled / Replaced)",
+        "type": "dropdown",
+        "options": [
+          "Adequate / No Refill Needed",
+          "Refilled to Max Mark",
+          "Bottle Replaced",
+          "Defective - Escalated"
+        ],
+        "isRequired": true,
+        "isPhotoRequired": true
+      },
+      {
+        "question": "Quantity refilled (ml)",
+        "type": "number",
+        "unit": "ml",
+        "isRequired": false,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Inspection / Refill Remarks",
+        "type": "text",
+        "isRequired": false,
+        "isPhotoRequired": false
+      },
+      {
+        "question": "Supervisor / HSE Sign-off Verification",
+        "type": "yes_no",
+        "isRequired": true,
+        "isPhotoRequired": false
+      }
+    ]
+  }
+]

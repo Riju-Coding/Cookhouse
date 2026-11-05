@@ -17,7 +17,8 @@ import {
   Plus, Pencil, Trash2, Ban, CheckCircle, ClipboardList, ListChecks,
   Thermometer, Truck, UtensilsCrossed, FileCheck, Search, Filter,
   Calendar, Building2, Eye, ChevronRight, BarChart3, AlertTriangle,
-  Clock, CheckCircle2, Download, Loader2
+  Clock, CheckCircle2, Download, Loader2, BookOpen, ShieldCheck, Camera,
+  Sparkles, CheckSquare, Layers, HelpCircle, X
 } from "lucide-react"
 import ExcelJS from "exceljs"
 import { saveAs } from "file-saver"
@@ -28,6 +29,7 @@ import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { ComplianceRecordModal } from "@/components/compliance-record-modal"
 
 // ─── Template Type Config ───────────────────────────────────────
@@ -104,6 +106,17 @@ export default function ComplianceDashboardPage() {
   const [filterCompany, setFilterCompany] = useState<string>("all")
   const [filterBuilding, setFilterBuilding] = useState<string>("all")
   const [filterCafeteria, setFilterCafeteria] = useState<string>("all")
+  const [filterFacilityQuick, setFilterFacilityQuick] = useState<'all' | 'OB' | 'MPT'>('all')
+  const [filterCategoryQuick, setFilterCategoryQuick] = useState<string>('all')
+
+  // Checkpoints Inspection Modal
+  const [selectedTemplateForQuestions, setSelectedTemplateForQuestions] = useState<ComplianceTemplate | null>(null)
+  const [templateQuestions, setTemplateQuestions] = useState<any[]>([])
+  const [loadingQuestions, setLoadingQuestions] = useState(false)
+  const [questionModalOpen, setQuestionModalOpen] = useState(false)
+
+  // Sodexo FM Operational Plan Modal
+  const [sodexoPlanModalOpen, setSodexoPlanModalOpen] = useState(false)
 
   // Record Modal
   const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null)
@@ -215,18 +228,55 @@ export default function ComplianceDashboardPage() {
 
   const getName = (arr: any[], id: string) => arr.find(item => item.id === id)?.name || '—'
 
+  // ─── View Checkpoints Handler ────────────────────────────────
+  const handleViewQuestions = async (template: ComplianceTemplate) => {
+    setSelectedTemplateForQuestions(template)
+    setQuestionModalOpen(true)
+    setLoadingQuestions(true)
+    try {
+      const fields = await complianceTemplateFieldsService.getByTemplateId(template.id)
+      setTemplateQuestions(fields)
+    } catch (error) {
+      console.error("Failed to load questions:", error)
+      toast({ title: "Error", description: "Failed to load checkpoints for this template.", variant: "destructive" })
+    } finally {
+      setLoadingQuestions(false)
+    }
+  }
+
   // ─── Filtered Templates ───────────────────────────────────────
   const filteredTemplates = useMemo(() => {
     return templates.filter(t => {
-      const matchesSearch = !search || t.name.toLowerCase().includes(search.toLowerCase())
+      const s = search.toLowerCase()
+      const matchesSearch = !search || 
+        t.name.toLowerCase().includes(s) ||
+        (t.department && t.department.toLowerCase().includes(s)) ||
+        (t.category && t.category.toLowerCase().includes(s))
       const matchesType = filterType === 'all' || t.type === filterType
       const matchesVendor = filterVendor === 'all' || t.vendorId === filterVendor
       const matchesCompany = filterCompany === 'all' || t.companyId === filterCompany
       const matchesBuilding = filterBuilding === 'all' || t.buildingId === filterBuilding
       const matchesCafeteria = filterCafeteria === 'all' || t.cafetariaId === filterCafeteria
-      return matchesSearch && matchesType && matchesVendor && matchesCompany && matchesBuilding && matchesCafeteria
+
+      // Facility Quick Filter (All / Cairn OB / Cairn MPT)
+      let matchesFacilityQuick = true
+      if (filterFacilityQuick === 'OB') {
+        matchesFacilityQuick = t.buildingId === 'XlXuTwn8gDkSqAxIZ8cQ' || t.name.includes('[Cairn - OB]')
+      } else if (filterFacilityQuick === 'MPT') {
+        matchesFacilityQuick = t.buildingId === 'HudpWZCFsUSp5UChILqJ' || t.name.includes('[Cairn - MPT]')
+      }
+
+      // Category Quick Filter
+      let matchesCategoryQuick = true
+      if (filterCategoryQuick !== 'all') {
+        const cat = (t.category || '').toLowerCase()
+        const dept = (t.department || '').toLowerCase()
+        matchesCategoryQuick = cat.includes(filterCategoryQuick.toLowerCase()) || dept.includes(filterCategoryQuick.toLowerCase())
+      }
+
+      return matchesSearch && matchesType && matchesVendor && matchesCompany && matchesBuilding && matchesCafeteria && matchesFacilityQuick && matchesCategoryQuick
     })
-  }, [templates, search, filterType, filterVendor, filterCompany, filterBuilding, filterCafeteria])
+  }, [templates, search, filterType, filterVendor, filterCompany, filterBuilding, filterCafeteria, filterFacilityQuick, filterCategoryQuick])
 
   // ─── Stats ────────────────────────────────────────────────────
   const stats = useMemo(() => ({
@@ -449,6 +499,13 @@ export default function ComplianceDashboardPage() {
           <p className="text-gray-600">Create templates, manage vehicles, and review compliance records.</p>
         </div>
         <div className="flex gap-2">
+          <Button 
+            variant="outline" 
+            onClick={() => setSodexoPlanModalOpen(true)}
+            className="border-indigo-200 text-indigo-700 bg-indigo-50/70 hover:bg-indigo-100 hover:text-indigo-800 shadow-sm"
+          >
+            <BookOpen className="mr-2 h-4 w-4 text-indigo-600" /> Sodexo FM Plan
+          </Button>
           <Link href="/admin/compliances/vehicles">
             <Button variant="outline">
               <Truck className="mr-2 h-4 w-4" /> Vehicles
@@ -556,11 +613,87 @@ export default function ComplianceDashboardPage() {
       {/* ═══════════════ TEMPLATES TAB ═══════════════ */}
       {activeTab === 'templates' && (
         <div className="space-y-4">
-          {/* Filters */}
+          {/* Quick Facility Segment Selector & Category Pills */}
+          <div className="space-y-2.5 bg-gradient-to-r from-slate-50 via-blue-50/20 to-slate-50 p-3.5 rounded-lg border border-slate-200 shadow-2xs">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                  <Building2 className="h-3.5 w-3.5 text-blue-600" /> Plant Site:
+                </span>
+                <div className="flex bg-white p-0.5 rounded-lg border shadow-xs">
+                  <button
+                    type="button"
+                    onClick={() => setFilterFacilityQuick('all')}
+                    className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${
+                      filterFacilityQuick === 'all'
+                        ? 'bg-blue-600 text-white shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                    }`}
+                  >
+                    All Facilities ({templates.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFilterFacilityQuick('OB')}
+                    className={`px-3 py-1 text-xs font-medium rounded-md transition-all flex items-center gap-1.5 ${
+                      filterFacilityQuick === 'OB'
+                        ? 'bg-sky-700 text-white shadow-xs'
+                        : 'text-slate-600 hover:text-sky-700 hover:bg-sky-50/50'
+                    }`}
+                  >
+                    <span className="w-2 h-2 rounded-full bg-sky-400"></span>
+                    Cairn • OB (Operational Base)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFilterFacilityQuick('MPT')}
+                    className={`px-3 py-1 text-xs font-medium rounded-md transition-all flex items-center gap-1.5 ${
+                      filterFacilityQuick === 'MPT'
+                        ? 'bg-emerald-700 text-white shadow-xs'
+                        : 'text-slate-600 hover:text-emerald-700 hover:bg-emerald-50/50'
+                    }`}
+                  >
+                    <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+                    Cairn • MPT (Terminal)
+                  </button>
+                </div>
+              </div>
+
+              {/* Category Quick Filter Pills */}
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 max-w-full">
+                <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mr-1">
+                  Area:
+                </span>
+                {[
+                  { id: 'all', label: 'All Operations' },
+                  { id: 'Accommodation', label: '🛏️ Living & Bunks' },
+                  { id: 'Infrastructure', label: '⚙️ Technical / STP' },
+                  { id: 'Food', label: '☕ F&B / Pantries' },
+                  { id: 'Health', label: '🩺 HSE & Hygiene' },
+                  { id: 'Security', label: '🛡️ Security / Admin' },
+                ].map(cat => (
+                  <button
+                    key={cat.id}
+                    type="button"
+                    onClick={() => setFilterCategoryQuick(cat.id)}
+                    className={`px-2.5 py-1 text-[11px] font-medium rounded-full transition-all border ${
+                      filterCategoryQuick === cat.id
+                        ? 'bg-slate-900 text-white border-slate-900 shadow-2xs'
+                        : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                    }`}
+                  >
+                    {cat.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Standard Filters */}
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-3 bg-gray-50 p-4 rounded-lg border">
             <div className="relative">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-400" />
-              <Input placeholder="Search templates..." className="pl-9 bg-white" value={search} onChange={e => setSearch(e.target.value)} />
+              <Input placeholder="Search templates, SOPs, checkpoints..." className="pl-9 bg-white" value={search} onChange={e => setSearch(e.target.value)} />
             </div>
             <Select value={filterType} onValueChange={setFilterType}>
               <SelectTrigger className="bg-white"><SelectValue placeholder="All Types" /></SelectTrigger>
@@ -600,20 +733,20 @@ export default function ComplianceDashboardPage() {
           ) : filteredTemplates.length === 0 ? (
             <div className="text-center py-12 border-2 border-dashed rounded-lg bg-white">
               <ListChecks className="h-12 w-12 text-gray-300 mx-auto mb-3" />
-              <p className="text-gray-500 font-medium">No templates found.</p>
-              <p className="text-gray-400 text-sm mt-1">Create your first compliance template to get started.</p>
-              <Link href="/admin/compliances/new">
-                <Button className="mt-4"><Plus className="mr-2 h-4 w-4" /> Create Template</Button>
-              </Link>
+              <p className="text-gray-500 font-medium">No templates match the current filter.</p>
+              <p className="text-gray-400 text-sm mt-1">Try switching plant site tabs or clearing your search criteria.</p>
+              <Button variant="outline" className="mt-4" onClick={() => { setSearch(''); setFilterFacilityQuick('all'); setFilterCategoryQuick('all'); setFilterType('all'); }}>
+                Reset Filters
+              </Button>
             </div>
           ) : (
             <div className="rounded-md border bg-white shadow-sm overflow-hidden">
               <Table>
                 <TableHeader className="bg-gray-50">
                   <TableRow>
-                    <TableHead>Template Name</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Assignments</TableHead>
+                    <TableHead className="w-[380px]">Checklist Name & Operational SOP</TableHead>
+                    <TableHead>Scope & Type</TableHead>
+                    <TableHead>Plant Assignments</TableHead>
                     <TableHead>Frequency</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
@@ -623,11 +756,41 @@ export default function ComplianceDashboardPage() {
                   {filteredTemplates.map(template => {
                     const cfg = TEMPLATE_TYPE_CONFIG[template.type] || TEMPLATE_TYPE_CONFIG.general_checklist
                     const Icon = cfg.icon
+                    const isCairnOB = template.name.includes('[Cairn - OB]')
+                    const isCairnMPT = template.name.includes('[Cairn - MPT]')
                     return (
-                      <TableRow key={template.id} className={template.status === 'inactive' ? 'opacity-60 bg-gray-50/50' : ''}>
+                      <TableRow key={template.id} className={template.status === 'inactive' ? 'opacity-60 bg-gray-50/50' : 'hover:bg-slate-50/60'}>
                         <TableCell>
-                          <div className="font-medium text-sm text-gray-900">{template.name}</div>
-                          <div className="text-[10px] text-gray-500">{cfg.description}</div>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {isCairnOB && (
+                              <Badge className="bg-sky-100 text-sky-800 border-sky-300 text-[10px] font-semibold py-0 h-4.5">
+                                Cairn • OB
+                              </Badge>
+                            )}
+                            {isCairnMPT && (
+                              <Badge className="bg-emerald-100 text-emerald-800 border-emerald-300 text-[10px] font-semibold py-0 h-4.5">
+                                Cairn • MPT
+                              </Badge>
+                            )}
+                            <span className="font-semibold text-sm text-gray-900">
+                              {template.name.replace(/\[Cairn - (OB|MPT)\]\s*/, '')}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2 mt-1">
+                            {template.department && (
+                              <span className="text-[11px] text-slate-500 font-medium">
+                                {template.department}
+                              </span>
+                            )}
+                            {template.category && (
+                              <>
+                                <span className="text-[10px] text-slate-300">•</span>
+                                <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded border border-slate-200">
+                                  {template.category}
+                                </span>
+                              </>
+                            )}
+                          </div>
                         </TableCell>
                         <TableCell>
                           <Badge className={`text-[10px] gap-1 ${cfg.bgColor} ${cfg.color} border ${cfg.borderColor}`}>
@@ -637,13 +800,26 @@ export default function ComplianceDashboardPage() {
                         </TableCell>
                         <TableCell>
                           <div className="flex flex-wrap gap-1">
-                            {template.vendorId && <Badge variant="outline" className="text-[10px] gap-1"><Building2 className="h-2.5 w-2.5" />{getName(vendors, template.vendorId)}</Badge>}
-                            {template.companyId && <Badge variant="outline" className="text-[10px] bg-blue-50 text-blue-700">{getName(companies, template.companyId)}</Badge>}
-                            {template.buildingId && <Badge variant="outline" className="text-[10px] bg-green-50 text-green-700">{getName(buildings, template.buildingId)}</Badge>}
+                            {template.companyId && (
+                              <Badge variant="outline" className="text-[10px] bg-blue-50 text-blue-700">
+                                {getName(companies, template.companyId)}
+                              </Badge>
+                            )}
+                            {template.buildingId && (
+                              <Badge variant="outline" className={`text-[10px] ${
+                                isCairnOB ? 'bg-sky-50 text-sky-700 border-sky-200' :
+                                isCairnMPT ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                                'bg-green-50 text-green-700'
+                              }`}>
+                                {getName(buildings, template.buildingId)}
+                              </Badge>
+                            )}
                           </div>
                         </TableCell>
                         <TableCell>
-                          <Badge variant="outline" className="text-[10px] capitalize bg-gray-50">{template.frequency.replace('_', ' ')}</Badge>
+                          <Badge variant="outline" className="text-[10px] capitalize bg-gray-50 font-medium">
+                            {template.frequency.replace('_', ' ')}
+                          </Badge>
                         </TableCell>
                         <TableCell>
                           <Badge variant={template.status === 'active' ? 'default' : 'secondary'} className="text-[10px]">
@@ -652,6 +828,15 @@ export default function ComplianceDashboardPage() {
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-1">
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              className="h-8 text-xs text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 px-2"
+                              onClick={() => handleViewQuestions(template)}
+                              title="View all checkpoints & Sodexo verification points"
+                            >
+                              <Eye className="h-3.5 w-3.5 mr-1 text-indigo-600" /> Checkpoints
+                            </Button>
                             <Link href={`/admin/compliances/${template.id}`}>
                               <Button variant="ghost" size="sm" className="h-8 text-xs text-blue-600 hover:text-blue-800 hover:bg-blue-50 px-2">
                                 <Pencil className="h-3 w-3 mr-1" /> Edit
@@ -843,6 +1028,292 @@ export default function ComplianceDashboardPage() {
         recordId={selectedRecordId} 
         onStatusChange={() => fetchAll()}
       />
+
+      {/* ─── Checkpoint Questions Inspection Modal ─── */}
+      <Dialog open={questionModalOpen} onOpenChange={setQuestionModalOpen}>
+        <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col p-0 overflow-hidden">
+          <DialogHeader className="p-6 pb-4 border-b bg-slate-50/70">
+            <div className="flex items-center gap-2">
+              {selectedTemplateForQuestions?.name.includes('[Cairn - OB]') && (
+                <Badge className="bg-sky-100 text-sky-800 border-sky-300">Cairn • OB</Badge>
+              )}
+              {selectedTemplateForQuestions?.name.includes('[Cairn - MPT]') && (
+                <Badge className="bg-emerald-100 text-emerald-800 border-emerald-300">Cairn • MPT</Badge>
+              )}
+              <Badge variant="outline" className="capitalize text-slate-600">
+                {selectedTemplateForQuestions?.frequency.replace('_', ' ')}
+              </Badge>
+              {selectedTemplateForQuestions?.department && (
+                <Badge variant="secondary" className="text-xs">
+                  {selectedTemplateForQuestions.department}
+                </Badge>
+              )}
+            </div>
+            <DialogTitle className="text-xl font-bold text-slate-900 mt-1">
+              {selectedTemplateForQuestions?.name.replace(/\[Cairn - (OB|MPT)\]\s*/, '')}
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-500">
+              {selectedTemplateForQuestions?.description || "Industrial inspection checkpoints and Sodexo verification criteria."}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex-1 overflow-y-auto p-6 space-y-3">
+            {loadingQuestions ? (
+              <div className="py-12 text-center text-slate-400 flex items-center justify-center gap-2">
+                <Loader2 className="h-5 w-5 animate-spin text-blue-600" />
+                Loading checklist checkpoints...
+              </div>
+            ) : templateQuestions.length === 0 ? (
+              <div className="py-10 text-center text-slate-400">
+                No checkpoints found for this template.
+              </div>
+            ) : (
+              <>
+                <div className="flex items-center justify-between text-xs text-slate-500 pb-2 border-b">
+                  <span className="font-semibold text-slate-700">
+                    Checkpoints & Inspection Items ({templateQuestions.length})
+                  </span>
+                  <div className="flex items-center gap-3">
+                    <span className="flex items-center gap-1 text-purple-700 font-medium">
+                      <Camera className="h-3.5 w-3.5" />
+                      {templateQuestions.filter(q => q.isPhotoRequired).length} Photos Mandatory
+                    </span>
+                    <span className="flex items-center gap-1 text-emerald-700 font-medium">
+                      <ShieldCheck className="h-3.5 w-3.5" />
+                      Dual Sign-off Enabled
+                    </span>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  {templateQuestions.map((q, idx) => (
+                    <div 
+                      key={q.id || idx}
+                      className="p-3 rounded-lg border border-slate-200 bg-white hover:border-slate-300 hover:shadow-2xs transition-all flex items-start justify-between gap-4"
+                    >
+                      <div className="flex items-start gap-3">
+                        <span className="flex items-center justify-center w-6 h-6 rounded-full bg-slate-100 text-slate-700 text-xs font-bold shrink-0 mt-0.5">
+                          {idx + 1}
+                        </span>
+                        <div>
+                          <p className="text-sm font-medium text-slate-900">
+                            {q.question}
+                          </p>
+                          {q.options && q.options.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mt-1.5">
+                              {q.options.map((opt: string, optIdx: number) => (
+                                <span key={optIdx} className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">
+                                  {opt}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {q.isPhotoRequired && (
+                          <Badge className="bg-purple-50 text-purple-700 border-purple-200 text-[10px] gap-1 font-medium">
+                            <Camera className="h-3 w-3" /> Photo
+                          </Badge>
+                        )}
+                        <Badge variant="outline" className="text-[10px] uppercase font-mono text-slate-600">
+                          {q.type?.replace('_', ' ') || 'yes/no'}
+                          {q.unit ? ` (${q.unit})` : ''}
+                        </Badge>
+                        {q.isRequired && (
+                          <span className="text-[10px] text-amber-600 font-semibold px-1">
+                            Req
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+
+          <div className="p-4 border-t bg-slate-50 flex items-center justify-between">
+            <div className="text-xs text-slate-500">
+              Assignee: <span className="font-semibold text-slate-700">Supervisor / Housekeeper</span> • Verification: <span className="font-semibold text-slate-700">Mandatory</span>
+            </div>
+            <Button variant="outline" size="sm" onClick={() => setQuestionModalOpen(false)}>
+              Close
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ─── Sodexo Enterprise Facility Management Plan Modal ─── */}
+      <Dialog open={sodexoPlanModalOpen} onOpenChange={setSodexoPlanModalOpen}>
+        <DialogContent className="max-w-4xl max-h-[88vh] flex flex-col p-0 overflow-hidden">
+          <DialogHeader className="p-6 pb-4 border-b bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white">
+            <div className="flex items-center gap-2">
+              <Badge className="bg-indigo-500/20 text-indigo-300 border-indigo-400/30 text-xs">
+                Sodexo Global Standards
+              </Badge>
+              <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-400/30 text-xs">
+                Cairn Oil & Gas Compliance
+              </Badge>
+            </div>
+            <DialogTitle className="text-2xl font-bold text-white mt-1">
+              Industrial Plant Checklist Management Framework
+            </DialogTitle>
+            <DialogDescription className="text-indigo-200 text-xs">
+              Operational rhythm, dual sign-off protocol, photographic auditing, and SLA governance across Cairn OB & MPT buildings.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex-1 overflow-y-auto p-6 space-y-6 text-sm">
+            {/* Pillar 1: Shift Rhythm */}
+            <div className="space-y-3">
+              <h3 className="font-bold text-slate-900 text-base flex items-center gap-2 border-b pb-1.5">
+                <Clock className="h-5 w-5 text-indigo-600" />
+                1. Operational Shift Rhythm & Daily Inspection Cadence
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="p-3.5 rounded-lg border bg-slate-50/50 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-slate-900 text-xs">Morning Shift (06:00 - 14:00)</span>
+                    <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700">Daily Lineup</Badge>
+                  </div>
+                  <p className="text-xs text-slate-600 leading-relaxed">
+                    • 06:15 - Grooming & PPE Check Card audit.<br/>
+                    • 07:00 - Guest quarters & bunk turnover.<br/>
+                    • 08:30 - Washrooms first deep sanitation & refill.<br/>
+                    • 09:00 - Pantry & breakfast cafe clearing.
+                  </p>
+                </div>
+                <div className="p-3.5 rounded-lg border bg-slate-50/50 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-slate-900 text-xs">General Shift (09:00 - 18:00)</span>
+                    <Badge variant="outline" className="text-[10px] bg-blue-50 text-blue-700">Admin & Plant</Badge>
+                  </div>
+                  <p className="text-xs text-slate-600 leading-relaxed">
+                    • 09:30 - Admin building & executive cabins.<br/>
+                    • 11:00 - Critical rooms (Radio, Telecom, CEC).<br/>
+                    • 12:00 - STP perimeter & safety eyewash checks.<br/>
+                    • 14:00 - Water dispenser weekly Sumatab cycle.
+                  </p>
+                </div>
+                <div className="p-3.5 rounded-lg border bg-slate-50/50 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-slate-900 text-xs">Evening Shift (14:00 - 22:00)</span>
+                    <Badge variant="outline" className="text-[10px] bg-purple-50 text-purple-700">Night Handover</Badge>
+                  </div>
+                  <p className="text-xs text-slate-600 leading-relaxed">
+                    • 15:00 - Recreation, Gym & Badminton court.<br/>
+                    • 17:30 - Front office P.O.B. & attendance report.<br/>
+                    • 19:30 - Evening dining cafe cleanup & bin clear.<br/>
+                    • 21:30 - Shift supervisor dual-signature closure.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Pillar 2: Dual Authentication */}
+            <div className="space-y-3">
+              <h3 className="font-bold text-slate-900 text-base flex items-center gap-2 border-b pb-1.5">
+                <ShieldCheck className="h-5 w-5 text-emerald-600" />
+                2. Dual-Verification & Sign-off Hierarchy
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="p-4 rounded-lg border bg-emerald-50/30 border-emerald-200/60 space-y-2">
+                  <div className="flex items-center gap-2 font-semibold text-emerald-900">
+                    <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                    Tier 1: Housekeeper Shift Execution
+                  </div>
+                  <p className="text-xs text-slate-600 leading-relaxed">
+                    Each area has an assigned cleaner/housekeeper who inspects every checkpoint on their mobile device. Checkpoint answers cannot be batched in 1-click; each mandatory checkpoint requires explicit Pass/Fail confirmation with photo capture where flagged.
+                  </p>
+                </div>
+                <div className="p-4 rounded-lg border bg-blue-50/30 border-blue-200/60 space-y-2">
+                  <div className="flex items-center gap-2 font-semibold text-blue-900">
+                    <ShieldCheck className="h-4 w-4 text-blue-600" />
+                    Tier 2: Shift Supervisor Validation
+                  </div>
+                  <p className="text-xs text-slate-600 leading-relaxed">
+                    The supervisor conducts random spot-audits (min 30% sample size) across completed rooms and plant zones. The supervisor must digitally sign off in the app or admin console before the checklist record transitions to "Approved".
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Pillar 3: Photo Evidence SOP */}
+            <div className="space-y-3">
+              <h3 className="font-bold text-slate-900 text-base flex items-center gap-2 border-b pb-1.5">
+                <Camera className="h-5 w-5 text-purple-600" />
+                3. Anti-Tamper Photographic Evidence SOP
+              </h3>
+              <div className="p-4 rounded-lg border bg-purple-50/30 border-purple-200/60 text-xs text-slate-700 space-y-2">
+                <p>
+                  High-risk and statutory compliance nodes strictly require real-time photo capture with embedded GPS/timestamp metadata:
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
+                  <div className="bg-white p-2.5 rounded border border-purple-100">
+                    <span className="font-semibold text-purple-900 block">Restrooms & Sanitary Nodes:</span>
+                    Mirror streak-free check, WC bowl disinfection, sanitary pad refill dispenser count.
+                  </div>
+                  <div className="bg-white p-2.5 rounded border border-purple-100">
+                    <span className="font-semibold text-purple-900 block">Hazardous & Technical Plant:</span>
+                    STP bar screen clearance, safety eye-wash bottle fill level and seal integrity.
+                  </div>
+                  <div className="bg-white p-2.5 rounded border border-purple-100">
+                    <span className="font-semibold text-purple-900 block">Drinking Water SOP:</span>
+                    Step 5 of Water Dispenser cleaning (Sumatab 150ppm solution with 15-minute dwell).
+                  </div>
+                  <div className="bg-white p-2.5 rounded border border-purple-100">
+                    <span className="font-semibold text-purple-900 block">Personal Grooming:</span>
+                    Full-length uniform, clean nails, shaven appearance, and color-coded duster carry.
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Pillar 4: Color-coded Hygiene Standards */}
+            <div className="space-y-3">
+              <h3 className="font-bold text-slate-900 text-base flex items-center gap-2 border-b pb-1.5">
+                <Sparkles className="h-5 w-5 text-amber-600" />
+                4. Chemical Protocols & 4-Color Duster Segregation
+              </h3>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                <div className="p-2.5 rounded-md border border-red-200 bg-red-50/50">
+                  <span className="font-bold text-red-800 block mb-1">🔴 Red Microfibre</span>
+                  <span className="text-slate-600">Strictly for toilet bowls, urinals, and high-bioburden bathroom zones.</span>
+                </div>
+                <div className="p-2.5 rounded-md border border-amber-200 bg-amber-50/50">
+                  <span className="font-bold text-amber-800 block mb-1">🟡 Yellow Microfibre</span>
+                  <span className="text-slate-600">For washbasins, tiles, bathroom mirrors, and restroom fittings.</span>
+                </div>
+                <div className="p-2.5 rounded-md border border-blue-200 bg-blue-50/50">
+                  <span className="font-bold text-blue-800 block mb-1">🔵 Blue Microfibre</span>
+                  <span className="text-slate-600">For general surfaces, office desks, living bunk furniture, and glass.</span>
+                </div>
+                <div className="p-2.5 rounded-md border border-green-200 bg-green-50/50">
+                  <span className="font-bold text-green-800 block mb-1">🟢 Green Microfibre</span>
+                  <span className="text-slate-600">Exclusively for pantry food-contact counters, dining tables, and cafeterias.</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Pillar 5: SLA Escalation */}
+            <div className="p-3.5 rounded-lg border border-slate-200 bg-slate-100 text-xs text-slate-600 flex items-start gap-2.5">
+              <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+              <div>
+                <span className="font-bold text-slate-800 block">SLA Escalation Matrix:</span>
+                Any daily checklist not submitted within 2 hours of shift completion automatically triggers an Amber Alert to the Facility Manager. If unresolved at 4 hours, it escalates to Red Alert on the Executive Dashboard.
+              </div>
+            </div>
+          </div>
+
+          <div className="p-4 border-t bg-slate-50 flex items-center justify-end">
+            <Button onClick={() => setSodexoPlanModalOpen(false)}>
+              Understood & Close
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
