@@ -43,6 +43,18 @@ export interface Supplier extends BaseEntity {
   contactPerson?: string
 }
 
+export interface IngredientPriceRecord {
+  id?: string
+  effectiveDate: string // YYYY-MM-DD
+  price: number // in INR (₹)
+  unit: string // e.g. "Kg", "Ltr", "Pcs"
+  session?: string // e.g., "Regular", "Summer Season", "Winter Season", "April Mandi", etc.
+  notes?: string // optional notes (e.g. "Mandi wholesale rate", "Contract rate")
+  createdAt?: string
+  updatedAt?: string
+  updatedBy?: string
+}
+
 export interface Ingredient extends BaseEntity {
   hsn: string
   templateId: string
@@ -71,6 +83,174 @@ export interface Ingredient extends BaseEntity {
   hsnLength: number
   verifyUnits: boolean
   variantName?: string
+  // Static Rate / Current Rate & Date-wise Pricing fields
+  price?: number
+  rate?: number
+  cost?: number
+  unitPrice?: number
+  currentRate?: number
+  currentPrice?: number
+  defaultRate?: number
+  priceUnit?: string
+  rateUnit?: string
+  priceEffectiveDate?: string
+  priceSession?: string
+  priceHistory?: IngredientPriceRecord[]
+}
+
+/**
+ * Resolves the effective price of an ingredient for a given targetDate (YYYY-MM-DD).
+ * Finds the latest price entry with effectiveDate <= targetDate.
+ * If all entries are after targetDate, takes the earliest recorded entry.
+ * If no priceHistory exists, falls back to ingredient.price or 0.
+ */
+export function getEffectiveIngredientPrice(
+  ingredient: any,
+  targetDate?: string
+): { 
+  price: number; 
+  unit: string; 
+  effectiveDate: string; 
+  session?: string; 
+  isHistorical: boolean;
+  defaultPrice: number;
+  hasDynamicDateRate: boolean;
+  rateType: "default" | "dynamic";
+} {
+  if (!ingredient) {
+    return { 
+      price: 0, 
+      unit: "Kg", 
+      effectiveDate: targetDate || "", 
+      isHistorical: false,
+      defaultPrice: 0,
+      hasDynamicDateRate: false,
+      rateType: "default"
+    }
+  }
+
+  const history = Array.isArray(ingredient.priceHistory) ? [...ingredient.priceHistory] : []
+  const defaultUnit = ingredient.priceUnit || ingredient.rateUnit || ingredient.u1 || "Kg"
+  const defaultPrice = Number(
+    ingredient.price ??
+    ingredient.rate ??
+    ingredient.cost ??
+    ingredient.currentRate ??
+    ingredient.currentPrice ??
+    ingredient.defaultRate ??
+    ingredient.unitPrice ??
+    ingredient.mrp ??
+    0
+  ) || 0
+
+  if (history.length === 0) {
+    return {
+      price: defaultPrice,
+      unit: defaultUnit,
+      effectiveDate: targetDate || "",
+      isHistorical: false,
+      defaultPrice,
+      hasDynamicDateRate: false,
+      rateType: "default"
+    }
+  }
+
+  // Sort history chronologically: ascending by effectiveDate
+  history.sort((a, b) => (a.effectiveDate || "").localeCompare(b.effectiveDate || ""))
+
+  if (!targetDate) {
+    // If no targetDate provided, return the latest entry in history as active dynamic rate
+    const latest = history[history.length - 1]
+    const hasDynamic = history.length > 0 && Number(latest.price) > 0
+    return {
+      price: hasDynamic ? (Number(latest.price) || defaultPrice) : defaultPrice,
+      unit: latest.unit || defaultUnit,
+      effectiveDate: latest.effectiveDate || "",
+      session: latest.session,
+      isHistorical: false,
+      defaultPrice,
+      hasDynamicDateRate: hasDynamic,
+      rateType: hasDynamic ? "dynamic" : "default"
+    }
+  }
+
+  // Find all entries where effectiveDate <= targetDate
+  const validEntries = history.filter(h => h.effectiveDate && h.effectiveDate <= targetDate)
+
+  if (validEntries.length > 0) {
+    const matched = validEntries[validEntries.length - 1]
+    return {
+      price: Number(matched.price) || defaultPrice,
+      unit: matched.unit || defaultUnit,
+      effectiveDate: matched.effectiveDate,
+      session: matched.session,
+      isHistorical: true,
+      defaultPrice,
+      hasDynamicDateRate: true,
+      rateType: "dynamic"
+    }
+  }
+
+  // If all entries are AFTER targetDate, fallback to base static default price if present
+  if (defaultPrice > 0) {
+    return {
+      price: defaultPrice,
+      unit: defaultUnit,
+      effectiveDate: ingredient.priceEffectiveDate || history[0]?.effectiveDate || "",
+      session: "Default Base Rate",
+      isHistorical: true,
+      defaultPrice,
+      hasDynamicDateRate: false,
+      rateType: "default"
+    }
+  }
+
+  const earliest = history[0]
+  return {
+    price: Number(earliest.price) || 0,
+    unit: earliest.unit || defaultUnit,
+    effectiveDate: earliest.effectiveDate || "",
+    session: earliest.session,
+    isHistorical: true,
+    defaultPrice,
+    hasDynamicDateRate: true,
+    rateType: "dynamic"
+  }
+}
+
+/**
+ * Calculates line cost taking unit differences (e.g. Grams vs Kg, ml vs Ltr) into account.
+ */
+export function calculateIngredientCost(
+  qty: number,
+  qtyUnit: string,
+  pricePerUnit: number,
+  priceUnit: string
+): number {
+  if (!qty || !pricePerUnit) return 0
+  const qUnit = (qtyUnit || "").toLowerCase().trim()
+  const pUnit = (priceUnit || "").toLowerCase().trim()
+
+  if (qUnit === pUnit) {
+    return qty * pricePerUnit
+  }
+
+  // Recipe in Grams/gm/g, price in Kg
+  if ((qUnit === "g" || qUnit === "gm" || qUnit === "grams") && (pUnit === "kg" || pUnit === "kgs" || pUnit === "kilogram")) {
+    return (qty / 1000) * pricePerUnit
+  }
+
+  // Recipe in Kg, price in gm
+  if ((qUnit === "kg" || qUnit === "kgs") && (pUnit === "g" || pUnit === "gm")) {
+    return qty * 1000 * pricePerUnit
+  }
+
+  // Recipe in ml, price in Ltr
+  if ((qUnit === "ml" || qUnit === "milliliter") && (pUnit === "ltr" || pUnit === "l" || pUnit === "liter")) {
+    return (qty / 1000) * pricePerUnit
+  }
+
+  return qty * pricePerUnit
 }
 
 // Generic CRUD operations

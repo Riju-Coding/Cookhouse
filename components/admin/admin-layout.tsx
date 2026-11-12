@@ -36,6 +36,7 @@ import {
   Sparkles,
   ClipboardList,
   ChefHat,
+  Truck,
 } from "lucide-react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
@@ -68,6 +69,7 @@ const navigation = [
   { name: "Sub Meal Plans", href: "/admin/sub-meal-plans", icon: Grid3X3, category: "meals" },
   { name: "Menu Items", href: "/admin/menu-items", icon: FileText, category: "meals" },
   { name: "Recipe Master", href: "/admin/recipes", icon: ChefHat, category: "meals" },
+  { name: "Daily Food Dispatch", href: "/admin/dispatch", icon: Truck, category: "menu-management" },
   { name: "Services", href: "/admin/services", icon: Settings, category: "services" },
   { name: "Sub Services", href: "/admin/sub-services", icon: Grid3X3, category: "services" },
   { name: "Companies", href: "/admin/companies", icon: Building2, category: "organization" },

@@ -85,6 +85,7 @@ function getRouteGroup(routePath: string): string {
     "/admin/sub-meal-plans": "meals",
     "/admin/menu-items": "meals",
     "/admin/recipes": "meals",
+    "/admin/dispatch": "menu-management",
     "/admin/services": "services",
     "/admin/sub-services": "services",
     "/admin/companies": "organization",

@@ -193,7 +193,29 @@ export function IngredientsForm({ isOpen, onClose, onSubmit, editingItem, loadin
   const handleSubmit = async () => {
     try {
       setError("")
-      await onSubmit(formData as Omit<Ingredient, "id">)
+      const submissionData = { ...formData }
+      const enteredPrice = submissionData.price ?? (submissionData as any).rate ?? (submissionData as any).cost
+      if (enteredPrice !== undefined && enteredPrice !== null && enteredPrice !== "") {
+        submissionData.price = Number(enteredPrice)
+        ;(submissionData as any).rate = Number(enteredPrice)
+        ;(submissionData as any).cost = Number(enteredPrice)
+        if (!submissionData.priceHistory || submissionData.priceHistory.length === 0) {
+          submissionData.priceEffectiveDate = submissionData.priceEffectiveDate || new Date().toISOString().split("T")[0]
+          submissionData.priceUnit = submissionData.priceUnit || submissionData.u1 || "Kg"
+          submissionData.priceHistory = [
+            {
+              id: `pr_${Date.now()}`,
+              effectiveDate: submissionData.priceEffectiveDate,
+              price: Number(enteredPrice),
+              unit: submissionData.priceUnit,
+              session: submissionData.priceSession || "Regular",
+              notes: "Initial rate entry",
+              createdAt: new Date().toISOString()
+            }
+          ]
+        }
+      }
+      await onSubmit(submissionData as Omit<Ingredient, "id">)
       onClose()
     } catch (error) {
       setError("Failed to save ingredient. Please try again.")
@@ -453,6 +475,40 @@ export function IngredientsForm({ isOpen, onClose, onSubmit, editingItem, loadin
               <div className="space-y-2">
                 <Label htmlFor="u3">U3</Label>
                 <Input id="u3" value={formData.u3 || ""} onChange={(e) => updateFormData("u3", e.target.value)} />
+              </div>
+            </div>
+
+            {/* Date-Wise Rate / Pricing */}
+            <div className="pt-2 border-t space-y-3">
+              <h4 className="text-sm font-semibold text-emerald-800 flex items-center gap-1.5">
+                Pricing & Rate (INR)
+              </h4>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <Label htmlFor="basePrice" className="text-xs">Rate (₹)</Label>
+                  <Input
+                    id="basePrice"
+                    type="number"
+                    step="0.01"
+                    placeholder="e.g. 40.00"
+                    value={formData.price ?? (formData as any).rate ?? (formData as any).cost ?? ""}
+                    onChange={(e) => {
+                      const val = e.target.value ? Number(e.target.value) : undefined
+                      updateFormData("price", val)
+                      updateFormData("rate" as any, val)
+                      updateFormData("cost" as any, val)
+                    }}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="priceUnit" className="text-xs">Price Unit</Label>
+                  <Input
+                    id="priceUnit"
+                    placeholder="e.g. Kg, Ltr"
+                    value={formData.priceUnit || formData.u1 || ""}
+                    onChange={(e) => updateFormData("priceUnit", e.target.value)}
+                  />
+                </div>
               </div>
             </div>
           </div>

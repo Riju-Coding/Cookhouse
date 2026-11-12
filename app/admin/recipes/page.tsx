@@ -892,8 +892,8 @@ export default function RecipeMasterPage() {
       {/* ─── Extra-Wider Recipe Detail Modal ─────────────────────────────── */}
       <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
         <DialogContent 
-          className="w-[95vw] sm:max-w-[95vw] md:max-w-[1250px] max-h-[92vh] flex flex-col p-6 overflow-hidden" 
-          style={{ maxWidth: "min(95vw, 1250px)", width: "95vw" }}
+          className="w-[96vw] max-w-[96vw] sm:max-w-[1300px] md:max-w-[1300px] lg:max-w-[1300px] xl:max-w-[1300px] max-h-[92vh] flex flex-col p-6 overflow-hidden" 
+          style={{ maxWidth: "min(96vw, 1300px)", width: "96vw" }}
         >
           <DialogHeader className="border-b pb-4">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pr-6">
@@ -926,19 +926,19 @@ export default function RecipeMasterPage() {
           <div className="flex-1 overflow-hidden py-3">
             <div className="flex items-center justify-between pb-2 text-xs text-muted-foreground font-medium">
               <span>INGREDIENTS BREAKDOWN & CATALOG MAPPINGS</span>
-              <span className="text-[11px] text-muted-foreground">Click &quot;Map Item&quot; on unmapped ingredients to link them to your inventory</span>
+              <span className="text-[11px] text-muted-foreground">Click &quot;Map from Ingredients&quot; or &quot;Map Item&quot; to link raw items to your inventory</span>
             </div>
 
             <div className="rounded-md border shadow-inner bg-slate-50/50 overflow-x-auto">
               <ScrollArea className="h-[58vh]">
-                <Table className="min-w-[950px] w-full">
+                <Table className="min-w-[900px] w-full">
                 <TableHeader>
                   <TableRow className="bg-muted/70 text-xs font-semibold">
                     <TableHead className="w-[40px] text-center">#</TableHead>
                     <TableHead className="w-[200px]">Original SQL Item</TableHead>
                     <TableHead className="w-[220px]">Mapped Template</TableHead>
-                    <TableHead className="w-[260px]">Default Master Ingredient</TableHead>
-                    <TableHead className="w-[120px] text-right">Quantity</TableHead>
+                    <TableHead className="w-[280px]">Default Master Ingredient</TableHead>
+                    <TableHead className="w-[110px] text-right">Quantity</TableHead>
                     <TableHead className="w-[100px] text-center">Status</TableHead>
                     <TableHead className="w-[130px] text-center">Action</TableHead>
                   </TableRow>
@@ -965,9 +965,19 @@ export default function RecipeMasterPage() {
                               <span className="text-foreground font-medium">{ing.templateName}</span>
                             </div>
                           ) : (
-                            <Badge variant="outline" className="border-dashed text-amber-700 bg-amber-50/80 text-[11px] font-normal">
-                              No Template
-                            </Badge>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <Badge variant="outline" className="border-dashed text-amber-700 bg-amber-50/80 text-[11px] font-normal">
+                                No Template
+                              </Badge>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-5 text-[10px] text-orange-600 hover:text-orange-700 hover:bg-orange-50 border-orange-200 px-1.5 py-0 font-medium"
+                                onClick={() => handleOpenMap(ing, idx)}
+                              >
+                                Map
+                              </Button>
+                            </div>
                           )}
                         </TableCell>
 
@@ -979,15 +989,15 @@ export default function RecipeMasterPage() {
                               <span className="text-foreground font-mono text-[11px]">{ing.ingredientName}</span>
                             </div>
                           ) : (
-                            <div className="flex items-center gap-2">
-                              <span className="text-muted-foreground italic text-xs">None</span>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-muted-foreground italic text-xs">None (Unassigned)</span>
                               <Button
                                 size="sm"
                                 className="h-6 text-[11px] bg-orange-600 hover:bg-orange-700 text-white font-medium px-2 py-0 gap-1 shadow-xs"
                                 onClick={() => handleOpenMap(ing, idx)}
                               >
                                 <Sparkles className="h-3 w-3" />
-                                Map Now
+                                Map from Ingredients
                               </Button>
                             </div>
                           )}
@@ -1020,7 +1030,7 @@ export default function RecipeMasterPage() {
                           {isUnmapped ? (
                             <Button
                               size="sm"
-                              className="h-7 text-xs bg-orange-600 hover:bg-orange-700 text-white font-medium px-2.5 gap-1.5 shadow-sm"
+                              className="h-7 text-xs bg-orange-600 hover:bg-orange-700 text-white font-semibold px-2.5 gap-1.5 shadow-sm"
                               onClick={() => handleOpenMap(ing, idx)}
                             >
                               <Sparkles className="h-3.5 w-3.5" />
